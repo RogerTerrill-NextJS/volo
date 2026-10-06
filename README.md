@@ -49,9 +49,21 @@ GitHub visibility.
 
 ## Database migrations
 
-There is no database schema yet. When Supabase database work begins, commit SQL
-migrations under `supabase/migrations/` in the same pull request as the code
-that depends on them. Use timestamped names such as
+The Supabase foundation includes server-owned memberships, RLS, fictional seeds,
+and database permission tests. See [Supabase setup](docs/supabase-setup.md) for the
+environment inventory, hosted setup, staging rebuild and initial-admin bootstrap.
+Local database work requires a running Docker-compatible runtime:
+
+```sh
+npm run db:start
+npm run db:reset
+npm run db:test
+npm run db:types
+```
+
+Commit SQL migrations under `supabase/migrations/` in the same pull request as the code
+that depends on them. Commit generated `lib/supabase/database.types.ts` after successful
+database introspection. Use timestamped names such as
 `YYYYMMDDHHMMSS_describe_change.sql`. Keep migrations reproducible and avoid
 editing migrations that have already been applied in shared environments.
 Never include credentials or private production records in migrations or seeds.
