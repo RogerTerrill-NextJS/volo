@@ -34,6 +34,7 @@ npm run test:clients
 npm run test:proxy
 npm run test:access
 npm run test:protected-app
+npm run test:mutations
 npm run test:boundaries
 ```
 
@@ -62,6 +63,10 @@ fictional loopback Auth/PostgREST with the real SDK and Next request contexts;
 database CI independently verifies RLS. The protected-app check exercises the
 actual dashboard/page adapter and Proxy with fictional sessions and membership
 responses, including nested navigation, cookie rotation and safe failure states.
+The mutation check builds disposable API and Server Action fixtures and proves
+denied requests cause zero effects, including native form submissions and direct
+Action calls. No fixture mutation endpoint is deployed. See the
+[protected mutation contract](docs/environment-configuration.md#protected-mutations).
 The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
 

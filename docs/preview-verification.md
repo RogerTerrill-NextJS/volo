@@ -1,6 +1,6 @@
 # Deploy Preview routing verification
 
-Current checks updated for VOLO-116; historical VOLO-109 evidence is below.
+Current checks updated for VOLO-117; historical VOLO-109 evidence is below.
 Pre-release checks use Netlify Deploy Previews;
 VOLO has no separate staging environment.
 
@@ -56,6 +56,17 @@ data for preview smoke tests. Previously delivered browser content cannot be
 retracted by server checks; refresh/new server requests enforce current access.
 
 Repeated HTTP requests do not substitute for these browser checks.
+
+## Mutation verification
+
+VOLO-117 ships reusable server-only guards, not a product mutation endpoint.
+Run `npm run test:mutations` locally/CI for actual Next API and fetched/native
+Server Action fixtures. They use fictional Auth/membership and record effects
+independently, proving denied calls perform zero writes. Never deploy those fixture
+routes or use hosted accounts/data to extend smoke coverage. Required CI verifies
+the compiled origin configuration/default build and database policies; the current
+preview can only prove that existing public/protected navigation remains intact.
+The first actual mutation feature owns hosted authenticated integration checks.
 
 ## Recorded results
 

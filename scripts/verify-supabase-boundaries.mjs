@@ -93,6 +93,19 @@ try {
   }
   console.log("PASS: verified access, page adapter and membership transport cannot enter Client Components");
 
+  for (const moduleName of ["mutation-request", "mutation-input", "mutation", "route-mutation", "action-mutation"]) {
+    if (process.argv.includes("--mutation-boundary-red") && moduleName === "mutation-request") {
+      // Deliberately client-safe fixture stand-in proves the assertion can fail.
+      await put("lib/auth/mutation-request.ts", (await readFile(path.join(root, "lib/auth/mutation-request.ts"), "utf8")).replace('import "server-only";\n', ""));
+    }
+    await put("app/page.jsx", `"use client"; import * as server from "../lib/auth/${moduleName}"; export default function Page() { return <p>{Object.keys(server).join(',')}</p>; }`);
+    failure = undefined;
+    try { await build(); } catch (error) { failure = error; }
+    assert.ok(failure, `${moduleName} must remain server-only`);
+    assert.match(failure.stdout + failure.stderr, /depends on "server-only".*only available in Server Components|only works in a Server Component|cannot be imported from a Client Component/);
+  }
+  console.log("PASS: all mutation request/input/guard/HTTP/Action modules reject Client Component imports");
+
   await put("app/public.jsx", '"use client"; import {getSupabasePublicConfig} from "../lib/supabase/public-config.mjs"; import {createBrowserSupabaseClient} from "../lib/supabase/client"; export default function Public() { const config = getSupabasePublicConfig(); const client = createBrowserSupabaseClient(); return <p>{config.url}|{config.publishableKey}|{client.auth ? "browser constructed" : "missing"}</p>; }');
   await put("app/page.jsx", 'import Public from "./public"; import {getSupabasePrivilegedConfig} from "../lib/supabase/privileged-config.mjs"; import {createServerSupabaseClient} from "../lib/supabase/server"; export default async function Page() { const client = await createServerSupabaseClient({cookieMode:"read-only"}); const config = getSupabasePrivilegedConfig(); return <main><Public/><p>{config.secretKey && client.auth ? "server configured" : "missing"}</p></main>; }');
   await put("app/api/config/route.js", 'import {getSupabasePrivilegedConfig} from "../../../lib/supabase/privileged-config.mjs"; export function GET() { return Response.json({configured: Boolean(getSupabasePrivilegedConfig().secretKey)}); }');
