@@ -165,7 +165,8 @@ not create or approve a test fork or exercise a real credential.
    Old preview builds retain old keys: rebuild needed previews or retire them
    before revocation. Record only names, contexts, deploy IDs, dates, and results.
 
-VOLO-107 supplies the stable callback allowlist; VOLO-106 does not configure
+VOLO-107's [auth callback contract](auth-callbacks.md) defines exact destinations
+and the pending activation/verification work. VOLO-106 does not configure
 callbacks or implement authentication. No Netlify values needed changing during
 this audit, and no production release or shared-database mutation was performed.
 
