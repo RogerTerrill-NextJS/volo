@@ -26,10 +26,16 @@ test("real SDK Proxy isolates refreshes, preserves replacements and rejects outa
   process.env.NEXT_PUBLIC_SUPABASE_URL = auth.origin;
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = fixtureKey;
   const key = "sb-127-auth-token";
-  const request = (jar = new Map<string,string>()) => new NextRequest("https://app.example.invalid/dashboard",{headers:{cookie:cookieHeader(jar),"x-user-id":"forged-identity"}});
+  const request = (jar = new Map<string,string>(), path = "/dashboard") => new NextRequest("https://app.example.invalid"+path,{headers:{cookie:cookieHeader(jar),"x-user-id":"forged-identity"}});
   try {
     const anonymous = await refreshSupabaseSession(request());
-    assert.equal(anonymous.response.headers.get("cache-control"), null);
+    assert.match(anonymous.response.headers.get("cache-control")!, /private/);
+    for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]) assert.equal(anonymous.response.headers.get(field),"no-store");
+    for(const jar of [new Map<string,string>(),new Map([[key+"-code-verifier","pending"]])]) {
+      const publicResult=await refreshSupabaseSession(request(jar,"/"));
+      assert.equal(publicResult.response.headers.get("cache-control"),null);
+      assert.equal(publicResult.response.headers.get("cdn-cache-control"),null);
+    }
     await refreshSupabaseSession(request(new Map([[key+"-code-verifier","pending"]])));
     assert.equal(auth.calls.length,0);
     const jars = await Promise.all([seedSession(auth.origin,"expired-large-a"), seedSession(auth.origin,"expired-b")]);
@@ -42,7 +48,15 @@ test("real SDK Proxy isolates refreshes, preserves replacements and rejects outa
       assert.ok(cookies.some(cookie=>cookie.value && cookie.name===key));
       assert.ok(reqs[index].cookies.get(key));
       assert.equal(result.response.headers.get("cache-control"),"private, no-cache, no-store, must-revalidate, max-age=0");
-      const redirect = result.finalizeResponse(NextResponse.redirect("https://app.example.invalid/next",303));
+      const replacement = NextResponse.redirect("https://app.example.invalid/next",303);
+      for(const field of ["cache-control","cdn-cache-control","netlify-cdn-cache-control"]) replacement.headers.set(field,"public, s-maxage=600");
+      const redirect = result.finalizeResponse(replacement);
+      for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]) assert.equal(redirect.headers.get(field),"no-store");
+      const json = result.finalizeResponse(NextResponse.json({ok:true},{headers:{"Netlify-CDN-Cache-Control":"public, s-maxage=600"}}));
+      assert.equal(json.headers.get("netlify-cdn-cache-control"),"no-store");
+      assert.deepEqual(await json.json(),{ok:true});
+      assert.deepEqual(json.cookies.getAll().map(c=>({...c,expires:undefined})),cookies.map(c=>({...c,expires:undefined})));
+      assert.deepEqual(json.headers.getSetCookie(),result.response.headers.getSetCookie());
       assert.equal(redirect.status,303);
       assert.equal(redirect.headers.get("location"),"https://app.example.invalid/next");
       assert.equal(redirect.headers.get("x-middleware-request-cookie"),null);

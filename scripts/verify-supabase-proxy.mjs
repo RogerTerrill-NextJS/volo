@@ -101,7 +101,7 @@ try {
   }
   assert.ok(ready,`Fixture not ready: ${output}`);
   const seed=async id=>{const jar=new Map();const response=await request("/api/seed",jar,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id})});
-    assert.equal(response.status,200);absorb(response,jar);return jar;};
+    assert.equal(response.status,200);for(const field of ["cdn-cache-control","netlify-cdn-cache-control"])assert.equal(response.headers.get(field),"no-store");absorb(response,jar);return jar;};
   const refreshCount=()=>auth.calls.filter(call=>call.grant==="refresh_token").length;
   const first=await seed("expired-large-a"), second=await seed("expired-b");
   const before=refreshCount();
@@ -110,6 +110,7 @@ try {
     assert.equal(response.status,200);
     assert.ok((await response.text()).includes(`fictional-user:${index===0?"expired-large-a":"expired-b"}`));
     assert.equal(response.headers.get("cache-control"),"private, no-cache, no-store, must-revalidate, max-age=0");
+    for(const field of ["cdn-cache-control","netlify-cdn-cache-control"])assert.equal(response.headers.get(field),"no-store");
     absorb(response,index===0?first:second);
   }
   assert.equal(first.size,1);assert.equal(second.size,1);assert.equal(refreshCount(),before+2);

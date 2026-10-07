@@ -158,6 +158,7 @@ try {
     const response = await request(`/api/session?id=${id}${suffix}`, cookies);
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal(response.headers.get("cache-control"), "private, no-cache, no-store, must-revalidate, max-age=0");
+    for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]) assert.equal(response.headers.get(field),"no-store");
     assert.equal(response.headers.get("expires"), "0");
     assert.equal(response.headers.get("pragma"), "no-cache");
     const values = absorb(response, cookies);
@@ -185,6 +186,7 @@ try {
   assert.equal(first.size, 1);
   const removal = await request("/api/session?remove=1", first);
   assert.equal(removal.status, 200, await removal.clone().text());
+  for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]) assert.equal(removal.headers.get(field),"no-store");
   const removalCookies = absorb(removal, first);
   assert.ok(removalCookies.length > 0 && removalCookies.every(value => /Max-Age=0/i.test(value)));
   assert.equal(first.size, 0);
