@@ -65,11 +65,16 @@ test("real SDK Proxy isolates refreshes, preserves replacements and rejects outa
       assert.equal(req.cookies.get("unrelated")?.value,"keep");
       assert.ok(response.cookies.getAll().every(c=>c.name===key && c.maxAge===0));
     }
-    for(const id of ["down-expired","rate-expired","rotate-down-expired","invalidpayload-expired"]) {
+    for(const id of ["unknown-expired","unknown-fresh","down-expired","rate-expired","rotate-down-expired","invalidpayload-expired"]) {
       const jar = await seedSession(auth.origin,id);
-      const result = await refreshSupabaseSession(request(jar));
+      const req = request(jar);
+      const result = await refreshSupabaseSession(req);
       assert.equal(result.response.status,503,id);
       assert.ok(result.response.cookies.getAll().every(c=>c.maxAge!==0));
+      if(id.startsWith("unknown")) {
+        for(const [name,value] of jar) assert.equal(req.cookies.get(name)?.value,value);
+        assert.equal(result.response.cookies.getAll().length,0);
+      }
       if(id.startsWith("rotate-down")) assert.ok(result.response.cookies.getAll().length>0);
       assert.throws(()=>result.finalizeResponse(NextResponse.next()),/failed verification/);
       assert.equal(await result.response.text(),"Authentication service unavailable.");

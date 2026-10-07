@@ -142,7 +142,7 @@ try {
   for(const route of ["/auth/confirm","/api/health","/file.svg"])assert.equal((await request(route,malformed)).status,200);
   assert.equal(auth.calls.length,anonymousBefore);
   console.log("PASS: invalid sessions denied; scoped cleanup preserves PKCE; anonymous/public/asset traffic skips Auth");
-  for(const id of ["down-expired","rate-expired","socket-expired","malformed-expired","invalidpayload-expired","rotate-down-expired","hang-expired","body-expired"]) {
+  for(const id of ["unknown-expired","unknown-fresh","down-expired","rate-expired","socket-expired","malformed-expired","invalidpayload-expired","rotate-down-expired","hang-expired","body-expired"]) {
     const jar=await seed(id);const started=Date.now();const response=await request("/",jar);
     assert.equal(response.status,503,id);assert.ok(Date.now()-started<6500,id);
     assert.equal(await response.text(),"Authentication service unavailable.");

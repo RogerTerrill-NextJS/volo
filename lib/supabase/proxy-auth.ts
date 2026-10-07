@@ -35,7 +35,8 @@ export function createProxyAuthTransport() {
         const data = JSON.parse(body);
         if (!response.ok) {
           const upstreamCode = data?.code ?? data?.error_code;
-          const code = AUTH_CREDENTIAL_CODES.has(upstreamCode) ? upstreamCode : "volo_auth_rejection_unknown";
+          if (!AUTH_CREDENTIAL_CODES.has(upstreamCode)) return terminal();
+          const code = upstreamCode;
           return Response.json({code, error_code:code, message:"Authentication rejected."}, {status:response.status, headers:response.headers});
         }
         if (response.ok) {

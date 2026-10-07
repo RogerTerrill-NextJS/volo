@@ -41,6 +41,10 @@ export async function startAuthFixture() {
       if (id.startsWith("rate")) { response.writeHead(429).end(JSON.stringify({message:"private-upstream-error-canary"})); return; }
       if (id.startsWith("malformed")) { response.end("private-upstream-error-canary"); return; }
       if (id.startsWith("invalidpayload")) { response.end("{}"); return; }
+      if (id.startsWith("unknown")) {
+        response.statusCode = 400;
+        response.end(JSON.stringify({code:"unexpected_failure",message:"private-upstream-error-canary"})); return;
+      }
       if (id.startsWith("rejected") || id.startsWith("revoked")) {
         response.writeHead(refresh ? 400 : 401).end(JSON.stringify({code:refresh ? "refresh_token_not_found" : "bad_jwt",message:"private-upstream-error-canary"})); return;
       }
