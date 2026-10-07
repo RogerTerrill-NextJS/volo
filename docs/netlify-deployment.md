@@ -17,7 +17,7 @@ when changing the build or repository connection.
 | Publish directory | `.next` |
 | Node.js | 24.x |
 | Framework | Next.js, automatically detected |
-| Production branch | `main`, automatic publishing enabled |
+| Production branch | `main`, automatic publishing locked (October 6, 2026) |
 | Deploy Previews | Pull requests targeting `main` |
 | Branch deploys | Only the production branch |
 
