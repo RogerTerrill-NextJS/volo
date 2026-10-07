@@ -24,7 +24,7 @@ export function createMembershipTransport() {
         const response = await fetch(input, {...init, signal, cache:"no-store", redirect:"error"});
         if(!response.ok) {await response.body?.cancel();return terminal();}
         const body = await response.text();
-        JSON.parse(body);
+        if(!Array.isArray(JSON.parse(body))) return terminal();
         if(unavailable || closed) return terminal();
         return new Response(body, {status:response.status,headers:response.headers});
       } catch {return terminal();}
