@@ -96,9 +96,78 @@ Both contexts need the matching URL and publishable key at build time. Changing
 public values requires a rebuild of the affected context. Do not promote a
 build made for a different Supabase project without rebuilding it.
 
-VOLO-106 verifies the hosted context settings and untrusted-fork policy.
-VOLO-107 supplies the stable callback allowlist; this ticket does not configure
-callbacks or implement authentication.
+VOLO-106 verified the following existing settings on October 6, 2026 in
+[Netlify environment variables](https://app.netlify.com/projects/voloapp/configuration/env).
+Both contextual URL values matched the hosted project above, and both
+publishable-key values matched each other and used the modern key format.
+Values were compared without copying them into the repository or Jira.
+
+| Variable | Production | Deploy Previews | Other Netlify contexts | Scope |
+| --- | --- | --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Shared hosted project URL | Same as Production | Empty | All scopes |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Matching hosted publishable key | Same as Production | Empty | All scopes |
+| `SUPABASE_SECRET_KEY`, legacy service-role keys, `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` | Not provisioned | Not provisioned | Not provisioned | None |
+
+"Other Netlify contexts" means Branch deploys, Preview Server & Agent Runners,
+and Local development (Netlify CLI). There are no branch-specific overrides in
+the variable list. Local app development uses the ignored `.env.local` described
+above. All scopes is the current plan's setting for the two browser-public
+variables; it is not permission to put server credentials in those variables.
+
+The [deploy controls](https://app.netlify.com/projects/voloapp/configuration/developer-settings)
+use `main` for Production, enable Deploy Previews for PRs targeting `main`, and
+deploy only the production branch outside PR previews. Production publishing
+remains locked under the [release workflow](release-workflow.md).
+
+### Untrusted forks
+
+The verified Sensitive variable policy is **Require approval**. Netlify holds
+an unrecognized author's fork deploy before its build starts. This is an approval
+gate, not permanent secret filtering: approving a request allows its build to
+run with the preview context. Currently that context contains only the two
+browser-public variables, so an approved fork receives no server credentials.
+Review the fork's code, build scripts, and dependencies before approving it;
+reject requests that should remain untrusted.
+
+Do not add server secrets to the shared Deploy Preview context. Before any
+future administrative runtime needs a secret, separately review its production
+scope and fork access, including any team-level inherited variables. If secrets
+ever become necessary for trusted previews, introduce a policy that demonstrably
+withholds them from untrusted builds before provisioning them. Do not select
+"Deploy without restrictions". See
+[Netlify's sensitive variable policy](https://docs.netlify.com/build/environment-variables/get-started/#sensitive-variable-policy).
+This verification inspected the configured gate and variable inventory; it did
+not create or approve a test fork or exercise a real credential.
+
+### Provisioning and rotation
+
+1. An authorized operator obtains the hosted project's URL and matching modern
+   publishable key from Supabase. Keep actual values in the service dashboards
+   and ignored local files, never PR descriptions, screenshots, logs, or Jira.
+2. In Netlify Project configuration > Environment variables, add each public
+   variable individually (or use Options > Edit). Set contextual values explicitly
+   for **Production** and **Deploy Previews** only, using the same pair. Leave
+   other contexts empty and preserve **Require approval**. Avoid bulk CLI imports
+   that default to all contexts. Check for branch overrides before saving.
+3. For rotation, create the replacement publishable key in Supabase and update
+   both Netlify contexts and affected ignored local files. Keep the previous key
+   active until deployed consumers have moved to the replacement when possible.
+   If a credential is compromised, prioritize revocation and coordinate any
+   resulting interruption rather than waiting for a routine release batch.
+4. Rebuild the affected previews and verify their commit, successful startup,
+   and `/`, `/dashboard`, `/api/health` smoke checks. Public configuration is
+   baked into browser assets; editing a dashboard value does not update existing
+   deployments. These checks prove app availability, not Supabase authentication
+   or key/project validity. Verify actual backend use when that feature exists.
+5. Prepare a rebuilt `main` deployment for an explicitly requested production
+   batch; keep auto-publishing locked. After release, verify the published
+   deployment and retire the old key when no retained consumer requires it.
+   Old preview builds retain old keys: rebuild needed previews or retire them
+   before revocation. Record only names, contexts, deploy IDs, dates, and results.
+
+VOLO-107 supplies the stable callback allowlist; VOLO-106 does not configure
+callbacks or implement authentication. No Netlify values needed changing during
+this audit, and no production release or shared-database mutation was performed.
 
 GitHub app CI uses `https://example.supabase.co` and
 `sb_publishable_ci_fixture`, deliberately nonfunctional configuration fixtures.
