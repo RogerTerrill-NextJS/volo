@@ -29,6 +29,7 @@ npm run lint
 npm run build
 npm test
 npm run test:clients
+npm run test:proxy
 npm run test:boundaries
 ```
 
@@ -49,6 +50,9 @@ and responses for leaks. It never connects to Supabase. The client check uses
 real SDK clients in a disposable Next.js app with fictional sessions and a
 loopback Auth stub to verify request isolation, cookie chunks and write failures.
 See [client usage](docs/environment-configuration.md#supabase-client-factories).
+The Proxy check verifies session refresh, cookie forwarding, scoped cleanup,
+cache protections and bounded Auth failures using fictional loopback sessions.
+The dashboard remains public until the identity/membership and shell-guard work.
 The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
 

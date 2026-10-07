@@ -43,6 +43,8 @@ jobs:
         run: npm test
       - name: Supabase request-scoped clients and cookie persistence
         run: npm run test:clients
+      - name: Supabase Proxy session refresh and failure handling
+        run: npm run test:proxy
       - name: Supabase browser and server boundaries
         run: npm run test:boundaries
 

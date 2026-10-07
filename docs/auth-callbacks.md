@@ -12,7 +12,8 @@ The hosted Supabase URL Configuration was inspected on October 6, 2026:
 - Redirect URLs: empty.
 - No changes were made to hosted Auth settings.
 
-The app has no invitation/reset callback, Supabase SDK client, or session flow.
+The app has typed Supabase SDK clients and Proxy session refresh. It has no
+invitation/reset callback or completed user-facing authentication flow.
 VOLO-21 supplies invitation-gated account establishment, VOLO-23 supplies reset
 flows and hosted mail delivery, and VOLO-24 supplies request-scoped session
 handling. Those tickets block VOLO-107's end-to-end verification. VOLO-107 stays

@@ -220,6 +220,55 @@ will provide verified identity and current membership guards. Run
 `npm run test:boundaries` for compiled client/server boundaries and leak checks.
 Neither command uses hosted Supabase or loads the checkout's credential files.
 
+## Proxy session refresh
+
+`proxy.ts` delegates to the server-only `refreshSupabaseSession` helper in
+`lib/supabase/proxy.ts`. It creates a fresh SDK client per request and verifies
+with `getUser()`. This makes an Auth request for session-bearing application
+requests, including prefetches; it performs no membership query. Server-side
+identity/membership guards (VOLO-115) and application protection (VOLO-116) remain
+required. The current dashboard is still a public placeholder.
+
+Requests without this project's session cookie/chunks pass through without an
+Auth call. A PKCE verifier alone does not count as a session. The literal matcher
+covers application pages/APIs, including future auth routes and dotted paths;
+it excludes Next static/image assets, exact `/api/health` (with optional trailing
+slash), favicon/robots/sitemap and the five existing public SVG files. Add new
+public asset paths to the matcher and its tests. Do not bypass all dotted paths.
+
+The Proxy forwards refreshed cookies to the current request and the browser,
+preserving chunk removals and SDK options. All session-bearing responses use
+`Cache-Control: private, no-cache, no-store, must-revalidate, max-age=0`,
+`Expires: 0` and `Pragma: no-cache`, including requests without a refresh.
+Invalid credentials become anonymous after clearing only this project's session
+cookies; unrelated cookies and a pending PKCE verifier survive. No login
+redirects are introduced.
+
+Network errors, timeouts, rate limits, invalid Auth payloads and Auth server
+failures return the generic uncacheable HTTP 503 `Authentication service unavailable.`
+and do not erase a potentially valid session. A completed token rotation before
+a later user-service failure is still persisted. The per-request Auth transport
+has a five-second total deadline covering headers and bodies. It converts
+temporary failures into a fixed local terminal SDK response to stop retry loops;
+a separate failure flag enforces the browser's 503 policy and prevents the SDK's
+resulting cleanup from deleting valid cookies. That local response is never
+returned to the browser or treated as a credential rejection. Rejection details
+are sanitized before SDK logging; unknown codes conservatively fail with 503.
+
+`refreshSupabaseSession(request)` returns `{ response, finalizeResponse }`.
+Return `response` normally. Future same-request redirects/replacements must pass
+their `NextResponse` through `finalizeResponse` and return that exact result to
+preserve cookies and cache policy. Failed verification cannot be replaced with
+a successful response. The finalizer does not copy incoming/internal forwarding
+headers onto a replacement. Do not serialize the SDK client/session or trust a
+browser-supplied identity header.
+
+`npm run test:proxy` runs focused real SDK tests and a disposable Next.js fixture
+with loopback Auth. It covers refresh persistence/current-request cookies,
+concurrent users, replacement responses, PKCE-safe cleanup, cache headers and
+outages including stalled response bodies. No hosted Supabase account, email,
+callback allowlist or data mutation is needed. Production publishing stays locked.
+
 ### Previous environment verification
 
 On October 6, 2026, Next.js loaded an ignored `.env.local` with loopback URL and
