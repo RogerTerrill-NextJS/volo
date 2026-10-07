@@ -61,11 +61,17 @@ also completed successfully, and its
 [immutable health URL](https://6ac5972ab1753f00081a3452--voloapp.netlify.app/api/health)
 returned 200 with the same JSON.
 
-The production build restored caches, so this evidence does not establish a
-cache-free build. A local build attempt failed while spawning a Turbopack Node
-worker (`No such file or directory`), including outside the sandbox; it does not
-replace hosted build verification. To verify a cache-free build, retry a preview
-deployment with cleared cache and record its deploy URL and commit.
+The [VOLO-108 PR #6 preview](https://deploy-preview-6--voloapp.netlify.app/)
+also returned 200 for the homepage, `/dashboard`, and `/api/health`, with the
+expected dashboard heading, navigation link, and health JSON.
+
+A [cache-free rebuild](https://app.netlify.com/projects/voloapp/deploys/6ac5993b46b4f934371f63d6)
+of commit `05eb1da4b7dc144b18bd5e5905111c5af260f775` completed successfully.
+Its log confirms a fresh repository clone, no cached dependencies, no Next.js
+cache to restore, runtime v5.16.2, and successful server-handler packaging.
+Its [immutable health URL](https://6ac5993b46b4f934371f63d6--voloapp.netlify.app/api/health)
+returned 200 with `{"status":"ok"}`. This establishes a clean hosted build;
+the documentation commit recording this result follows the tested revision.
 
 ## Verify the next deployment
 
