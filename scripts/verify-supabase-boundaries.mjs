@@ -61,6 +61,7 @@ try {
   await cp(path.join(root, "tsconfig.json"), path.join(fixture, "tsconfig.json"));
   await put("package.json", JSON.stringify({ private: true, type: "module" }));
   await put("next.config.mjs", `export default { outputFileTracingRoot: ${JSON.stringify(fixture)} };`);
+  await put("instrumentation.js", "export function register() { globalThis.fetch = () => { throw new Error('Boundary fixture forbids outbound requests'); }; }");
   await put("app/layout.jsx", 'export default function Layout({children}) { return <html><body>{children}</body></html>; }');
   await put("app/page.jsx", '"use client"; import {getSupabasePrivilegedConfig} from "../lib/supabase/privileged-config.mjs"; export default function Page() { return <p>{getSupabasePrivilegedConfig().secretKey}</p>; }');
   let failure;
@@ -69,8 +70,15 @@ try {
   assert.match(failure.stdout + failure.stderr, /depends on "server-only".*only available in Server Components|only works in a Server Component|cannot be imported from a Client Component/);
   console.log("PASS: privileged config cannot enter a Client Component");
 
-  await put("app/public.jsx", '"use client"; import {getSupabasePublicConfig} from "../lib/supabase/public-config.mjs"; export default function Public() { const config = getSupabasePublicConfig(); return <p>{config.url}|{config.publishableKey}</p>; }');
-  await put("app/page.jsx", 'import Public from "./public"; import {getSupabasePrivilegedConfig} from "../lib/supabase/privileged-config.mjs"; export default function Page() { const config = getSupabasePrivilegedConfig(); return <main><Public/><p>{config.secretKey ? "server configured" : "missing"}</p></main>; }');
+  await put("app/page.jsx", '"use client"; import {createServerSupabaseClient} from "../lib/supabase/server"; export default function Page() { return <p>{String(createServerSupabaseClient)}</p>; }');
+  failure = undefined;
+  try { await build(); } catch (error) { failure = error; }
+  assert.ok(failure, "Client import of server factory must fail compilation");
+  assert.match(failure.stdout + failure.stderr, /depends on "server-only".*only available in Server Components|only works in a Server Component|cannot be imported from a Client Component/);
+  console.log("PASS: server client factory cannot enter a Client Component");
+
+  await put("app/public.jsx", '"use client"; import {getSupabasePublicConfig} from "../lib/supabase/public-config.mjs"; import {createBrowserSupabaseClient} from "../lib/supabase/client"; export default function Public() { const config = getSupabasePublicConfig(); const client = createBrowserSupabaseClient(); return <p>{config.url}|{config.publishableKey}|{client.auth ? "browser constructed" : "missing"}</p>; }');
+  await put("app/page.jsx", 'import Public from "./public"; import {getSupabasePrivilegedConfig} from "../lib/supabase/privileged-config.mjs"; import {createServerSupabaseClient} from "../lib/supabase/server"; export default async function Page() { const client = await createServerSupabaseClient({cookieMode:"read-only"}); const config = getSupabasePrivilegedConfig(); return <main><Public/><p>{config.secretKey && client.auth ? "server configured" : "missing"}</p></main>; }');
   await put("app/api/config/route.js", 'import {getSupabasePrivilegedConfig} from "../../../lib/supabase/privileged-config.mjs"; export function GET() { return Response.json({configured: Boolean(getSupabasePrivilegedConfig().secretKey)}); }');
   await build();
   await scan(path.join(fixture, ".next/static"));
@@ -111,6 +119,7 @@ try {
     if (type === "text/html") {
       assert.ok(body.includes("sb_publishable_boundary_fixture"));
       assert.ok(body.includes("server configured"));
+      assert.ok(body.includes("browser constructed"));
     }
   }
   console.log("PASS: HTML, RSC, JSON and response headers contain no private markers");

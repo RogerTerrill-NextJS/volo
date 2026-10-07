@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createBrowserSupabaseClient } from "../lib/supabase/client.ts";
+import type { QueryData } from "@supabase/supabase-js";
 
 test("browser client validates every construction and works during server rendering", () => {
   const names = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"] as const;
@@ -12,13 +13,16 @@ test("browser client validates every construction and works during server render
     assert.equal(typeof document, "undefined");
     const client = createBrowserSupabaseClient();
     assert.ok(client.auth);
-    assert.ok(client.from("memberships"));
 
     // Checked by tsc; never execute requests to a backend.
-    const generatedTypes = () => {
-      client.from("memberships").select("user_id, role, status");
+    const membershipQuery = client.from("memberships").select("user_id, role, status");
+    assert.ok(membershipQuery);
+    const generatedTypes = (row: QueryData<typeof membershipQuery>[number]) => {
+      const role: "member" | "admin" = row.role;
+      const id: string = row.user_id;
       // @ts-expect-error Tables must come from generated Database types.
       client.from("not_a_database_table");
+      return { role, id };
     };
     void generatedTypes;
 
