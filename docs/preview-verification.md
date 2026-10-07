@@ -1,6 +1,7 @@
 # Deploy Preview routing verification
 
-VOLO-109, October 6, 2026. Pre-release checks use Netlify Deploy Previews;
+Current checks updated for VOLO-116; historical VOLO-109 evidence is below.
+Pre-release checks use Netlify Deploy Previews;
 VOLO has no separate staging environment.
 
 ## Repeatable HTTP checks
@@ -21,17 +22,20 @@ it does not access Supabase or write application data.
 | Check | Expected result |
 | --- | --- |
 | `GET /` | 200, HTML with dashboard navigation |
-| `GET /dashboard` | 200, HTML containing the dashboard heading and home link |
-| Repeated `GET /dashboard?verification=volo-109` | 200, same route/query and server-delivered heading |
+| `GET /login` | 200, sign-in placeholder and home link |
+| Anonymous `GET /dashboard` | Redirect to fixed `/login`; no Workspace overview; private/no-store |
+| Repeated anonymous `GET /dashboard?verification=volo-109` | Same safe login destination without forwarded query or workspace content |
+| Anonymous dashboard RSC | Canonical `_rsc` negotiation followed by login redirect; no workspace content; no-store |
 | `GET /api/health` | 200, JSON `{"status":"ok"}` |
 | `HEAD /api/health` | 200, JSON content type and empty body |
 | `OPTIONS /api/health` | 204, Allow includes GET, HEAD, OPTIONS |
 | `POST /api/health` | 405; unsupported method does not render the homepage |
 | Unknown `/dashboard/volo-109-missing` and `/api/volo-109-missing` | 404; no homepage fallback |
 
-The dashboard heading is checked in the HTTP response without executing browser
-JavaScript. The current `/` and `/dashboard` pages are server-prerendered at build
-time; these checks do not claim request-time rendering of a personalized page.
+Dashboard denial is checked without executing browser JavaScript; redirects can
+be HTTP redirects or the framework's streamed/RSC protocol. The dashboard is
+dynamic and checks verified identity/current membership on each server request.
+The homepage and login placeholder are public static pages.
 `/api/health` is the dynamic Route Handler served by the OpenNext server function.
 There is currently no valid multi-level UI page below `/dashboard`; the nested
 API path and unknown deeper UI paths cover the routes available today. Add valid
@@ -39,12 +43,17 @@ deeper page cases when those pages are implemented.
 
 ## Browser checks
 
-1. Open the preview's `/dashboard?verification=volo-109` directly. Check the
-   dashboard heading and Workspace overview.
-2. Reload. Confirm the path, query, heading, and overview remain intact.
-3. Follow Back to home, then Open dashboard. Confirm both destinations render.
+1. Open the preview's `/dashboard?verification=volo-116` anonymously. Confirm
+   `/login`, the sign-in placeholder, and no workspace overview.
+2. Reload. Confirm `/login` remains usable with no redirect loop.
+3. Follow Back to home, then Open dashboard. Confirm navigation reaches login.
 4. Use browser Back and Forward. Confirm the URL and visible page agree.
-5. Check browser console errors and save a dashboard screenshot.
+5. Check browser console errors and save the login-state screenshot.
+
+Use `npm run test:protected-app` for authenticated/denied/outage/navigation cases
+against fictional local services. Do not create hosted users or write membership
+data for preview smoke tests. Previously delivered browser content cannot be
+retracted by server checks; refresh/new server requests enforce current access.
 
 Repeated HTTP requests do not substitute for these browser checks.
 
