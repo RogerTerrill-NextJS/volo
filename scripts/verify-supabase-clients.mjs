@@ -111,6 +111,12 @@ try {
       const {data} = await client.auth.getUser();
       return <p>fictional-user:{data.user?.id || 'anonymous'}</p>;
     }`);
+  await put("app/api/override/route.js", `import {createServerSupabaseClient} from '../../../lib/supabase/server';
+    export async function GET(){let intercepted=0;
+      const client=await createServerSupabaseClient({cookieMode:'read-only',fetch:(input,init)=>{intercepted++;return fetch(input,init);}});
+      const other=await createServerSupabaseClient({cookieMode:'read-only'});
+      const first=await client.auth.getUser();const second=await other.auth.getUser();
+      return Response.json({intercepted,first:first.data.user?.id,second:second.data.user?.id});}`);
   await put("app/forbidden/page.jsx", `import {createServerSupabaseClient} from '../../lib/supabase/server';
     import {session} from '../../lib/fixture';
     export default async function Page() {
@@ -169,6 +175,10 @@ try {
     assert.equal((await read.json()).id, id);
   }
   console.log("PASS: concurrent clients and read-only Server Components isolate fictional sessions");
+  const override=await request("/api/override",first);
+  assert.deepEqual(await override.json(),{intercepted:1,first:"fictional-a",second:"fictional-a"});
+  assert.equal(override.headers.getSetCookie().length,0);
+  console.log("PASS: caller-owned fetch override is isolated to its server client");
   const replacement = await write("fictional-a", first);
   const removedChunks = replacement.filter(value => /Max-Age=0/i.test(value));
   assert.ok(removedChunks.length >= large.length, "Replacement must clear obsolete chunks");
