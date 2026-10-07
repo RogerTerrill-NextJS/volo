@@ -1,6 +1,7 @@
 # Volo
 
-Next.js App Router application with TypeScript. Staging: https://voloapp.netlify.app/.
+Next.js App Router application with TypeScript. Production: https://voloapp.netlify.app/.
+Pull requests receive Netlify Deploy Previews. A separate staging environment is deferred.
 
 ## Development
 
@@ -41,7 +42,7 @@ GitHub visibility.
 
 - Keep `main` deployable.
 - Start a short feature branch from the latest `main`, for example
-  `codex/volo-15-repository-ci`.
+  `feature/volo-103-setup-docs`.
 - Keep each branch focused on one ticket and open a pull request into `main`.
 - Merge after CI passes; squash commits and delete the merged feature branch.
 - Reference the Jira key in the pull request or commit message.
@@ -51,7 +52,8 @@ GitHub visibility.
 
 The Supabase foundation includes server-owned memberships, RLS, fictional seeds,
 and database permission tests. See [Supabase setup](docs/supabase-setup.md) for the
-environment inventory, hosted setup, staging rebuild and initial-admin bootstrap.
+environment inventory, local/disposable rebuild verification, production migrations,
+and initial-admin bootstrap.
 Local database work requires a running Docker-compatible runtime:
 
 ```sh
@@ -59,6 +61,7 @@ npm run db:start
 npm run db:reset
 npm run db:test
 npm run db:types
+npm run db:types:check
 ```
 
 Commit SQL migrations under `supabase/migrations/` in the same pull request as the code
@@ -70,8 +73,9 @@ Never include credentials or private production records in migrations or seeds.
 
 ## Credentials and private data
 
-Keep local credentials in ignored `.env*` files and configure staging credentials
-in Netlify's environment settings. Never commit credentials, database exports,
+Keep local credentials in ignored `.env*` files. Netlify Production and Deploy Previews
+currently use the same hosted Supabase URL and public publishable key; previews do not
+isolate database data. Use local/disposable data for write tests. Never commit credentials, database exports,
 or private user data. Review staged changes before committing.
 
 Only intentionally public values may use `NEXT_PUBLIC_`. Supabase secret and

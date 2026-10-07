@@ -6,9 +6,11 @@ Feature branch → pull request → CI and Netlify Deploy Preview → squash mer
 
 - Local: http://localhost:3000.
 - Preview: the unique Netlify Deploy Preview linked from each pull request. Check changes here before release.
-- Production: https://voloapp.netlify.app/, deployed by Netlify from main. Older documentation calls this staging; Netlify currently publishes it as production.
+- Production: https://voloapp.netlify.app/, deployed by Netlify from main.
 
-A permanent staging branch is not needed for this early-stage flow.
+A permanent staging branch and separate staging Supabase project are deferred.
+Production and Deploy Previews currently share the hosted Supabase project;
+a frontend preview provides no database isolation.
 
 ## Make a change
 
@@ -34,8 +36,8 @@ Review the diff, stage only intended files, commit, and push the feature branch.
 
 ## Verify and release
 
-1. Wait for `Typecheck, lint, build and test` and the Netlify Deploy Preview check to succeed on the latest revision.
-2. Open the preview link. Check the homepage, `/dashboard`, `/api/health`, and changed user flows. Local smoke tests do not replace checking the hosted preview.
+1. Wait for `Typecheck, lint, build and test`, `Rebuild database and test access policies`, and the Netlify Deploy Preview check to succeed on the latest revision. The database job includes the committed type drift check.
+2. Open the preview link. Check the homepage, `/dashboard`, `/api/health`, and changed user flows. Use local/disposable data for mutation tests; review and bound any action that would write to the shared production backend. Local smoke tests do not replace checking the hosted preview.
 3. Resolve review conversations. If main has moved, update the feature branch and rerun checks.
 4. Squash merge. Netlify builds main and publishes production automatically. Verify the production deploy and changed flows.
 
@@ -43,9 +45,22 @@ Main protection requires a pull request, passing app CI and Netlify preview chec
 
 ## Database and credentials
 
-Before connecting previews to Supabase, configure a separate staging project. Give the Netlify Deploy Previews context staging values and the Production context production values. Do not give previews production database credentials. Keep secret keys server-side and out of source control.
+Netlify Production and Deploy Previews have `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for the same production project
+`macrktxywcqauxqkbnqb`. Rebuild affected contexts after changing these build-time values.
+No secret/service-role key, database password, or Supabase access token was added to
+Netlify. Keep privileged keys server-side and out of source control and browser bundles.
+Retain approval for untrusted fork deploys. A public publishable key does not make
+preview access read-only; database grants and RLS enforce access.
 
-Test database migrations locally or on disposable staging data before production. App deployment does not apply database migrations automatically. Add the database CI check to main protection when the pending database workflow is merged and its check has run successfully.
+Test migrations with local/disposable rebuilds before production. CI rebuilds with
+and without fictional seeds, runs permission tests after each, and checks generated
+types against the migrated database. App deployment does not apply migrations or
+hosted Auth settings automatically. Follow [Supabase setup](supabase-setup.md) for
+production inspection, dry-run, and migration steps; never seed or reset production.
+The database workflow has merged and passed. Requiring its check in main branch
+protection is a separate repository setting; this documentation does not establish
+that it has been configured.
 
 ## Roll back
 
