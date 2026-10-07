@@ -8,7 +8,8 @@ Feature branch → pull request → CI and Netlify Deploy Preview → squash mer
 - Preview: the unique Netlify Deploy Preview linked from each pull request. Check changes here before release.
 - Production: https://voloapp.netlify.app/, deployed by Netlify from main.
 
-A permanent staging branch and separate staging Supabase project are deferred.
+VOLO uses Deploy Previews for pre-release review; there is no permanent staging
+branch or separate staging Supabase project.
 Production and Deploy Previews currently share the hosted Supabase project;
 a frontend preview provides no database isolation.
 
