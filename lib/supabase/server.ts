@@ -4,13 +4,13 @@ import { cookies } from "next/headers";
 import type { Database } from "./database.types";
 import { getSupabasePublicConfig } from "./public-config.mjs";
 
-type ServerClientOptions =
+type ServerClientOptions = {fetch?: typeof globalThis.fetch} & (
   | { cookieMode: "read-only" }
   | {
       cookieMode: "read-write";
       /** Apply SDK cache protections to the response that carries these cookies. */
       setResponseHeaders: (headers: Record<string, string>) => void | Promise<void>;
-    };
+    });
 
 /** Fresh per request. Writable callers own both the cookies and response headers. */
 export async function createServerSupabaseClient(options: ServerClientOptions) {
@@ -31,5 +31,8 @@ export async function createServerSupabaseClient(options: ServerClientOptions) {
       }
     };
   }
-  return createServerClient<Database>(url, publishableKey, { cookies: adapter });
+  return createServerClient<Database>(url, publishableKey, {
+    cookies: adapter,
+    ...(options.fetch ? {global:{fetch:options.fetch}} : {}),
+  });
 }
