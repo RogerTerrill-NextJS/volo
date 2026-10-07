@@ -56,6 +56,21 @@ does not make them read-only or provide backend isolation.
 
 ## Callback implementation handoff
 
+### Mutation boundary handoff for VOLO-21 / VOLO-22 / VOLO-23
+
+Protected member writes use VOLO-117's independent JSON/Server Action guards and
+the [mutation contract](environment-configuration.md#protected-mutations).
+Each operation supplies an explicit role policy, schema parser, side-effect-free
+permission callback and caller-scoped RLS effect. Page/Proxy checks grant no
+write permission. Preserve the exact build-pinned origin and reject missing or
+cross-origin evidence; do not add preview-wide trusted-origin wildcards.
+
+Signup/login/recovery may run before active membership exists. They must apply
+their own explicit admission, origin/CSRF and input policy rather than blindly
+requiring active membership or weakening the protected-write guard. Authentication
+cookie persistence and response headers stay with the owning flow. VOLO-117 adds
+no auth forms, hosted email, callbacks, account writes or redirect activation.
+
 ### Login destination agreed for VOLO-116 / VOLO-22
 
 Signed-out protected-page visitors go to the fixed same-origin `/login` path,

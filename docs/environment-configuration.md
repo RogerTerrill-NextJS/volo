@@ -287,11 +287,135 @@ page behaviors, separate from API 401/403/503 mappings.
 Already delivered browser content cannot be retracted; new server requests
 check current membership. `npm run test:protected-app` verifies actual page
 modules with fictional local services. VOLO-117 adds mutation/input/cross-origin
-defenses; VOLO-118 completes the wider private-cache integration.
+defenses described below; VOLO-118 completes the wider private-cache integration.
 `npm run test:access` verifies real SDK/Next behavior with fictional local services,
 including safe API status mappings, current membership changes and failure/leak
 checks. SQL policy tests separately establish actual RLS behavior. No hosted Auth
 or membership writes are required; production publishing remains locked.
+
+## Protected mutations
+
+VOLO-117 provides server-only helpers for future protected member writes.
+There are currently no product Server Actions or mutating Route Handlers; only
+GET /api/health exists. The verification endpoints/forms live in disposable local
+fixtures. A page check or Proxy refresh never authorizes a later write.
+
+### Build-pinned origin
+
+`next.config.ts` validates and inlines non-secret `VOLO_MUTATION_ORIGIN` for each
+build. Netlify deploy-preview uses its exact `DEPLOY_PRIME_URL`; production uses
+its primary `URL`. Hosted metadata overrides local values. Unsupported contexts,
+missing hosted values or malformed origins fail the build. Production publishing
+controls remain unchanged, and no additional Netlify variable needs provisioning.
+The preview metadata is captured at build time because it is not guaranteed in
+the function runtime. Runtime overrides cannot change the compiled guard origin.
+
+Locally set `VOLO_MUTATION_ORIGIN=http://localhost:3000` in ignored `.env.local`
+before invoking mutations. Match the actual scheme, host and port; opening
+127.0.0.1 instead of localhost is a different origin. Restart/rebuild after a
+configuration change. Local read-only builds can omit the value; mutations then
+fail closed as unavailable. Use exact loopback HTTP origins in fictional fixtures.
+
+Hosted origins require HTTPS. Configured values contain no credentials, extra
+path, query, fragment, list or wildcard. A preview trusts only its own stable
+preview URL, not sibling previews, production or its immutable deploy permalink.
+Production aliases/custom domains need a deliberate configuration change. Never
+use request Host, X-Forwarded-Host, Forwarded, Referer or URL to establish trust.
+
+Each request needs an exact matching Origin. Missing, null, malformed, multiple,
+external or different-port/scheme values fail. If supplied, Sec-Fetch-Site must
+be same-origin or none; same-site also fails. No cross-origin CORS grant is added.
+Next's additional Server Action Origin-vs-host check stays enabled with no
+allowedOrigins expansion. Its missing-Origin/forwarded-host behavior is weaker
+than this guard, so every protected action still invokes the shared wrapper.
+This browser-cookie policy does not defend against XSS/stolen cookies or serve
+non-browser integrations; those need an explicit separate design.
+
+### Consumer contract
+
+`MutationPolicy<I,O>` requires explicit `allowedRoles`, `parse`, `authorize` and
+`effect` callbacks. After origin validation, the helper independently rechecks
+identity/current membership, validates roles and input, and requires literal
+true from operation-specific authorization before invoking the effect once.
+Parser failures return `{ok:false}`; successful parsers return `{ok:true,value}`.
+Throwing callbacks become generic internal failures. Permission callbacks must
+be side-effect-free; apply resource ownership/business rules, not roles alone.
+
+Route Handler usage, where `updatePolicy` is an operation-owned
+`MutationPolicy<Input,MinimalResult>` with all four required callbacks:
+
+```ts
+import {handleRouteMutation} from "@/lib/auth/route-mutation";
+import {updatePolicy} from "./update-policy";
+
+export async function POST(request: Request) {
+  return handleRouteMutation(request, {method: "POST", policy: updatePolicy});
+}
+```
+
+The operation policy module is supplied by the future feature; this example does
+not introduce an endpoint. JSON adapters support explicitly selected POST/PUT/
+PATCH/DELETE. Export only supported mutation methods. Next rejects unexported
+methods; the adapter also rejects mismatches with 405/Allow. If exposing OPTIONS,
+reject rather than grant credentialed cross-origin access.
+
+JSON accepts application/json with optional UTF-8 charset, defaults to 16384 actual
+bytes and permits positive integer operation overrides up to 65536. Counting
+does not trust Content-Length. Invalid/incomplete/failed JSON reads return 400,
+oversize 413, media mismatch 415. The helper's five-second read deadline starts
+when it reads the body. Next Proxy can buffer the incoming upload before the
+handler starts; this deadline is not an end-to-end ingress timeout. Hosting/
+framework upload limits remain necessary. The reader cancels on failure and
+does not collect oversized content into a DTO.
+
+Action usage inside a future feature's explicit 'use server' entry point:
+
+```ts
+"use server";
+import {handleActionMutation} from "@/lib/auth/action-mutation";
+import {updatePolicy} from "./update-policy";
+
+export async function update(_previous: unknown, form: FormData) {
+  return handleActionMutation(form, updatePolicy);
+}
+```
+
+Use the result with useActionState or direct client invocation. The wrapper reads
+real Next request headers; no action argument may supply member identity or origin
+evidence. Application FormData allows unique text fields only, no Files, with
+16384 aggregate UTF-8 bytes including field names. Next owns reserved $ACTION_
+metadata and strips it for native decoding; when present to the normalizer it
+counts toward the limit but never reaches business input. Parsers reject unknown
+application fields and validate exact schema/lengths. Next's raw Action body limit
+is 64 KiB including multipart overhead. Uploads need a separate design.
+
+Both adapters return `{ok:true,data}` or `{ok:false,code,message}` with minimal
+serializable output. JSON status mapping: unauthenticated 401; origin/membership/
+role/resource denied 403; unavailable 503; invalid input 400; oversize 413;
+unsupported media/method 415/405; internal error 500. Every adapter-created HTTP
+response is private/no-store. Next controls Action HTTP/RSC status and no-store
+headers; inspect semantic codes instead of assuming failure equals HTTP 403.
+Existing Proxy Auth outages may return generic text 503 before either wrapper.
+
+Effects use caller-scoped publishable-key clients and retain RLS. Never trust
+input role/user ID, cache an authorization result, or create privileged clients
+before authorization. Return an explicitly constructed minimal DTO, not full
+users/sessions/clients or raw exceptions. Cookie writes remain owned by existing
+response-aware client flows; these helpers establish no session and mutate no
+cookies. Do redirects/revalidation explicitly after successful wrapper completion,
+outside the effect callback, so navigation control flow is not swallowed.
+
+A fresh pre-check is not an atomic lock against revocation/resource changes.
+Effects need their own transactional database constraints and idempotency where
+required. Exceptions after a write produce a safe error but do not roll back that
+write or trigger automatic retries. Keep side effects out of parsers/authorization.
+
+`npm run test:mutations` exercises real production-built Next API/fetched Action/
+native form transports with fictional sessions, an independent effect recorder,
+origin spoofing, revoked access, bounded input and sanitized errors. Unit tests
+cover pure configuration/request/body policy. Database CI separately proves RLS;
+the effect recorder does not prove SQL transactions. Hosted authenticated mutation
+integration remains the responsibility of the first actual feature consumer.
 
 ## Proxy session refresh
 
