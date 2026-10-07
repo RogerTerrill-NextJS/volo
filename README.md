@@ -2,6 +2,8 @@
 
 Next.js App Router application with TypeScript. Production: https://voloapp.netlify.app/.
 Pull requests receive Netlify Deploy Previews. A separate staging environment is deferred.
+See [Netlify deployment](docs/netlify-deployment.md) for verified build settings,
+runtime evidence, and deployment checks.
 
 ## Development
 
