@@ -26,6 +26,8 @@ Hosted inventory confirmed in VOLO-99 on October 6, 2026:
   email confirmation required. Manual account linking disabled.
 - Auth Site URL: `https://voloapp.netlify.app`. Redirect allowlist empty; add exact
   callback URLs when the application implements its invitation/login callbacks.
+  See the [VOLO-107 callback contract](auth-callbacks.md) for the approved exact
+  destinations, preview review lifecycle, and pending verification dependencies.
 - Storage available, with no file buckets. Realtime enabled, public channels allowed,
   and `supabase_realtime` publication contains zero tables. No application table
   changes are streamed; review channel authorization when implementing realtime features.
