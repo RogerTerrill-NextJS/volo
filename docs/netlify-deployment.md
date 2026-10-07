@@ -40,7 +40,9 @@ or a single-page-app catch-all rewrite.
 Production and Deploy Previews currently have `NEXT_PUBLIC_SUPABASE_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Untrusted fork deploys require approval.
 Keep actual values in Netlify or ignored local environment files. Environment
-isolation and auth redirects are tracked under VOLO-19.
+context mapping, fork approval semantics, and provisioning/rotation are recorded
+in [Environment configuration](environment-configuration.md#netlify-and-ci)
+after VOLO-106's hosted audit. Auth redirects remain tracked under VOLO-107.
 
 ## Verified hosted deployment
 
