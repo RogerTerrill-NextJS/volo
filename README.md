@@ -16,7 +16,9 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open http://localhost:3000. The dashboard is at `/dashboard`; `GET /api/health`
+Open http://localhost:3000. `/dashboard` requires verified identity and active
+membership; signed-out visitors go to the public `/login` placeholder, which
+VOLO-22 will replace with the login form. `GET /api/health`
 returns `{ "status": "ok" }` and checks application availability only.
 See [environment configuration](docs/environment-configuration.md) for required
 values, local/disposable setup, deployment contexts, and safe error handling.
@@ -31,11 +33,12 @@ npm test
 npm run test:clients
 npm run test:proxy
 npm run test:access
+npm run test:protected-app
 npm run test:boundaries
 ```
 
 The smoke tests start a local production server and check the homepage link,
-direct dashboard access, repeat document requests, health HTTP methods, and
+public login, anonymous dashboard denial (HTML/RSC), repeated requests, health HTTP methods, and
 missing nested routes. Build before running local tests. To run the same checks
 against a Netlify Deploy Preview without starting a local server:
 
@@ -56,7 +59,9 @@ cache protections and bounded Auth failures using fictional loopback sessions.
 The access check verifies identity, current membership and explicit role guards,
 including revocation, concurrent requests and bounded service failures. It uses
 fictional loopback Auth/PostgREST with the real SDK and Next request contexts;
-database CI independently verifies RLS. The dashboard remains public until VOLO-116.
+database CI independently verifies RLS. The protected-app check exercises the
+actual dashboard/page adapter and Proxy with fictional sessions and membership
+responses, including nested navigation, cookie rotation and safe failure states.
 The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
 

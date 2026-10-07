@@ -268,10 +268,26 @@ retain RLS and operation-specific database policies. A check is a decision at
 lookup time, not an atomic lock against a subsequent administrator change.
 Previously returned member objects are not reusable authorization grants.
 
-The layer supplies no redirects or HTTP response/cache headers. Consumers must
-keep private output uncacheable and check at their data boundary. VOLO-116 adds
-shell/dashboard protection; VOLO-117 adds mutation/input/cross-origin defenses;
-VOLO-118 completes private-cache integration. The dashboard is currently public.
+The access layer supplies no redirects or HTTP response/cache headers. Consumers
+must keep private output uncacheable and check at their data boundary.
+VOLO-116's server-only `lib/auth/page-access` adapter adds `getPageAccess()`:
+unauthenticated requests redirect to fixed `/login?reason=authentication-required`
+(the fixed query prevents Netlify from forwarding incoming parameters); authorized results contain
+only the existing minimal member; forbidden/unavailable results render generic
+page states. Every page independently checks before constructing protected
+content. The presentational `(protected)` layout forces dynamic rendering and
+does not grant authorization. Dashboard HTML/RSC and redirects are private,
+no-store; the helper itself neither caches a decision nor persists cookies.
+The public `/login` placeholder is replaced by VOLO-22. No arbitrary return URL
+or query is forwarded to login. Next.js can serialize the incoming URL in its
+router payload, so never put credentials in ordinary navigation queries.
+Page denial UI can have HTTP 200 under streaming; redirects can use the RSC
+protocol. Existing Proxy service failures remain generic HTTP 503. These are
+page behaviors, separate from API 401/403/503 mappings.
+Already delivered browser content cannot be retracted; new server requests
+check current membership. `npm run test:protected-app` verifies actual page
+modules with fictional local services. VOLO-117 adds mutation/input/cross-origin
+defenses; VOLO-118 completes the wider private-cache integration.
 `npm run test:access` verifies real SDK/Next behavior with fictional local services,
 including safe API status mappings, current membership changes and failure/leak
 checks. SQL policy tests separately establish actual RLS behavior. No hosted Auth
@@ -284,7 +300,7 @@ or membership writes are required; production publishing remains locked.
 with `getUser()`. This makes an Auth request for session-bearing application
 requests, including prefetches; it performs no membership query. Server-side
 identity/membership guards (VOLO-115) and application protection (VOLO-116) remain
-required. The current dashboard is still a public placeholder.
+required. The dashboard now independently checks verified identity and active membership.
 
 Requests without this project's session cookie/chunks pass through without an
 Auth call. A PKCE verifier alone does not count as a session. The literal matcher

@@ -1,22 +1,19 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { getPageAccess } from "../../../lib/auth/page-access";
+import AppShell from "../_components/app-shell";
+import AccessState from "../_components/access-state";
 
 export const metadata: Metadata = {
   title: "Volo dashboard",
   description: "Your Volo workspace overview.",
 };
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const access = await getPageAccess();
+  if (access.status !== "authorized") return <AccessState status={access.status} />;
+
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-10 px-6 py-12 sm:px-10 sm:py-16">
-      <nav aria-label="Dashboard navigation">
-        <Link
-          href="/"
-          className="text-sm font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-        >
-          Back to home
-        </Link>
-      </nav>
+    <AppShell>
       <header className="space-y-3">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
           Volo dashboard
@@ -38,6 +35,6 @@ export default function DashboardPage() {
           upcoming work.
         </p>
       </section>
-    </main>
+    </AppShell>
   );
 }

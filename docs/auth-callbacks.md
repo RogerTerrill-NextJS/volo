@@ -56,6 +56,20 @@ does not make them read-only or provide backend isolation.
 
 ## Callback implementation handoff
 
+### Login destination agreed for VOLO-116 / VOLO-22
+
+Signed-out protected-page visitors go to the fixed same-origin `/login` path,
+with fixed `?reason=authentication-required`, without a `next` parameter or
+forwarded query/token. The fixed query suppresses Netlify's automatic incoming
+query propagation and must remain when VOLO-22 replaces the placeholder.
+VOLO-116 provides a public
+“Sign-in is not available yet” placeholder with a home link. VOLO-22 replaces
+that body with login/logout behavior; it must preserve the public destination.
+Missing/disabled membership shows an access-denied state on the protected page,
+not a login loop. No hosted callback setting is activated by this route contract.
+
+### Invitation and recovery callback
+
 Invitation and recovery emails must land at the approved origin's
 `/auth/confirm`. The auth implementation must coordinate its `redirectTo`,
 email templates, and token verification so the path is added exactly once.

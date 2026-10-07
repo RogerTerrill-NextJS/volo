@@ -67,26 +67,57 @@ test("homepage provides navigation to the dashboard", async () => {
   assert.match(await response.text(), /href="\/dashboard"/);
 });
 
-test("dashboard supports a direct request and navigation home", async () => {
-  const response = await fetch(`${baseUrl}/dashboard`, { signal: AbortSignal.timeout(5000) });
+test("public login provides the agreed destination and navigation home", async () => {
+  const response = await fetch(`${baseUrl}/login`, { signal: AbortSignal.timeout(5000) });
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /text\/html/);
   const html = await response.text();
-  assert.match(html, /<h1[^>]*>Volo dashboard<\/h1>/);
+  assert.match(html, /<h1[^>]*>Sign in<\/h1>/);
+  assert.match(html, /Sign-in is not available yet/);
   assert.match(html, /href="\/"/);
 });
 
-test("dashboard query URL supports repeated document requests", async () => {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await fetch(`${baseUrl}/dashboard?verification=volo-109`, {
+test("anonymous dashboard requests redirect to login without workspace content", async () => {
+  for (const query of ["verification=volo-116", "reason=untrusted&next=https://example.invalid&token=query-secret-canary"]) {
+    const response = await fetch(`${baseUrl}/dashboard?${query}`, {
       headers: { Accept: "text/html" },
-      signal: AbortSignal.timeout(5000),
+      redirect: "manual", signal: AbortSignal.timeout(5000),
     });
-    assert.equal(response.status, 200);
-    assert.equal(new URL(response.url).pathname, "/dashboard");
-    assert.equal(new URL(response.url).search, "?verification=volo-109");
-    assert.match(await response.text(), /<h1[^>]*>Volo dashboard<\/h1>/);
+    const html = await response.text();
+    assert.doesNotMatch(html, /Workspace overview/);
+    assert.match(response.headers.get("cache-control") ?? "", /private/);
+    assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+    if (response.status === 307) {
+      assert.equal(new URL(response.headers.get("location"), baseUrl).href, `${baseUrl}/login?reason=authentication-required`);
+    } else {
+      assert.equal(response.status, 200);
+      assert.equal(html.match(/<meta[^>]*http-equiv="refresh"[^>]*content="[^"]*url=([^"]+)"/)?.[1], "/login?reason=authentication-required");
+    }
   }
+});
+
+test("anonymous dashboard RSC cannot expose workspace content", async () => {
+  let route = "/dashboard";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch(baseUrl + route, {redirect: "manual", headers: {RSC: "1"}, signal: AbortSignal.timeout(5000)});
+    const body = await response.text();
+    assert.doesNotMatch(body, /Workspace overview/);
+    if (response.status === 307) {
+      const target = new URL(response.headers.get("location"), baseUrl);
+      assert.equal(target.origin, baseUrl);
+      if (target.pathname === "/dashboard" && target.searchParams.has("_rsc")) {
+        route = target.pathname + target.search; continue;
+      }
+      assert.equal(target.href, `${baseUrl}/login?reason=authentication-required`);
+    } else {
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /text\/x-component/);
+      assert.match(body, /NEXT_REDIRECT;replace;\/login\?reason=authentication-required;/);
+    }
+    assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+    return;
+  }
+  assert.fail("RSC negotiation did not settle");
 });
 
 test("health endpoint returns a successful JSON response", async () => {
