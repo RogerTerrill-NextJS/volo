@@ -16,7 +16,7 @@ test("browser client validates every construction and works during server render
 
     // Checked by tsc; never execute requests to a backend.
     const generatedTypes = () => {
-      client.from("memberships").select("user_id, organization_id");
+      client.from("memberships").select("user_id, role, status");
       // @ts-expect-error Tables must come from generated Database types.
       client.from("not_a_database_table");
     };
