@@ -11,11 +11,15 @@ Use Node.js 24 and npm. Install the committed dependency versions:
 
 ```sh
 npm ci
+cp .env.example .env.local
+# Fill the two NEXT_PUBLIC_SUPABASE_* fields using the setup guide below.
 npm run dev
 ```
 
 Open http://localhost:3000. The dashboard is at `/dashboard`; `GET /api/health`
 returns `{ "status": "ok" }` and checks application availability only.
+See [environment configuration](docs/environment-configuration.md) for required
+values, local/disposable setup, deployment contexts, and safe error handling.
 
 ## Validation and CI
 
@@ -41,8 +45,9 @@ The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
 
 GitHub Actions runs these checks on pull requests, pushes to `main`, and manual
-runs. CI uses `npm ci` with `package-lock.json` and requires no application
-credentials. After pushing the workflow, verify its first run in GitHub Actions.
+runs. CI uses `npm ci` with `package-lock.json` and dummy public configuration;
+its app checks require no real application credentials or hosted database access.
+After pushing the workflow, verify its first run in GitHub Actions.
 
 ## Version control
 
