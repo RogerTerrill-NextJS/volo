@@ -96,7 +96,7 @@ try {
   const changed=await seed("different-verified-subject",{verifiedId:admin.entry.id});
   assert.equal((await request(changed.jar)).status,403);assert.equal(membershipCalls().at(-1).filter,`eq.${admin.entry.id}`);
   console.log("PASS: fresh membership/role changes, repeated render checks, concurrent isolation and verified subject filtering");
-  for(const options of [{rowId:admin.entry.id},{role:"owner"},{status:"unknown"},{membership:"duplicate"},{membership:"invalid"},{membership:"null"},{verifiedId:"not-a-uuid"},{auth:"invalid"}]){
+  for(const options of [{membership:"null-row"},{rowId:admin.entry.id},{role:"owner"},{status:"unknown"},{membership:"duplicate"},{membership:"invalid"},{membership:"null"},{verifiedId:"not-a-uuid"},{auth:"invalid"}]){
     const account=await seed("invalid"+backend.cases.size,options);assert.equal((await request(account.jar)).status,503,JSON.stringify(options));
   }
   for(const service of ["auth","membership"]){

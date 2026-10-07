@@ -24,7 +24,10 @@ export function createMembershipTransport() {
         const response = await fetch(input, {...init, signal, cache:"no-store", redirect:"error"});
         if(!response.ok) {await response.body?.cancel();return terminal();}
         const body = await response.text();
-        if(!Array.isArray(JSON.parse(body))) return terminal();
+        const rows: unknown = JSON.parse(body);
+        // maybeSingle collapses [null] and [] to the same value; reject protocol
+        // failures before the SDK can turn them into a missing membership.
+        if(!Array.isArray(rows) || rows.some(row=>row===null)) return terminal();
         if(unavailable || closed) return terminal();
         return new Response(body, {status:response.status,headers:response.headers});
       } catch {return terminal();}

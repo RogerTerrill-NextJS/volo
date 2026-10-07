@@ -15,6 +15,7 @@ test("membership transport bounds bodies, sanitizes failures and cancels later w
     if(req.url==="/hang") return;
     if(req.url==="/body") {res.writeHead(200);res.write("[");return;}
     if(req.url==="/slow") {setTimeout(()=>res.end(JSON.stringify(rows)),100);return;}
+    if(req.url==="/null-row") {res.end("[null]");return;}
     const status = Number(req.url?.slice(1));
     if(status>=400) {res.writeHead(status).end(JSON.stringify({message:"private-membership-canary"}));return;}
     res.end(req.url==="/invalid" ? "private-membership-canary" : JSON.stringify(req.url==="/empty"?[]:rows));
@@ -31,7 +32,7 @@ test("membership transport bounds bodies, sanitizes failures and cancels later w
     assert.deepEqual(await first.json(),rows);assert.deepEqual(await second.json(),[]);
     assert.equal(lazy.isUnavailable(),false);assert.equal(independent.isUnavailable(),false);
     lazy.close();independent.close();
-    for(const route of ["/401","/403","/429","/500","/socket","/invalid","/hang","/body"]) {
+    for(const route of ["/null-row","/401","/403","/429","/500","/socket","/invalid","/hang","/body"]) {
       const transport=createMembershipTransport();const started=Date.now();
       try {
         const response=await transport.fetch(origin+route);

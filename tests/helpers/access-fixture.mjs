@@ -59,6 +59,7 @@ export async function startAccessFixture() {
       if(entry.membership==="duplicate")data=[row,row];
       if(entry.membership==="invalid")data={unexpected:true};
       if(entry.membership==="null")data=null;
+      if(entry.membership==="null-row")data=[null];
       res.end(JSON.stringify(data));return;
     }
     unexpected.push({method:req.method,path:url.pathname});res.writeHead(418).end("{}");
