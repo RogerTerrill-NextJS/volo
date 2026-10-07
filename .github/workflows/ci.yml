@@ -64,7 +64,6 @@ jobs:
       - name: Test policies without seed dependencies
         run: npm run db:test
       - name: Check committed database types
-        if: hashFiles('lib/supabase/database.types.ts') != ''
         run: npm run db:types:check
       - name: Generate database types
         run: npm run db:types
