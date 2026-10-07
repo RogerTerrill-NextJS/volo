@@ -1,6 +1,8 @@
 import "server-only";
 
 export const AUTH_VERIFICATION_TIMEOUT_MS = 5000;
+export const AUTH_CREDENTIAL_CODES = new Set(["bad_jwt", "session_not_found", "refresh_token_not_found",
+  "refresh_token_already_used", "user_not_found", "user_banned"]);
 
 /** Local terminal response prevents SDK retries; the caller owns the 503 policy. */
 export function createProxyAuthTransport() {
@@ -31,6 +33,11 @@ export function createProxyAuthTransport() {
         }
         const body = await response.text();
         const data = JSON.parse(body);
+        if (!response.ok) {
+          const upstreamCode = data?.code ?? data?.error_code;
+          const code = AUTH_CREDENTIAL_CODES.has(upstreamCode) ? upstreamCode : "volo_auth_rejection_unknown";
+          return Response.json({code, error_code:code, message:"Authentication rejected."}, {status:response.status, headers:response.headers});
+        }
         if (response.ok) {
           const user = data?.user ?? data;
           if (typeof user?.id !== "string" || !user.id) return terminal();
