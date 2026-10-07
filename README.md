@@ -27,7 +27,16 @@ npm test
 ```
 
 The smoke tests start a local production server and check the homepage link,
-direct dashboard access, and health response. Build before running tests.
+direct dashboard access, repeat document requests, health HTTP methods, and
+missing nested routes. Build before running local tests. To run the same checks
+against a Netlify Deploy Preview without starting a local server:
+
+```sh
+SMOKE_BASE_URL=https://deploy-preview-<PR-number>--voloapp.netlify.app npm test
+```
+
+These HTTP checks verify server-delivered HTML and Route Handler behavior;
+also check link navigation and browser refresh in the preview browser.
 The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
 

@@ -82,5 +82,6 @@ the documentation commit recording this result follows the tested revision.
 4. Record the preview URL and result in the ticket before releasing through the
    [release workflow](release-workflow.md).
 
-VOLO-109 covers broader routing checks; VOLO-110 covers sessions, callbacks, and
-private caching. These initial checks do not establish those acceptance criteria.
+See [Deploy Preview routing verification](preview-verification.md) for VOLO-109's
+HTTP suite, browser checklist, and recorded results. VOLO-110 covers sessions,
+callbacks, and private caching.
