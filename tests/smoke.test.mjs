@@ -11,6 +11,15 @@ let serverOutput = "";
 let serverError;
 
 before(async () => {
+  if (process.env.SMOKE_BASE_URL) {
+    const target = new URL(process.env.SMOKE_BASE_URL);
+    assert.ok(["http:", "https:"].includes(target.protocol), "Smoke target must use HTTP or HTTPS");
+    assert.equal(target.username + target.password, "", "Do not put credentials in the smoke URL");
+    assert.equal(target.pathname, "/", "Smoke target must be an origin without a path");
+    assert.equal(target.search + target.hash, "", "Smoke target must not contain query parameters or a fragment");
+    baseUrl = target.origin;
+    return;
+  }
   const portReservation = createServer();
   portReservation.listen(0, "127.0.0.1");
   await once(portReservation, "listening");
@@ -61,9 +70,23 @@ test("homepage provides navigation to the dashboard", async () => {
 test("dashboard supports a direct request and navigation home", async () => {
   const response = await fetch(`${baseUrl}/dashboard`, { signal: AbortSignal.timeout(5000) });
   assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type"), /text\/html/);
   const html = await response.text();
   assert.match(html, /<h1[^>]*>Volo dashboard<\/h1>/);
   assert.match(html, /href="\/"/);
+});
+
+test("dashboard query URL supports repeated document requests", async () => {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await fetch(`${baseUrl}/dashboard?verification=volo-109`, {
+      headers: { Accept: "text/html" },
+      signal: AbortSignal.timeout(5000),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(new URL(response.url).pathname, "/dashboard");
+    assert.equal(new URL(response.url).search, "?verification=volo-109");
+    assert.match(await response.text(), /<h1[^>]*>Volo dashboard<\/h1>/);
+  }
 });
 
 test("health endpoint returns a successful JSON response", async () => {
@@ -71,4 +94,40 @@ test("health endpoint returns a successful JSON response", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /application\/json/);
   assert.deepEqual(await response.json(), { status: "ok" });
+});
+
+test("health Route Handler supports HEAD and advertises supported methods", async () => {
+  const head = await fetch(`${baseUrl}/api/health`, {
+    method: "HEAD",
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(head.status, 200);
+  assert.match(head.headers.get("content-type"), /application\/json/);
+  assert.equal(await head.text(), "");
+
+  const options = await fetch(`${baseUrl}/api/health`, {
+    method: "OPTIONS",
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(options.status, 204);
+  const allowed = options.headers.get("allow")?.split(",").map((method) => method.trim());
+  for (const method of ["GET", "HEAD", "OPTIONS"]) {
+    assert.ok(allowed?.includes(method), `Allow header must include ${method}`);
+  }
+});
+
+test("health Route Handler rejects unsupported POST requests", async () => {
+  const response = await fetch(`${baseUrl}/api/health`, {
+    method: "POST",
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(response.status, 405);
+});
+
+test("unknown nested page and API paths return 404 instead of the homepage", async () => {
+  for (const path of ["/dashboard/volo-109-missing", "/api/volo-109-missing"]) {
+    const response = await fetch(`${baseUrl}${path}`, { signal: AbortSignal.timeout(5000) });
+    assert.equal(response.status, 404, path);
+    assert.doesNotMatch(await response.text(), /href="\/dashboard"/);
+  }
 });
