@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "node --test tests/*.test.mjs tests/*.test.mts",
+    "test:cache:unit": "node --conditions=react-server --test tests/private-response.unit.mts",
     "test:boundaries": "node scripts/verify-supabase-boundaries.mjs",
     "test:clients": "node scripts/verify-supabase-clients.mjs",
     "test:proxy:unit": "node --conditions=react-server --test tests/supabase-proxy.unit.mts",
