@@ -41,6 +41,8 @@ jobs:
         run: npm run build
       - name: Production smoke tests
         run: npm test
+      - name: Supabase browser and server boundaries
+        run: npm run test:boundaries
 
   database:
     name: Rebuild database and test access policies

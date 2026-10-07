@@ -28,6 +28,7 @@ npm run typecheck
 npm run lint
 npm run build
 npm test
+npm run test:boundaries
 ```
 
 The smoke tests start a local production server and check the homepage link,
@@ -41,6 +42,9 @@ SMOKE_BASE_URL=https://deploy-preview-<PR-number>--voloapp.netlify.app npm test
 
 These HTTP checks verify server-delivered HTML and Route Handler behavior;
 also check link navigation and browser refresh in the preview browser.
+The boundary check builds a disposable fixture with synthetic secrets, verifies
+that client imports of privileged configuration fail, and scans browser assets
+and responses for leaks. It never connects to Supabase.
 The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
 

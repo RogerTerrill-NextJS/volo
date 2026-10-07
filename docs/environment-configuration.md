@@ -14,9 +14,51 @@ Production auto-publishing stays locked. There is no staging environment.
 | `SUPABASE_ACCESS_TOKEN` | Supabase CLI management access | Only CLI operations that require it | Secret; local shell or protected CI only |
 | `SUPABASE_DB_PASSWORD` | Hosted database credential for CLI operations | Only CLI operations that require it | Secret; local shell or protected CI only |
 
-The app needs no privileged Supabase key. Do not add CLI credentials or secret /
-service-role keys to Netlify or any `NEXT_PUBLIC_` variable. Client boundaries
-and privileged-client handling are tracked separately in VOLO-105.
+The current app needs no privileged Supabase key. Do not provision one in
+Netlify for this ticket. CLI credentials stay in operator shells or protected
+CI, and privileged credentials must never use a `NEXT_PUBLIC_` name.
+
+## Browser and server boundaries
+
+`lib/supabase/public-config.mjs` exports `getSupabasePublicConfig()`, which returns
+only `{ url, publishableKey }`. Use this for browser clients and ordinary
+user-scoped server clients. Literal `process.env.NEXT_PUBLIC_...` reads preserve
+Next.js build-time inlining. The helper validates the values before returning
+them; it never spreads `process.env` or returns operator credentials.
+Startup rejects additional `NEXT_PUBLIC_SUPABASE_*` variables so a secret key,
+service-role key, management token, or database password cannot be exposed
+through an extra Supabase public variable by mistake.
+
+`lib/supabase/privileged-config.mjs` exports `getSupabasePrivilegedConfig()` and
+imports `server-only`. Next.js rejects direct or transitive imports of that
+module into Client Components. It returns `{ url, secretKey }` only when an
+explicit server operation calls it with a valid-format `SUPABASE_SECRET_KEY`.
+Missing/invalid values produce an error naming the variable without its value.
+The getter is lazy, so normal builds and pages do not require this optional key.
+
+No Supabase SDK clients are introduced here. When adding user authentication,
+use request-scoped browser/server clients with the publishable configuration and
+the user's session (VOLO-24). Never use privileged configuration for ordinary
+signed-in user queries: privileged keys bypass RLS. Any future privileged-client
+factory must itself import `server-only`, must disable browser session behavior,
+and must enforce the operation's authorization before use. See
+[Supabase key types](https://supabase.com/docs/guides/getting-started/api-keys).
+
+`SUPABASE_SECRET_KEY` is optional server-runtime configuration for a future
+explicitly authorized administrative job, not a new deployment requirement.
+Never pass its getter result to Client Components, return it from an API or
+Server Action, render it, or log it. `server-only` prevents client imports; it
+does not stop server code from deliberately serializing a secret into a response.
+
+Run `npm run test:boundaries` to build a disposable Next.js fixture with the
+actual configuration modules. It first proves that a client import of privileged
+configuration fails compilation, then builds a valid browser/server split with
+synthetic secret, CLI-token, and database-password markers. It checks all emitted
+browser assets (including any source maps), HTML, RSC, API JSON, and response
+headers for those markers. A server-side check proves the privileged getter was
+actually exercised; emitted browser JavaScript must contain both public values.
+The fixture loads no checkout `.env` files, contacts no Supabase backend, and is
+removed afterward. CI runs this check separately from ordinary unit/smoke tests.
 
 ## Local setup
 
