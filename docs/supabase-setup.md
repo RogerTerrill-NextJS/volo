@@ -7,7 +7,7 @@
 | Local | `volo` (`supabase/config.toml`) | Requires Docker-compatible container runtime |
 | Production | `macrktxywcqauxqkbnqb` | Volo project; confirmed healthy October 6, 2026 |
 | Netlify Deploy Previews | Same hosted project as production | Separate frontend deployments; shared database |
-| Separate staging | Deferred | Not required for VOLO-17 |
+| Separate staging | Not used | Deploy Previews provide pre-release review |
 
 Production URL: https://macrktxywcqauxqkbnqb.supabase.co.
 Production application URL: https://voloapp.netlify.app/.
@@ -98,7 +98,7 @@ and verify the new PR's drift check passes. VOLO-102 verified this in
 ## Hosted project setup
 
 1. Confirm the project reference and organization above before changing hosted settings.
-   No separate staging project is required at present.
+   VOLO does not use a separate staging project.
 2. Retain the production Site URL and configure exact allowed callback URLs when
    the invitation/login flow exists. Keep public signup and anonymous sign-in disabled
    and email confirmation enabled. Hosted Auth settings

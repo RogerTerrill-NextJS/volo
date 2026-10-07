@@ -33,8 +33,8 @@ or a single-page-app catch-all rewrite.
 - Production: <https://voloapp.netlify.app/>, built from `main`.
 - Pre-release review: the Deploy Preview linked from each pull request.
   Preview URLs follow `https://deploy-preview-<PR-number>--voloapp.netlify.app/`.
-- Separate permanent staging and an isolated staging database remain deferred,
-  per the existing [release workflow](release-workflow.md). A PR preview currently
+- VOLO does not use a separate staging environment or staging database,
+  per the confirmed [release workflow](release-workflow.md). A PR preview currently
   shares the production Supabase project and is not an isolated staging environment.
 
 Production and Deploy Previews currently have `NEXT_PUBLIC_SUPABASE_URL` and
