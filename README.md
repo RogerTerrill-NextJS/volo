@@ -28,6 +28,7 @@ npm run typecheck
 npm run lint
 npm run build
 npm test
+npm run test:clients
 npm run test:boundaries
 ```
 
@@ -44,7 +45,10 @@ These HTTP checks verify server-delivered HTML and Route Handler behavior;
 also check link navigation and browser refresh in the preview browser.
 The boundary check builds a disposable fixture with synthetic secrets, verifies
 that client imports of privileged configuration fail, and scans browser assets
-and responses for leaks. It never connects to Supabase.
+and responses for leaks. It never connects to Supabase. The client check uses
+real SDK clients in a disposable Next.js app with fictional sessions and a
+loopback Auth stub to verify request isolation, cookie chunks and write failures.
+See [client usage](docs/environment-configuration.md#supabase-client-factories).
 The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
 

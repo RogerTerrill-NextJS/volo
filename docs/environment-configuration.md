@@ -176,7 +176,51 @@ They permit offline builds and public-page smoke tests without real credentials.
 Future authentication tests need their own local/disposable backend setup;
 these fixtures cannot validate database or login behavior.
 
-## Local verification
+## Supabase client factories
+
+Pinned SDK versions: `@supabase/supabase-js` 2.117.2 and `@supabase/ssr` 0.12.7.
+Both factories validate the public settings on every call and use generated
+`Database` types. Validation errors name variables without exposing values.
+
+Client Components import `createBrowserSupabaseClient` from
+`@/lib/supabase/client`. It delegates browser session storage to the SDK and can
+also be constructed during server rendering. Do not use it for server identity.
+
+Server Components import `createServerSupabaseClient` from
+`@/lib/supabase/server` and await it with `{ cookieMode: "read-only" }`.
+Every call creates a fresh client reading the current request's cookies. Never
+cache a server client or send it to a Client Component. Read-only clients cannot
+persist refreshed sessions; VOLO-114's Proxy will own session refresh.
+
+Writable Route Handlers must explicitly own both cookies and SDK response headers:
+
+```ts
+const responseHeaders = new Headers();
+const client = await createServerSupabaseClient({
+  cookieMode: "read-write",
+  setResponseHeaders: (headers) => {
+    for (const [name, value] of Object.entries(headers)) responseHeaders.set(name, value);
+  },
+});
+// Perform the intended auth operation and handle its error before returning.
+return Response.json({ ok: true }, { headers: responseHeaders });
+```
+
+The SDK supplies `Cache-Control`, `Expires` and `Pragma` protections alongside
+cookie writes. Preserve these headers and every cookie on replacement responses.
+Header failures and prohibited cookie writes propagate; no success should be
+reported after persistence fails. Only mutate before response streaming starts.
+Server Actions need a response-owning layer that applies these protections;
+they cannot set arbitrary HTTP headers through `next/headers`. Do not pass a
+no-op header sink. Future auth flows and response handling are separate tickets.
+
+These factories do not authenticate or authorize application access. VOLO-115
+will provide verified identity and current membership guards. Run
+`npm run test:clients` for loopback cookie integration checks and
+`npm run test:boundaries` for compiled client/server boundaries and leak checks.
+Neither command uses hosted Supabase or loads the checkout's credential files.
+
+### Previous environment verification
 
 On October 6, 2026, Next.js loaded an ignored `.env.local` with loopback URL and
 a synthetic publishable-format key. Missing configuration produced variable

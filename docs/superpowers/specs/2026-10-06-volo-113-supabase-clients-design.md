@@ -83,6 +83,13 @@ application-wide private caching remain in VOLO-114/118.
 
 ## Failure and security behavior
 
+Installed SDK contract: SSR 0.12.7 passes cache headers as the second `setAll`
+argument. Read-write options therefore additionally require
+`setResponseHeaders: (headers: Record<string, string>) => void | Promise<void>`.
+The adapter awaits this sink before applying cookies, preserves every supplied
+cookie option, and propagates errors. The caller attaches these protections to
+the actual response; Server Actions require a response-owning layer for headers.
+
 - Missing/invalid public settings fail through the existing sanitized validator.
 - No factory performs identity verification or grants application access.
   Consumers must use verified identity and current membership guards later.

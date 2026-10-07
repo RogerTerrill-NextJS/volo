@@ -41,6 +41,8 @@ jobs:
         run: npm run build
       - name: Production smoke tests
         run: npm test
+      - name: Supabase request-scoped clients and cookie persistence
+        run: npm run test:clients
       - name: Supabase browser and server boundaries
         run: npm run test:boundaries
 
