@@ -50,21 +50,27 @@ export async function startMutationFixture({actions=false}={}) {
         parse(raw){if(raw && typeof raw==='object' && 'mode' in raw && raw.mode==='parse-throw')throw new Error('mutation-error-canary');
           if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(k=>!['value','mode'].includes(k)))return {ok:false};
           const value=(raw as Input).value,mode=(raw as Input).mode;
-          return typeof value==='string'&&value.length>0&&value.length<=16000&&(mode===undefined||typeof mode==='string')?{ok:true,value:{value,mode}}:{ok:false};},
-        authorize(_member,input){if(input.mode==='authorize-throw')throw new Error('mutation-error-canary');return input.value!=='forbidden-resource';},
+          return typeof value==='string'&&value.length>0&&value.length<=40000&&(mode===undefined||typeof mode==='string')?{ok:true,value:{value,mode}}:{ok:false};},
+        authorize(_member,input){if(input.mode==='authorize-throw')throw new Error('mutation-error-canary');if(input.value==='truthy-resource')return 'yes' as unknown as boolean;return input.value!=='forbidden-resource';},
         async effect(member,input){if(input.mode==='effect-throw')throw new Error('mutation-error-canary');
           await fetch(${JSON.stringify(recordOrigin+"/effect")},{method:'POST',body:JSON.stringify({userId:member.userId,role:member.role,input}),cache:'no-store'});
           if(input.mode==='partial-throw')throw new Error('mutation-error-canary');return {saved:true};}
       };}`);
     await put("app/api/write/route.ts",`import {handleRouteMutation} from '../../../lib/auth/route-mutation';import {policy} from '../../../fixture-policy';
-      const handle=(request:Request)=>handleRouteMutation(request,{method:'POST',policy:policy(new URL(request.url).searchParams.has('admin'))});
+      const handle=(request:Request)=>{const query=new URL(request.url).searchParams;const selected=policy(query.has('admin'));
+        if(query.has('empty-policy'))selected.allowedRoles=[];if(query.has('invalid-role'))Reflect.set(selected,'allowedRoles',['owner']);
+        if(query.has('missing-permission'))Reflect.deleteProperty(selected,'authorize');
+        return handleRouteMutation(request,{method:'POST',policy:selected});};
       export {handle as POST,handle as GET,handle as HEAD,handle as OPTIONS,handle as PUT,handle as PATCH,handle as DELETE};`);
     await put("app/api/no-proxy-write/route.ts",await readFile(path.join(directory,"app/api/write/route.ts"),"utf8"));
     if(actions)await put("app/actions.ts",`'use server';import {handleActionMutation} from '../lib/auth/action-mutation';import {policy} from '../fixture-policy';
-      export async function mutate(form:FormData){return handleActionMutation(form,policy());}
-      export async function adminMutate(form:FormData){return handleActionMutation(form,policy(true));}
+      export async function mutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy());}
+      export async function adminMutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy(true));}
       export async function bareAction(){await fetch(${JSON.stringify(recordOrigin+"/bare")},{method:'POST',body:'{}'});return {bare:true};}`);
-    if(actions)await put("app/page.tsx",`import {mutate,adminMutate,bareAction} from './actions';export default function Page(){return <main><form action={mutate}><input name="value" defaultValue="valid"/><button>Write</button></form><form action={adminMutate}><button>Admin</button></form><form action={bareAction}><button>Bare</button></form></main>}`);
+    if(actions)await put("app/form.tsx",`'use client';import {useActionState} from 'react';
+      export default function FixtureForm({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){
+        const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
+    if(actions)await put("app/page.tsx",`import {mutate,adminMutate,bareAction} from './actions';import FixtureForm from './form';export default function Page(){return <main><FixtureForm action={mutate} label="Write"/><FixtureForm action={adminMutate} label="Admin"/><FixtureForm action={bareAction} label="Bare"/></main>}`);
     const build=await promisify(execFile)(process.execPath,[path.join(root,"node_modules/next/dist/bin/next"),"build",directory,"--webpack"],{cwd:directory,env,timeout:120000,maxBuffer:8*1024*1024});
     clean(build.stdout+build.stderr);
     const start=async(override={})=>{
