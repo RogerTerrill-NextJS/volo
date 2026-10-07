@@ -78,8 +78,8 @@ test("public login provides the agreed destination and navigation home", async (
 });
 
 test("anonymous dashboard requests redirect to login without workspace content", async () => {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await fetch(`${baseUrl}/dashboard?verification=volo-109`, {
+  for (const query of ["verification=volo-116", "reason=untrusted&next=https://example.invalid&token=query-secret-canary"]) {
+    const response = await fetch(`${baseUrl}/dashboard?${query}`, {
       headers: { Accept: "text/html" },
       redirect: "manual", signal: AbortSignal.timeout(5000),
     });
@@ -88,10 +88,10 @@ test("anonymous dashboard requests redirect to login without workspace content",
     assert.match(response.headers.get("cache-control") ?? "", /private/);
     assert.match(response.headers.get("cache-control") ?? "", /no-store/);
     if (response.status === 307) {
-      assert.equal(new URL(response.headers.get("location"), baseUrl).href, `${baseUrl}/login`);
+      assert.equal(new URL(response.headers.get("location"), baseUrl).href, `${baseUrl}/login?reason=authentication-required`);
     } else {
       assert.equal(response.status, 200);
-      assert.match(html, /url=\/login/);
+      assert.equal(html.match(/<meta[^>]*http-equiv="refresh"[^>]*content="[^"]*url=([^"]+)"/)?.[1], "/login?reason=authentication-required");
     }
   }
 });
@@ -108,11 +108,11 @@ test("anonymous dashboard RSC cannot expose workspace content", async () => {
       if (target.pathname === "/dashboard" && target.searchParams.has("_rsc")) {
         route = target.pathname + target.search; continue;
       }
-      assert.equal(target.href, `${baseUrl}/login`);
+      assert.equal(target.href, `${baseUrl}/login?reason=authentication-required`);
     } else {
       assert.equal(response.status, 200);
       assert.match(response.headers.get("content-type") ?? "", /text\/x-component/);
-      assert.match(body, /NEXT_REDIRECT;replace;\/login;/);
+      assert.match(body, /NEXT_REDIRECT;replace;\/login\?reason=authentication-required;/);
     }
     assert.match(response.headers.get("cache-control") ?? "", /no-store/);
     return;

@@ -1,5 +1,14 @@
 # VOLO-116: Protected app shell and dashboard
 
+## Preview verification amendment
+
+Netlify preview verification demonstrated that parameterless redirects inherit
+incoming query parameters. The fixed destination is therefore
+`/login?reason=authentication-required`, following the Netlify maintainers'
+[documented workaround](https://github.com/opennextjs/opennextjs-netlify/issues/2209#issuecomment-1632262468).
+No incoming parameter, including `reason`, is copied. This supersedes the empty
+redirect-query requirement below while preserving the agreed `/login` path.
+
 ## Intent and agreed scope
 
 Protect the existing dashboard so only a verified user with an active membership

@@ -271,7 +271,8 @@ Previously returned member objects are not reusable authorization grants.
 The access layer supplies no redirects or HTTP response/cache headers. Consumers
 must keep private output uncacheable and check at their data boundary.
 VOLO-116's server-only `lib/auth/page-access` adapter adds `getPageAccess()`:
-unauthenticated requests redirect to fixed `/login`; authorized results contain
+unauthenticated requests redirect to fixed `/login?reason=authentication-required`
+(the fixed query prevents Netlify from forwarding incoming parameters); authorized results contain
 only the existing minimal member; forbidden/unavailable results render generic
 page states. Every page independently checks before constructing protected
 content. The presentational `(protected)` layout forces dynamic rendering and

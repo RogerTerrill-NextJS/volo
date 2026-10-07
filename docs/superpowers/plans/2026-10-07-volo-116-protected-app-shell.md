@@ -1,5 +1,10 @@
 # Protected App Shell Implementation Plan
 
+Preview verification amendment: use fixed `/login?reason=authentication-required`
+to suppress Netlify's incoming query propagation. This supersedes parameterless
+redirect examples and the empty-query assertion below. Assert exact HTTP,
+streamed HTML and RSC destinations, including attempts to override `reason`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Protect dashboard content with fresh identity and active-membership checks, providing a public `/login` destination and safe failure states.

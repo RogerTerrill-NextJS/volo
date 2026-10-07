@@ -98,10 +98,11 @@ try {
     assert.doesNotMatch(body, privateContent);
     privateHeaders(response);
     if ([303, 307, 308].includes(response.status)) {
-      assert.equal(new URL(response.headers.get("location"), origin).href, origin + "/login");
+      assert.equal(new URL(response.headers.get("location"), origin).href, origin + "/login?reason=authentication-required");
     } else {
       assert.equal(response.status, 200);
-      assert.match(body, rsc ? /NEXT_REDIRECT;replace;\/login;/ : /url=\/login/);
+      if (rsc) assert.match(body, /NEXT_REDIRECT;replace;\/login\?reason=authentication-required;/);
+      else assert.equal(body.match(/<meta[^>]*http-equiv="refresh"[^>]*content="[^"]*url=([^"]+)"/)?.[1], "/login?reason=authentication-required");
     }
   };
   loginRedirect(await request("/dashboard"));
@@ -140,7 +141,7 @@ try {
   forged.set(pair[0], "base64-" + Buffer.from(JSON.stringify(session)).toString("base64url"));
   const revoked = await seed("revoked", {auth: "rejected"});
   for (const jar of [new Map(), malformed, forged, revoked.jar]) loginRedirect(await request("/dashboard", jar));
-  for (const query of ["next=https://example.invalid", "next=//example.invalid", "next=%2F%2Fexample.invalid", "token=query-secret-canary"]) {
+  for (const query of ["next=https://example.invalid", "next=//example.invalid", "next=%2F%2Fexample.invalid", "token=query-secret-canary", "reason=untrusted&next=https://example.invalid"]) {
     const result = await request("/dashboard?" + query); loginRedirect(result);
     assert.doesNotMatch(result.response.headers.get("location") ?? "", /query-secret-canary|example\.invalid/);
   }

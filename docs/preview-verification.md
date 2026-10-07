@@ -23,7 +23,7 @@ it does not access Supabase or write application data.
 | --- | --- |
 | `GET /` | 200, HTML with dashboard navigation |
 | `GET /login` | 200, sign-in placeholder and home link |
-| Anonymous `GET /dashboard` | Redirect to fixed `/login`; no Workspace overview; private/no-store |
+| Anonymous `GET /dashboard` | Redirect to fixed `/login?reason=authentication-required`, no incoming query forwarded; no Workspace overview; private/no-store |
 | Repeated anonymous `GET /dashboard?verification=volo-109` | Same safe login destination without forwarded query or workspace content |
 | Anonymous dashboard RSC | Canonical `_rsc` negotiation followed by login redirect; no workspace content; no-store |
 | `GET /api/health` | 200, JSON `{"status":"ok"}` |
