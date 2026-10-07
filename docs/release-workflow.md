@@ -1,6 +1,6 @@
 # Volo release workflow
 
-Feature branch → pull request → CI and Netlify Deploy Preview → squash merge into main → production.
+Feature branch → pull request → CI and Netlify Deploy Preview → squash merge into main → manual production release of a batch.
 
 ## Environments
 
@@ -40,7 +40,33 @@ Review the diff, stage only intended files, commit, and push the feature branch.
 1. Wait for `Typecheck, lint, build and test`, `Rebuild database and test access policies`, and the Netlify Deploy Preview check to succeed on the latest revision. The database job includes the committed type drift check.
 2. Open the preview link. Check the homepage, `/dashboard`, `/api/health`, and changed user flows. Use local/disposable data for mutation tests; review and bound any action that would write to the shared production backend. Local smoke tests do not replace checking the hosted preview.
 3. Resolve review conversations. If main has moved, update the feature branch and rerun checks.
-4. Squash merge. Netlify builds main and publishes production automatically. Verify the production deploy and changed flows.
+4. Squash merge. Netlify builds main, but automatic production publishing stays locked. Record the merge and preview results separately from production release evidence.
+
+## Publish a batch
+
+Automatic production publishing was locked on October 6, 2026, preserving
+production commit `d02e261` (deploy `6ac5a76cff4a4f000847161b`). PR Deploy Previews
+remain automatic. Group reviewed tickets into milestone releases instead of
+publishing after every merge. Publish only when the user requests a release.
+
+1. Check the selected `main` commit has passing CI and covers the intended batch.
+2. In [Netlify Deploys](https://app.netlify.com/projects/voloapp/deploys), open its
+   completed build. Check the commit and immutable deploy URL, then verify the
+   combined changed flows before publishing.
+3. Manually publish that deploy. Keep automatic publishing locked afterward;
+   if the publish flow requires unlocking, re-lock the newly published deploy
+   immediately and confirm **Auto Publishing Locked** in the Deploys list.
+4. Verify the production URL and changed flows. Record the published commit,
+   deploy ID, included tickets, and verification results.
+
+Netlify charges 15 credits per published production deploy. Under a deploy lock,
+unpublished builds do not incur that production charge. Deploy Preview deployments
+cost zero deployment credits, although traffic and server compute still consume
+credits. With 148 credits remaining at this policy change, aim for 2–3 production
+releases before the next billing reset, allowing room for traffic and compute.
+Check the current balance and reset date before choosing a release budget.
+See [Netlify credit rules](https://docs.netlify.com/manage/accounts-and-billing/billing/billing-for-credit-based-plans/credit-based-pricing-plans/)
+and [publishing controls](https://docs.netlify.com/deploy/manage-deploys/manage-deploys-overview/).
 
 Main protection requires a pull request, passing app CI and Netlify preview checks, an up-to-date branch, and resolved conversations. Protection also applies to administrators. Required approving reviews are disabled so a solo developer can merge their own pull requests. Force pushes and deletion of main are disabled.
 

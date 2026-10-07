@@ -13,3 +13,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Use `feature/` for every new feature branch.
 - Use Netlify Deploy Previews for pre-release review and `main` for production.
   VOLO does not use a separate staging environment.
+- Keep Netlify automatic production publishing locked. Merge reviewed tickets
+  into `main`, then publish a batch only when the user requests a release.
+  A merge is not proof that a change is live; record preview verification and
+  production release verification separately. Keep PR Deploy Previews automatic.
