@@ -2,7 +2,7 @@
 
 Date: 2026-10-07
 Issue: VOLO-118 — Prevent caching of private content and session-bearing responses
-Status: Proposed written specification; implementation awaits approval and plan.
+Status: Approved by the user; implementation awaits the written plan review.
 
 ## Intent and success criteria
 
