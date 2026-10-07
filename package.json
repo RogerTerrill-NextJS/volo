@@ -15,6 +15,7 @@
     "test:proxy": "npm run test:proxy:unit && node scripts/verify-supabase-proxy.mjs",
     "test:access:unit": "node --conditions=react-server --test tests/auth-transport.unit.mts",
     "test:access": "npm run test:access:unit && node scripts/verify-server-access.mjs",
+    "test:protected-app": "node scripts/verify-protected-app.mjs",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset --local",

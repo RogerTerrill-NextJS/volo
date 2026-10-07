@@ -42,6 +42,7 @@ export default function Home() {
         <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
           <Link
             href="/dashboard"
+            prefetch={false}
             className="flex h-12 w-full items-center justify-center rounded-full border border-zinc-300 px-5 transition-colors hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-4 dark:border-zinc-700 dark:hover:bg-zinc-900"
           >
             Open dashboard
