@@ -45,6 +45,8 @@ jobs:
         run: npm run test:clients
       - name: Supabase Proxy session refresh and failure handling
         run: npm run test:proxy
+      - name: Verified server identity and current membership
+        run: npm run test:access
       - name: Supabase browser and server boundaries
         run: npm run test:boundaries
 

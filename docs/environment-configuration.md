@@ -190,7 +190,7 @@ Server Components import `createServerSupabaseClient` from
 `@/lib/supabase/server` and await it with `{ cookieMode: "read-only" }`.
 Every call creates a fresh client reading the current request's cookies. Never
 cache a server client or send it to a Client Component. Read-only clients cannot
-persist refreshed sessions; VOLO-114's Proxy will own session refresh.
+persist refreshed sessions; VOLO-114's Proxy owns session refresh.
 
 Writable Route Handlers must explicitly own both cookies and SDK response headers:
 
@@ -214,11 +214,68 @@ Server Actions need a response-owning layer that applies these protections;
 they cannot set arbitrary HTTP headers through `next/headers`. Do not pass a
 no-op header sink. Future auth flows and response handling are separate tickets.
 
-These factories do not authenticate or authorize application access. VOLO-115
-will provide verified identity and current membership guards. Run
+Both cookie modes accept an optional caller-owned `fetch` override. It affects
+only that constructed client's network calls and preserves cookie ownership;
+it does not change global fetch or other clients. The access layer uses it for
+bounded service verification. Do not use it to bypass identity verification.
+
+These factories do not authenticate or authorize application access. Use the
+verified identity and current membership guards below. Run
 `npm run test:clients` for loopback cookie integration checks and
 `npm run test:boundaries` for compiled client/server boundaries and leak checks.
 Neither command uses hosted Supabase or loads the checkout's credential files.
+
+## Verified server authorization
+
+Import `getAccess`, `requireActiveMember`, `requireRole` and `AccessError` from
+`@/lib/auth/access` in server code. Every call creates a fresh read-only client,
+verifies identity through `getUser()` and reads the verified subject's current
+`memberships` row through that same client and RLS. The query selects only
+`user_id,role,status`. No account metadata, cookie-embedded identity, identity
+header or service-role client establishes admission. Membership is never created
+automatically. These modules cannot be imported into Client Components.
+
+`getAccess()` returns `{ status: "authorized", member: { userId, role } }` or a
+minimal `{ status: "unauthenticated" | "forbidden" | "unavailable" }` result.
+`requireActiveMember()` returns only `{ userId, role }` for active memberships.
+`requireRole(["admin"])` independently repeats verification and permits only the
+explicitly allowed current role. Both member and admin satisfy active membership;
+an admin does not automatically bypass a member-only role requirement. Empty or
+invalid role requirements deny access. No token, SDK client, email, full user,
+metadata or disabled reason is returned.
+
+Guards throw `AccessError` with `code` equal to the failure status and a fixed
+generic message. Page consumers choose a safe redirect/denied state. API consumers
+map unauthenticated to 401, forbidden to 403 and unavailable to 503; they must not
+redirect API callers to login HTML or expose raw exceptions. Missing/invalid
+identity is unauthenticated; absent/disabled membership or a denied role is
+forbidden. Unknown Auth failures, query failures, timeouts and malformed results
+are unavailable. Unexpected configuration/programming errors remain exceptions.
+
+Auth and membership phases each have a five-second deadline covering response
+bodies; membership's budget starts on its first fetch. Calls explicitly disable
+request caching and PostgREST retries. Unknown failures use sanitized local SDK
+responses and separate failure flags; these responses are never browser output.
+The layer writes no cookies. A successful refresh attempted without Proxy cannot
+be persisted by this read-only check and returns unavailable; run refresh through
+the established response-owning flow first. Never use the access guard as login
+or session establishment.
+
+No authorization result or client is cached. Repeated calls, even in one render,
+read current membership so disabling a user or changing a role is respected with
+an unchanged JWT. Call guards immediately before protected reads/mutations and
+retain RLS and operation-specific database policies. A check is a decision at
+lookup time, not an atomic lock against a subsequent administrator change.
+Previously returned member objects are not reusable authorization grants.
+
+The layer supplies no redirects or HTTP response/cache headers. Consumers must
+keep private output uncacheable and check at their data boundary. VOLO-116 adds
+shell/dashboard protection; VOLO-117 adds mutation/input/cross-origin defenses;
+VOLO-118 completes private-cache integration. The dashboard is currently public.
+`npm run test:access` verifies real SDK/Next behavior with fictional local services,
+including safe API status mappings, current membership changes and failure/leak
+checks. SQL policy tests separately establish actual RLS behavior. No hosted Auth
+or membership writes are required; production publishing remains locked.
 
 ## Proxy session refresh
 

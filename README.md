@@ -30,6 +30,7 @@ npm run build
 npm test
 npm run test:clients
 npm run test:proxy
+npm run test:access
 npm run test:boundaries
 ```
 
@@ -52,7 +53,10 @@ loopback Auth stub to verify request isolation, cookie chunks and write failures
 See [client usage](docs/environment-configuration.md#supabase-client-factories).
 The Proxy check verifies session refresh, cookie forwarding, scoped cleanup,
 cache protections and bounded Auth failures using fictional loopback sessions.
-The dashboard remains public until the identity/membership and shell-guard work.
+The access check verifies identity, current membership and explicit role guards,
+including revocation, concurrent requests and bounded service failures. It uses
+fictional loopback Auth/PostgREST with the real SDK and Next request contexts;
+database CI independently verifies RLS. The dashboard remains public until VOLO-116.
 The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
 
