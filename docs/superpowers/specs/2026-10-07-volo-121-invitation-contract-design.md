@@ -1,6 +1,7 @@
 # Invitation-only account activation contract
 
-VOLO-121, under VOLO-21. Status: draft for written-spec review.
+VOLO-121, under VOLO-21. Status: written spec approved by Roger, including
+non-expiring application invitations and future member invitation support.
 
 ## Intent and scope
 
