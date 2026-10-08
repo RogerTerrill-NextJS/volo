@@ -1,6 +1,6 @@
 # Durable admin-only invitation issuance
 
-VOLO-148, step 1 of VOLO-29. Status: written spec awaiting review.
+VOLO-148, step 1 of VOLO-29. Status: written spec approved by Roger.
 
 ## Purpose and boundaries
 
