@@ -134,7 +134,7 @@ try{
           check(response.headers.getSetCookie().length>0&&session.cookieHeader()!==before,'Proxy persisted rotated cookies');
           const next=await read('/api/subject',{session,expectedUserId:id});check(next.status===200&&(await next.json()).userId===id,'next request identity from returned cookies');
         }));
-        const bad=await read('/api/subject',{session:invalid});privatePolicy(bad);check(bad.status===401,'expired invalid refresh denied');await deny('json',invalid);check(Date.now()-started<=240000,'expiry scenario deadline');
+        const bad=await read('/api/subject',{session:invalid});privatePolicy(bad);if(bad.status!==401){const observed=await invalid.probeRetainedCredentials();check(false,`expired invalid refresh denied (HTTP ${bad.status}; real refresh ${observed.refreshStatus??0}/${observed.refreshCode??observed.refresh})`);}await deny('json',invalid);check(Date.now()-started<=240000,'expiry scenario deadline');
         return {accessLifetimeSeconds:120,waitBoundSeconds:180,scenarioBoundSeconds:240};
       });
       await scenario('credential_leaks',async()=>{await app.scanStatic(assertClean);assertClean(app.diagnostics());});

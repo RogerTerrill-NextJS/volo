@@ -50,7 +50,8 @@ function wrap(stack,jar,canaries=new Set()) {
     async probeRetainedCredentials(){
       const data=payload(jar);const fresh=()=>createClient(stack.apiUrl,stack.publicKey,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:localFetch(stack)}});
       const claims=await fresh().auth.getClaims(data.access_token),user=await fresh().auth.getUser(data.access_token),refresh=await fresh().auth.refreshSession({refresh_token:data.refresh_token});
-      return {claims:claims.error?'rejected':'accepted',user:user.error?'rejected':'accepted',refresh:refresh.error?'rejected':'accepted'};
+      const code=refresh.error?.code;
+      return {claims:claims.error?'rejected':'accepted',user:user.error?'rejected':'accepted',refresh:refresh.error?'rejected':'accepted',...(refresh.error?{refreshStatus:refresh.error.status??0,refreshCode:typeof code==='string'&&/^[a-z_]{1,64}$/.test(code)?code:'unknown'}:{})};
     },
     async membership(method,targetId,body){
       if(!/^[a-f0-9-]{36}$/i.test(targetId))throw new Error('Invalid RLS target');
