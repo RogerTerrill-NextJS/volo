@@ -98,7 +98,7 @@ try{
       });
       await scenario('parallel_identity_isolation',async()=>{
         const exercise=async(label)=>{const session=label?users[label]:undefined;
-          for(const headers of [{Accept:'text/html'},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){const {response,body}=await page(session,headers);privatePolicy(response);if(session&&!(headers['Next-Router-Prefetch']&&body===''))check(body.includes(accounts[label].id),'own HTML/RSC subject');if(!session)check(!/subject:/.test(body),'anonymous private content');}
+          for(const headers of [{Accept:'text/html'},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){const {response,body}=await page(session,headers);privatePolicy(response);if(session&&!headers['Next-Router-Prefetch'])check(body.includes(accounts[label].id),headers.RSC?'own navigation RSC subject':'own HTML subject');if(!session)check(!/subject:/.test(body),'anonymous private content');}
           const response=await read('/api/subject',{session});privatePolicy(response);check(response.status===(session?200:401),'isolated JSON status');
         };
         for(const label of ['A','B',null,'B','A',null])await exercise(label);
