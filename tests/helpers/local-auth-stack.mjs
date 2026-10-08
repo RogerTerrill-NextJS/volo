@@ -129,7 +129,8 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
       async createAccount({label,role,status='active'}) {
         if(!/^[A-Za-z0-9-]+$/.test(label)||![null,'member','admin'].includes(role)||!['active','disabled'].includes(status))throw new Error('Invalid account fixture');
         const email=`${label.toLowerCase()}-${randomUUID()}@example.invalid`,password=randomBytes(32).toString('base64url');secrets.push(password);
-        const user=await api('/auth/v1/admin/users',{method:'POST',body:{email,password,email_confirm:true}});
+        const response=await api('/auth/v1/admin/users',{method:'POST',body:{email,password,email_confirm:true}});
+        const user=response?.user??response;
         if(!uuidPattern.test(user?.id))throw new Error('Local Auth user identity invalid');
         const account={id:user.id,email,password};accounts.push(account);owned.add(account.id);
         if(role!==null)await api('/rest/v1/memberships',{method:'POST',body:{user_id:account.id,...membership(role,status)}});

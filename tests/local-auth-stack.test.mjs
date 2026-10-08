@@ -22,7 +22,7 @@ test('does_not_inherit_hosted_settings',async()=>{
   for(const key of ['SUPABASE_ACCESS_TOKEN','NEXT_PUBLIC_SUPABASE_URL','SMTP_PASSWORD'])assert.equal(result[key],undefined);
 });
 
-async function harness({failAt,redirect=false,onStart}={}) {
+async function harness({failAt,redirect=false,onStart,wrappedUser=false}={}) {
   const {createLocalAuthStack}=await load();
   const directory=await mkdtemp(path.join(tmpdir(),'volo-auth-test-'));
   const calls=[],requests=[];let nextPort=40000;
@@ -40,7 +40,7 @@ async function harness({failAt,redirect=false,onStart}={}) {
     fetch:async(url,options)=>{
       requests.push({url:String(url),options});
       if(redirect)return new Response(null,{status:302,headers:{location:'https://remote.invalid'}});
-      if(String(url).endsWith('/auth/v1/admin/users')&&options.method==='POST')return Response.json({id:'00000000-0000-4000-8000-000000000001'});
+      if(String(url).endsWith('/auth/v1/admin/users')&&options.method==='POST')return Response.json(wrappedUser?{user:{id:'00000000-0000-4000-8000-000000000001'}}:{id:'00000000-0000-4000-8000-000000000001'});
       return Response.json([]);
     },
   };
@@ -102,4 +102,9 @@ test('interrupted_start_settles_before_owned_cleanup',async()=>{
     cancellation.abort();await Promise.resolve();settled=true;throw new Error('aborted');
   }});
   try{await assert.rejects(h.start({signal:cancellation.signal}));assert.equal(settled,true);assert.deepEqual(h.calls.map(x=>x.args[1]),['start','stop']);assert.equal(h.calls.at(-1).options.signal,undefined);}finally{await h.dispose();}
+});
+
+test('accepts_wrapped_auth_admin_user_response',async()=>{
+  const h=await harness({wrappedUser:true});let stack;
+  try{stack=await h.start();const account=await stack.createAccount({label:'A',role:'member'});assert.equal(account.id,'00000000-0000-4000-8000-000000000001');}finally{await stack?.close();await h.dispose();}
 });
