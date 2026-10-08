@@ -51,10 +51,7 @@ async function prepareConfig(root,workdir,projectId,jwtExpirySeconds,allocate) {
   let config=await readFile(path.join(root,'supabase/config.toml'),'utf8');
   config=replaceSetting(config,'','project_id',JSON.stringify(projectId));
   config=replaceSetting(config,'auth','jwt_expiry',String(jwtExpirySeconds));
-  // CLI maps email.enable_signup to GOTRUE_EXTERNAL_EMAIL_ENABLED.
-  // Permit password sign-in for Admin-created users; global signup stays disabled.
-  config=replaceSetting(config,'auth','enable_signup','false');
-  config=replaceSetting(config,'auth.email','enable_signup','true');
+  // Inherit admission/provider policy unchanged so runtime checks catch drift.
   config=replaceSetting(config,'db.seed','enabled','false');
   config=replaceSetting(config,'db.seed','sql_paths','[]');
   config=replaceSetting(config,'auth','site_url','"http://127.0.0.1"');
@@ -130,6 +127,36 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
     return {
       projectId,workdir,apiUrl,publicKey,close,
       assertNoCredentialLeaks(text){if(secrets.some(secret=>text.includes(secret)))throw new Error('Integration credential leak detected');},
+      async probePublicAdmission() {
+        validateLocalApiUrl(apiUrl,Number(new URL(apiUrl).port));
+        const password=randomBytes(32).toString('base64url');secrets.push(password);
+        async function publicRequest(route,body) {
+          const response=await request(apiUrl+route,{method:body===undefined?'GET':'POST',
+            headers:{apikey:publicKey,'content-type':'application/json'},
+            body:body===undefined?undefined:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(10000)});
+          const data=await response.json();
+          for(const key of ['access_token','refresh_token'])if(typeof data[key]==='string')secrets.push(data[key]);
+          // Preserve cleanup even if a regression unexpectedly admits a public user.
+          const user=data.user??data;
+          if(uuidPattern.test(user?.id)&&!owned.has(user.id)){owned.add(user.id);accounts.push({id:user.id});}
+          return {response,data};
+        }
+        const {response:settingsResponse,data:settings}=await publicRequest('/auth/v1/settings');
+        if(!settingsResponse.ok || !settings.external || typeof settings.external!=='object')throw new Error('Local Auth settings unavailable');
+        const providers=Object.fromEntries(Object.entries(settings.external).map(([name,value])=>{
+          if(!/^[a-z_]+$/.test(name)||typeof value!=='boolean')throw new Error('Invalid local provider settings');
+          return [name,value];
+        }));
+        const outcome=({response,data})=>({status:response.status,
+          code:typeof (data.error_code??data.code)==='string'&&/^[a-z_]{1,64}$/.test(data.error_code??data.code)?(data.error_code??data.code):'unknown',
+          hasIdentity:uuidPattern.test((data.user??data)?.id),hasSession:Boolean(data.access_token||data.refresh_token||data.session)});
+        const email=outcome(await publicRequest('/auth/v1/signup',{
+          email:`uninvited-${randomUUID()}@example.invalid`,password,data:{role:'admin',status:'active'},
+        }));
+        const anonymous=outcome(await publicRequest('/auth/v1/signup',{}));
+        const oauth=outcome(await publicRequest('/auth/v1/authorize?provider=apple'));
+        return {settings:{signupDisabled:settings.disable_signup,providers},email,anonymous,oauth};
+      },
       async createAccount({label,role,status='active'}) {
         if(!/^[A-Za-z0-9-]+$/.test(label)||![null,'member','admin'].includes(role)||!['active','disabled'].includes(status))throw new Error('Invalid account fixture');
         const email=`${label.toLowerCase()}-${randomUUID()}@example.invalid`,password=randomBytes(32).toString('base64url');secrets.push(password);

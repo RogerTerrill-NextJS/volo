@@ -22,7 +22,7 @@ test('does_not_inherit_hosted_settings',async()=>{
   for(const key of ['SUPABASE_ACCESS_TOKEN','NEXT_PUBLIC_SUPABASE_URL','SMTP_PASSWORD'])assert.equal(result[key],undefined);
 });
 
-async function harness({failAt,redirect=false,onStart,wrappedUser=false}={}) {
+async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicResponse}={}) {
   const {createLocalAuthStack}=await load();
   const directory=await mkdtemp(path.join(tmpdir(),'volo-auth-test-'));
   const calls=[],requests=[];let nextPort=40000;
@@ -39,6 +39,7 @@ async function harness({failAt,redirect=false,onStart,wrappedUser=false}={}) {
     checkDocker:async()=>{},
     fetch:async(url,options)=>{
       requests.push({url:String(url),options});
+      if(publicResponse && !String(url).includes('/admin/') && String(url).includes('/auth/'))return publicResponse(url,options);
       if(redirect)return new Response(null,{status:302,headers:{location:'https://remote.invalid'}});
       if(String(url).endsWith('/auth/v1/admin/users')&&options.method==='POST')return Response.json(wrappedUser?{user:{id:'00000000-0000-4000-8000-000000000001'}}:{id:'00000000-0000-4000-8000-000000000001'});
       return Response.json([]);
@@ -58,6 +59,30 @@ test('cleanup_after_partial_start',async()=>{
       assert.notEqual(args[args.indexOf('--workdir')+1],root);
     } finally {await h.dispose();}
   }
+});
+
+test('public_admission_probe_uses_only_owned_public_api_and_sanitizes_results',async()=>{
+  const h=await harness({publicResponse:async url=>String(url).endsWith('/settings')
+    ?Response.json({disable_signup:true,external:{email:true,phone:false,anonymous_users:false,apple:false}})
+    :Response.json({code:'signup_disabled',message:'private-provider-detail'}, {status:422})});
+  let stack;
+  try {
+    stack=await h.start();const result=await stack.probePublicAdmission();
+    assert.deepEqual(result.settings,{signupDisabled:true,providers:{email:true,phone:false,anonymous_users:false,apple:false}});
+    assert.equal(result.email.status,422);assert.equal(result.email.code,'signup_disabled');
+    assert.equal(result.email.hasIdentity,false);assert.equal(result.email.hasSession,false);
+    assert.equal(result.anonymous.hasIdentity,false);assert.equal(result.oauth.status,422);
+    assert.ok(!JSON.stringify(result).includes('private-provider-detail'));
+    for(const request of h.requests){
+      assert.equal(new URL(request.url).origin,stack.apiUrl);
+      assert.equal(request.options.headers.apikey,'sb_publishable_local_fixture');
+      assert.equal(request.options.redirect,'error');
+      assert.equal(request.options.headers.Authorization,undefined);
+    }
+    const signup=h.requests.find(x=>JSON.parse(x.options.body??'{}').email);
+    assert.ok(signup);assert.match(JSON.parse(signup.options.body).email,/@example\.invalid$/);
+    assert.equal(JSON.parse(signup.options.body).data.role,'admin');
+  } finally {await stack?.close();await h.dispose();}
 });
 
 test('membership_deleted_before_user_and_cleanup_is_idempotent',async()=>{
