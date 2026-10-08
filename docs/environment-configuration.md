@@ -493,5 +493,7 @@ and [Supabase API key types](https://supabase.com/docs/guides/getting-started/ap
 
 See the [VOLO-118 cache contract](private-caching.md) for the five browser/CDN
 headers, protected path registration, SDK header-sink ownership and request-scoped
-authorization. Public/static caching is preserved. Fixtures use fictional local
-services only; hosted preview verification remains anonymous.
+authorization. Public/static caching is preserved. The deterministic suites use
+fictional local services; hosted preview verification remains anonymous. The
+separate [real Auth integration suite](session-integration.md) uses an owned
+disposable Supabase stack and does not read hosted environment files.

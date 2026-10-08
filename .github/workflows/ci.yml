@@ -56,6 +56,35 @@ jobs:
       - name: Supabase browser and server boundaries
         run: npm run test:boundaries
 
+  auth-integration:
+    name: Real Auth and session integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Verify disposable real Auth integration
+        timeout-minutes: 20
+        run: npm run test:auth:integration
+      - name: Stop only the owned integration stack
+        if: always()
+        run: node scripts/verify-auth-integration.mjs --cleanup
+      - name: Upload sanitized Auth integration summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: auth-integration-summary
+          path: .superpowers/sdd/2026-10-07-volo-119-auth-integration/summary.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
   database:
     name: Rebuild database and test access policies
     runs-on: ubuntu-latest

@@ -39,7 +39,12 @@ product endpoint, callback, auth form or experimental staleTimes change ships he
 
 ## Verification and limits
 
-Run `npm run test:cache` and `npm test`. Disposable production-built fixtures use
+See [session integration and auth handoff](session-integration.md) for the separate
+real Auth/PostgREST suite and the division between local, simulated and hosted evidence.
+VOLO-120 tracks the approved deferral of Netlify Age/non-storage reporting;
+it is not a passed hosted cache check.
+
+Run `npm run test:cache` and `npm test`. Disposable production-built cache fixtures use
 the real Proxy/SDK/guards and fictional loopback services. A/B/anonymous/A requests
 use identical HTML/RSC/prefetch/JSON URLs, with fresh authorization on personalized
 responses. Warm success followed by membership disablement or service outage

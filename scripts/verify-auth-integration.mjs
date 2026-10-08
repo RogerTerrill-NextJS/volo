@@ -133,7 +133,7 @@ try{
 }catch(error){
   const missingDocker=error.message==='Real local Auth stack requires a running Docker engine; no simulated fallback';
   console.error(error.message.startsWith('Integration scenario failed:')||missingDocker?error.message:'Real Auth integration failed during setup or cleanup; no credentials logged');process.exitCode=1;
-  if(!summary.scenarios.some(x=>x.status==='failed'))summary.scenarios.push({name:'setup',status:'failed',evidence:missingDocker?'Docker unavailable':'Service/fixture setup failed; raw output withheld'});
+  if(!summary.scenarios.some(x=>x.status==='failed'))summary.scenarios.push({name:'setup',status:'failed',evidence:missingDocker?'Docker unavailable':`Service/fixture setup failed (${['configuration','start','status','credentials'].includes(error.setupStage)?error.setupStage:'fixture/account'}); raw output withheld`});
 }
 finally{
   try{await app?.close();}catch{process.exitCode=1;summary.scenarios.push({name:'fixture_cleanup',status:'failed'});}

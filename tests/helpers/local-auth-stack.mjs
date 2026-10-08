@@ -85,7 +85,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
   try{await (adapters.checkDocker??(()=>exec('docker',['info','--format','{{.ServerVersion}}'],{env:localProcessEnvironment(),timeout:15000})))();}
   catch{throw new Error('Real local Auth stack requires a running Docker engine; no simulated fallback');}
   const projectId=`volo-auth-${randomUUID()}`,workdir=await mkdtemp(path.join(tmpdir(),`${projectId}-`));
-  const accounts=[],secrets=[];let started=false,stateOwned=false,apiUrl,publicKey,adminKey,closePromise;
+  const accounts=[],secrets=[];let started=false,stateOwned=false,apiUrl,publicKey,adminKey,closePromise,stage='configuration';
   let signalHandler;
   async function api(route,{method='GET',body}={}) {
     validateLocalApiUrl(apiUrl,Number(new URL(apiUrl).port));
@@ -113,9 +113,10 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
     stateOwned=true;
     signalHandler=()=>{void close().then(()=>process.exit(130),()=>process.exit(1));};
     process.once('SIGINT',signalHandler);process.once('SIGTERM',signalHandler);
-    started=true;await cli(['start','--workdir',workdir]);
+    stage='start';started=true;await cli(['start','--workdir',workdir]);
+    stage='status';
     const result=await cli(['status','--workdir',workdir,'-o','json'],30000);
-    const status=JSON.parse(result.stdout);
+    stage='credentials';const status=JSON.parse(result.stdout);
     apiUrl=validateLocalApiUrl(status.API_URL,apiPort).origin;
     publicKey=status.ANON_KEY;adminKey=status.SERVICE_ROLE_KEY;
     if(typeof publicKey!=='string'||!publicKey||typeof adminKey!=='string'||!adminKey)throw new Error('Local keys missing');
@@ -143,7 +144,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
     };
   }catch{
     try{await close();}catch{throw new Error('Real local Auth stack setup and cleanup failed; run integration --cleanup');}
-    throw new Error('Real local Auth stack setup failed (CLI/configuration/health); captured credentials were not logged');
+    const error=new Error('Real local Auth stack setup failed; captured credentials were not logged');error.setupStage=stage;throw error;
   }
 }
 

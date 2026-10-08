@@ -35,6 +35,7 @@ npm run test:proxy
 npm run test:access
 npm run test:protected-app
 npm run test:mutations
+npm run test:cache
 npm run test:boundaries
 ```
 
@@ -69,6 +70,12 @@ Action calls. No fixture mutation endpoint is deployed. See the
 [protected mutation contract](docs/environment-configuration.md#protected-mutations).
 The build downloads the existing Geist fonts from Google Fonts and needs
 network access.
+
+For disposable real Supabase Auth/PostgREST integration, run
+`npm run test:auth:integration` with Docker available. It owns a separate local
+stack and fictional accounts, requires no hosted credentials, and runs in a
+dedicated CI job. See [session integration and auth handoff](docs/session-integration.md)
+for scenarios, evidence limits and cleanup. Ordinary `npm test` stays Docker-free.
 
 GitHub Actions runs these checks on pull requests, pushes to `main`, and manual
 runs. CI uses `npm ci` with `package-lock.json` and dummy public configuration;

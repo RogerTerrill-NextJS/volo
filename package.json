@@ -13,6 +13,7 @@
     "test:cache:http": "node scripts/verify-private-cache.mjs",
     "test:cache": "npm run test:cache:unit && npm run test:cache:http",
     "test:boundaries": "node scripts/verify-supabase-boundaries.mjs",
+    "test:auth:integration": "node scripts/verify-auth-integration.mjs",
     "test:clients": "node scripts/verify-supabase-clients.mjs",
     "test:proxy:unit": "node --conditions=react-server --test tests/supabase-proxy.unit.mts",
     "test:proxy": "npm run test:proxy:unit && node scripts/verify-supabase-proxy.mjs",
