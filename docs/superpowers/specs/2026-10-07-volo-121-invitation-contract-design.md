@@ -18,7 +18,7 @@ production Supabase; write tests use owned disposable local resources.
 ## Mechanism and alternatives
 
 Use Supabase email-bound invitations for Auth token issuance and verification,
-plus a server-owned application invitation record for eligibility, expiry,
+plus a server-owned application invitation record for eligibility,
 revocation, activation and auditing. The Auth token and app record are separate:
 successful Auth verification alone never grants app membership.
 
@@ -37,7 +37,8 @@ direct provider signup bypass, not only the absence of a signup screen.
 VOLO-27 owns schema and migrations. Its record must support:
 
 - A stable invitation ID, intended email, server-derived inviter user ID, created
-  time, expiry, lifecycle state and send-attempt outcome.
+  time, lifecycle state and send-attempt outcome. Application invitations have
+  no expiry timestamp or age-based eligibility cutoff.
 - The Auth user ID associated with issuance, verified recipient user ID, setup
   attempt/version, password-step evidence and final redemption time.
 - Revocation and supersession information sufficient to reject older attempts.
@@ -71,19 +72,28 @@ Do not add a permissive member policy, quota subsystem or member invite UI now.
 | Setup verified | Explicit acceptance verified the invite; short-lived setup authorization is bound to this user and invitation version | Denied |
 | Password established | Server-observed successful password operation recorded for that setup attempt | Denied |
 | Redeemed | One database transaction activated member membership and recorded redemption | Allowed subject to fresh normal guards |
-| Expired/revoked/superseded | Invitation or setup authorization is no longer valid | Denied |
+| Revoked/superseded | Application invitation is no longer eligible | Denied |
 
-The application invitation expires 24 hours after issuance. Provider token expiry
-may be shorter; the earliest applicable deadline wins. Verified setup authorization
-expires after 30 minutes and never later than the invitation. These are proposed
-MVP policy defaults, included in this spec's review, not claims about current
-hosted settings. A resend supersedes earlier application setup attempts and
-requires renewed verification; validate provider resend behavior locally.
+Application invitations do not expire, per Roger's explicit preference. They
+remain eligible until redeemed, explicitly revoked or superseded. Elapsed time
+alone must never revoke an invitation or prevent an admin from resending it.
+
+Supabase email verification tokens remain single-use and subject to the provider's
+finite lifetime. Token expiry does not expire the application invitation. Show a
+safe link-expired outcome and allow a fresh email link for the same still-eligible
+invitation through VOLO-29's admin resend process, without creating a duplicate
+account or granting access. This does not promise a permanently valid email link.
+Verified setup authorization expires after 30 minutes; it can be re-established
+through renewed invitation verification. This setup deadline is a proposed MVP
+security policy, not an invitation expiry or a claim about current hosted settings.
+A resend supersedes earlier application setup attempts and requires renewed
+verification; validate provider resend behavior locally.
 
 VOLO-30 owns one-time redemption. Finalization locks/checks the invitation/version
 and atomically creates the member membership and redemption record in Postgres.
 Concurrent identical completions return the same safe outcome. Other subjects,
-expired/revoked attempts or conflicting existing memberships are rejected.
+expired setup authorization, revoked/superseded invitations or conflicting
+existing memberships are rejected. Invitation age itself is not a rejection rule.
 
 Auth issuance, email delivery, cookie delivery and password changes cannot share
 that database transaction. Record their outcomes separately and reconcile partial
@@ -195,6 +205,8 @@ or runtime success is claimed here. Later tasks must prove:
   GET/HEAD/prefetch safety and lost-cookie/ambiguous-provider outcomes.
 - Concurrent submissions, database rollback, password-step retries, resend,
   existing/disabled accounts and server-owned roles.
+- Invitations remaining eligible regardless of age; expired provider links and
+  setup sessions can be renewed while revoked/redeemed invitations remain denied.
 - Direct public Auth signup/anonymous/unused-provider rejection, CSRF/origin/input
   handling, A/B session isolation and credential/log/cache controls.
 - Exact local deadlines and provider behavior under pinned real Auth tooling;
