@@ -33,7 +33,7 @@ async function harness({failAt,redirect=false,onStart}={}) {
       calls.push({command,args,options});
       if(args[1]==='start'&&onStart)await onStart(options);
       if(args[1]===failAt)throw new Error('service_role=unknown-private-canary');
-      if(args[1]==='status')return {stdout:JSON.stringify({API_URL:'http://127.0.0.1:40001',ANON_KEY:'public-canary',SERVICE_ROLE_KEY:'admin-canary'}),stderr:''};
+      if(args[1]==='status')return {stdout:JSON.stringify({API_URL:'http://127.0.0.1:40001',ANON_KEY:'legacy-canary',PUBLISHABLE_KEY:'sb_publishable_local_fixture',SERVICE_ROLE_KEY:'admin-canary'}),stderr:''};
       return {stdout:'',stderr:''};
     },
     checkDocker:async()=>{},
@@ -63,7 +63,7 @@ test('cleanup_after_partial_start',async()=>{
 test('membership_deleted_before_user_and_cleanup_is_idempotent',async()=>{
   const h=await harness();
   try {
-    const stack=await h.start();
+    const stack=await h.start();assert.equal(stack.publicKey,'sb_publishable_local_fixture');
     const config=await readFile(path.join(stack.workdir,'supabase/config.toml'),'utf8');
     assert.match(config,/jwt_expiry = 120/);
     const account=await stack.createAccount({label:'A',role:'member',status:'active'});

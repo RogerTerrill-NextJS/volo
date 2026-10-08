@@ -117,8 +117,8 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
     const result=await cli(['status','--workdir',workdir,'-o','json'],30000);
     stage='credentials';const status=JSON.parse(result.stdout);
     apiUrl=validateLocalApiUrl(status.API_URL,apiPort).origin;
-    publicKey=status.ANON_KEY;adminKey=status.SERVICE_ROLE_KEY;
-    if(typeof publicKey!=='string'||!publicKey||typeof adminKey!=='string'||!adminKey)throw new Error('Local keys missing');
+    publicKey=status.PUBLISHABLE_KEY;adminKey=status.SERVICE_ROLE_KEY;
+    if(typeof publicKey!=='string'||!publicKey.startsWith('sb_publishable_')||typeof adminKey!=='string'||!adminKey)throw new Error('Local keys missing');
     secrets.push(adminKey);
     const owned=new Set();
     const requireOwned=id=>{if(!owned.has(id))throw new Error('Account is not owned by this run');};
