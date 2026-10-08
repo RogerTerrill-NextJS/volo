@@ -22,7 +22,7 @@ test('does_not_inherit_hosted_settings',async()=>{
   for(const key of ['SUPABASE_ACCESS_TOKEN','NEXT_PUBLIC_SUPABASE_URL','SMTP_PASSWORD'])assert.equal(result[key],undefined);
 });
 
-async function harness({failAt,redirect=false}={}) {
+async function harness({failAt,redirect=false,onStart}={}) {
   const {createLocalAuthStack}=await load();
   const directory=await mkdtemp(path.join(tmpdir(),'volo-auth-test-'));
   const calls=[],requests=[];let nextPort=40000;
@@ -31,6 +31,7 @@ async function harness({failAt,redirect=false}={}) {
     reservePort:async()=>++nextPort,
     run:async(command,args,options)=>{
       calls.push({command,args,options});
+      if(args[1]==='start'&&onStart)await onStart(options);
       if(args[1]===failAt)throw new Error('service_role=unknown-private-canary');
       if(args[1]==='status')return {stdout:JSON.stringify({API_URL:'http://127.0.0.1:40001',ANON_KEY:'public-canary',SERVICE_ROLE_KEY:'admin-canary'}),stderr:''};
       return {stdout:'',stderr:''};
@@ -43,7 +44,7 @@ async function harness({failAt,redirect=false}={}) {
       return Response.json([]);
     },
   };
-  return {calls,requests,stateFile,start:()=>createLocalAuthStack({repositoryRoot:root,stateFile},adapters),dispose:()=>rm(directory,{recursive:true,force:true})};
+  return {calls,requests,stateFile,start:(options={})=>createLocalAuthStack({repositoryRoot:root,stateFile,...options},adapters),dispose:()=>rm(directory,{recursive:true,force:true})};
 }
 
 test('cleanup_after_partial_start',async()=>{
@@ -92,4 +93,13 @@ test('redacts_failed_cli_output_and_secret_canaries',async()=>{
 test('existing_ownership_state_is_not_deleted_on_setup_failure',async()=>{
   const h=await harness();
   try{await writeFile(h.stateFile,'other-run');await assert.rejects(h.start());assert.equal(await readFile(h.stateFile,'utf8'),'other-run');assert.equal(h.calls.length,0);}finally{await h.dispose();}
+});
+
+test('interrupted_start_settles_before_owned_cleanup',async()=>{
+  const cancellation=new AbortController();let settled=false;
+  const h=await harness({onStart:async options=>{
+    assert.equal(options.signal,cancellation.signal);
+    cancellation.abort();await Promise.resolve();settled=true;throw new Error('aborted');
+  }});
+  try{await assert.rejects(h.start({signal:cancellation.signal}));assert.equal(settled,true);assert.deepEqual(h.calls.map(x=>x.args[1]),['start','stop']);assert.equal(h.calls.at(-1).options.signal,undefined);}finally{await h.dispose();}
 });

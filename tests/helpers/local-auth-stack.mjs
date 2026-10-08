@@ -71,48 +71,47 @@ async function prepareConfig(root,workdir,projectId,jwtExpirySeconds,allocate) {
   return apiPort;
 }
 
-function cliRunner(root,run) {
+function cliRunner(root,run,signal) {
   return (args,timeout=600000)=>run(process.execPath,[path.join(root,'node_modules/supabase/dist/supabase.js'),...args],{
-    cwd:root,env:localProcessEnvironment(),timeout,maxBuffer:16*1024*1024,
+    cwd:root,env:localProcessEnvironment(),timeout,maxBuffer:16*1024*1024,signal,
   });
 }
 
 // Dependency injection is restricted to this test infrastructure; normal entry uses real operations.
-export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(evidenceDirectory(repositoryRoot),'owned-stack.json'),jwtExpirySeconds=120},adapters={}) {
+export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(evidenceDirectory(repositoryRoot),'owned-stack.json'),jwtExpirySeconds=120,signal},adapters={}) {
   if(jwtExpirySeconds!==120)throw new Error('Integration JWT lifetime must be 120 seconds');
   const run=adapters.run??exec,request=adapters.fetch??fetch,allocate=adapters.reservePort??reservePort;
-  const cli=cliRunner(repositoryRoot,run);
+  const cli=cliRunner(repositoryRoot,run,signal),cleanupCli=cliRunner(repositoryRoot,run);
   try{await (adapters.checkDocker??(()=>exec('docker',['info','--format','{{.ServerVersion}}'],{env:localProcessEnvironment(),timeout:15000})))();}
   catch{throw new Error('Real local Auth stack requires a running Docker engine; no simulated fallback');}
+  signal?.throwIfAborted();
   const projectId=`volo-auth-${randomUUID()}`,workdir=await mkdtemp(path.join(tmpdir(),`${projectId}-`));
   const accounts=[],secrets=[];let started=false,stateOwned=false,apiUrl,publicKey,adminKey,closePromise,stage='configuration';
-  let signalHandler;
   async function api(route,{method='GET',body}={}) {
     validateLocalApiUrl(apiUrl,Number(new URL(apiUrl).port));
     try{
       const response=await request(apiUrl+route,{method,headers:{apikey:adminKey,Authorization:`Bearer ${adminKey}`,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(10000)});
-      if(!response.ok)throw new Error('rejected');
+      if(!response.ok){const error=new Error('rejected');error.httpStatus=response.status;throw error;}
       const text=await response.text();return text?JSON.parse(text):null;
-    }catch{throw new Error(`Rejected local Auth operation (${method})`);}
+    }catch(cause){const error=new Error(`Rejected local Auth operation (${method})`);error.operation=route.startsWith('/auth/')?'auth-user':'membership';error.httpStatus=cause.httpStatus;throw error;}
   }
   const close=()=>closePromise??=(async()=>{
-    if(signalHandler){process.off('SIGINT',signalHandler);process.off('SIGTERM',signalHandler);}
     let failed=false;
     if(apiUrl&&adminKey)for(const account of accounts){
       try{await api(`/rest/v1/memberships?user_id=eq.${account.id}`,{method:'DELETE'});await api(`/auth/v1/admin/users/${account.id}`,{method:'DELETE'});}catch{failed=true;}
     }
     let stopped=!started;
-    if(started)try{await cli(['stop','--workdir',workdir,'--project-id',projectId,'--no-backup'],120000);stopped=true;}catch{failed=true;}
+    if(started)try{await cleanupCli(['stop','--workdir',workdir,'--project-id',projectId,'--no-backup'],120000);stopped=true;}catch{failed=true;}
     if(stopped){await rm(workdir,{recursive:true,force:true});if(stateOwned)await rm(stateFile,{force:true});}
     if(failed)throw new Error('Owned local Auth stack cleanup failed; retry integration --cleanup');
   })();
   try {
+    signal?.throwIfAborted();
     const apiPort=await prepareConfig(repositoryRoot,workdir,projectId,jwtExpirySeconds,allocate);
     await mkdir(path.dirname(stateFile),{recursive:true});
     await writeFile(stateFile,JSON.stringify({projectId,workdir}),{flag:'wx',mode:0o600});
     stateOwned=true;
-    signalHandler=()=>{void close().then(()=>process.exit(130),()=>process.exit(1));};
-    process.once('SIGINT',signalHandler);process.once('SIGTERM',signalHandler);
+    signal?.throwIfAborted();
     stage='start';started=true;await cli(['start','--workdir',workdir]);
     stage='status';
     const result=await cli(['status','--workdir',workdir,'-o','json'],30000);

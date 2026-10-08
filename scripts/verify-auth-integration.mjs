@@ -9,7 +9,8 @@ import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
 const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.']};
-let stack,app;const sessions=[];
+const cancellation=new AbortController();const interrupt=()=>{process.exitCode=130;cancellation.abort();};process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
+let stack,app,setupStage='stack';const sessions=[];
 const check=(condition,message)=>assert.ok(condition,message);
 async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch{summary.scenarios.push({name,status:'failed'});throw new Error(`Integration scenario failed: ${name}`);}}
 function privatePolicy(response){
@@ -19,23 +20,28 @@ function privatePolicy(response){
 function assertClean(text){stack.assertNoCredentialLeaks(text);for(const session of sessions)session.assertNoCredentialLeaks(text);}
 try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
-    stack=await startLocalAuthStack({repositoryRoot:root});
-    app=await startRealAuthApp({repositoryRoot:root,stack});
-    const accounts={},users={};
+    stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal});
+    setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal});
+    setupStage='accounts';const accounts={},users={};
     const fresh=async label=>{const session=await signInSession(stack,accounts[label]);sessions.push(session);return session;};
-    const audit=async(response,session)=>{
+    const audit=async(response,subject)=>{
       const body=await response.clone().text(),headers=new Headers(response.headers);headers.delete('set-cookie');assertClean(body);assertClean(JSON.stringify([...headers]));
-      let subject;try{subject=session?.userId;}catch{/* Malformed negative credential. */}
       for(const label of ['A','B','admin','disabled','absent'])if(users[label]&&accounts[label].id!==subject){check(!body.includes(accounts[label].id),'foreign subject in body');users[label].assertNoCredentialLeaks(response.headers.getSetCookie().join('\n'));}
       return response;
     };
-    const read=async(route,options={})=>audit(await app.request(route,options),options.session);
-    const mutate=async(transport,options={})=>audit(await app.mutate(transport,options),options.session);
+    const expected=options=>{try{return options.expectedUserId??options.session?.userId;}catch{return undefined;}};
+    const read=async(route,options={})=>{const subject=expected(options);return audit(await app.request(route,options),subject);};
+    const mutate=async(transport,options={})=>{const subject=expected(options);return audit(await app.mutate(transport,options),subject);};
     const deny=async(transport,session,options={})=>{
-      const before=app.effects().length,response=await mutate(transport,{session,...options}),body=await response.text();
+      const before=app.effects().length,diagnosticStart=app.diagnostics().length,response=await mutate(transport,{session,...options}),body=await response.text();
       check(app.effects().length===before,'rejected mutation effect');check(!body.includes('"saved":true'),'rejected mutation success payload');
       if(transport==='json')check([401,403].includes(response.status),'JSON denial status');
-      else check([200,303,307,400,403,500].includes(response.status),'Action denial transport');
+      else {
+        const originRejected=Object.hasOwn(options,'origin')&&options.origin!==app.origin;
+        if(originRejected&&options.origin!==null&&response.status===500)check(/Invalid Server Actions request/.test(app.diagnostics().slice(diagnosticStart)),'framework CSRF rejection');
+        else if(transport==='native'&&response.status===307)check(new URL(response.headers.get('location'),app.origin).pathname==='/login','native authentication redirect');
+        else {check(response.status===200,'Action denial transport');const normalized=body.replaceAll('&quot;','\"');check(/\"code\":\"(?:unauthenticated|forbidden)\"/.test(normalized),'semantic Action denial');}
+      }
       return response;
     };
     const success=async(transport,session,options={})=>{
@@ -118,12 +124,16 @@ try{
         return {...observations,application:application.status===200?'accepted':'rejected',contract:'Unexpired access-token acceptance is measured separately from refresh revocation.'};
       });
       await scenario('natural_expiry',async()=>{
-        const started=Date.now(),valid=await fresh('A'),invalid=invalidSession(await fresh('B'),'refresh');sessions.push(invalid);
-        const before=valid.cookieHeader(),wait=Math.max(valid.expiresAt,invalid.expiresAt)*1000+2000-Date.now();check(wait>0&&wait<=180000,'bounded real expiry');
+        const started=Date.now(),valid=await fresh('A'),independent=await fresh('B'),invalid=invalidSession(await fresh('B'),'refresh');sessions.push(invalid);
+        const concurrent=[valid,valid.clone(),valid.clone()];sessions.push(...concurrent.slice(1));
+        const before=valid.cookieHeader(),wait=Math.max(valid.expiresAt,independent.expiresAt,invalid.expiresAt)*1000+2000-Date.now();check(wait>0&&wait<=180000,'bounded real expiry');
         // Short waits allow a cancellation signal to reach owned cleanup promptly.
-        let remaining=wait;while(remaining>0){const step=Math.min(remaining,1000);await delay(step);remaining-=step;}
-        const response=await read('/api/subject',{session:valid});privatePolicy(response);check(response.status===200,'expired valid refresh recovered');check(response.headers.getSetCookie().length>0&&valid.cookieHeader()!==before,'Proxy persisted rotated cookies');
-        check((await read('/api/subject',{session:valid})).status===200,'next request uses persisted session');
+        let remaining=wait;while(remaining>0){const step=Math.min(remaining,1000);await delay(step,undefined,{signal:cancellation.signal});remaining-=step;}
+        await Promise.all([...concurrent.map(session=>({session,id:accounts.A.id})),{session:independent,id:accounts.B.id}].map(async({session,id})=>{
+          const response=await read('/api/subject',{session,expectedUserId:id});privatePolicy(response);check(response.status===200,'concurrent expired refresh recovered');check((await response.json()).userId===id,'immutable refresh subject');
+          check(response.headers.getSetCookie().length>0&&session.cookieHeader()!==before,'Proxy persisted rotated cookies');
+          const next=await read('/api/subject',{session,expectedUserId:id});check(next.status===200&&(await next.json()).userId===id,'next request identity from returned cookies');
+        }));
         const bad=await read('/api/subject',{session:invalid});privatePolicy(bad);check(bad.status===401,'expired invalid refresh denied');await deny('json',invalid);check(Date.now()-started<=240000,'expiry scenario deadline');
         return {accessLifetimeSeconds:120,waitBoundSeconds:180,scenarioBoundSeconds:240};
       });
@@ -131,12 +141,16 @@ try{
     }
   }
 }catch(error){
+  if(error.fixtureDiagnostic)summary.fixtureDiagnostic=error.fixtureDiagnostic;
+  if(error.operation)summary.setupOperation={operation:error.operation,status:error.httpStatus??'transport'};
+  console.error(`Setup stage: ${setupStage}`);
   const missingDocker=error.message==='Real local Auth stack requires a running Docker engine; no simulated fallback';
   console.error(error.message.startsWith('Integration scenario failed:')||missingDocker?error.message:'Real Auth integration failed during setup or cleanup; no credentials logged');process.exitCode=1;
-  if(!summary.scenarios.some(x=>x.status==='failed'))summary.scenarios.push({name:'setup',status:'failed',evidence:missingDocker?'Docker unavailable':`Service/fixture setup failed (${['configuration','start','status','credentials'].includes(error.setupStage)?error.setupStage:'fixture/account'}); raw output withheld`});
+  if(!summary.scenarios.some(x=>x.status==='failed'))summary.scenarios.push({name:'setup',status:'failed',evidence:missingDocker?'Docker unavailable':`Service/fixture setup failed (${['configuration','start','status','credentials'].includes(error.setupStage)?error.setupStage:setupStage}); raw output withheld`});
 }
 finally{
   try{await app?.close();}catch{process.exitCode=1;summary.scenarios.push({name:'fixture_cleanup',status:'failed'});}
   try{await stack?.close();}catch{process.exitCode=1;summary.scenarios.push({name:'stack_cleanup',status:'failed'});}
+  process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);
   if(!process.argv.includes('--cleanup')){await mkdir(evidenceDirectory(root),{recursive:true});await writeFile(path.join(evidenceDirectory(root),'summary.json'),JSON.stringify(summary,null,2)+'\n');}
 }
