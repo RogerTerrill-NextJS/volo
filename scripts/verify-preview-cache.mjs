@@ -6,6 +6,40 @@ assert.equal(target.username+target.password+target.search+target.hash,"");
 assert.equal(target.pathname,"/");
 const origin=target.origin;
 const fields=["cache-control","cdn-cache-control","netlify-cdn-cache-control","cache-status","age"];
+let inconclusive=0;
+// Supported RFC 9211 evidence only; unknown/malformed evidence cannot certify storage.
+function splitField(value,separator){
+  const parts=[];let quoted=false,escaped=false,start=0;
+  for(let i=0;i<value.length;i++){
+    const char=value[i];
+    if(escaped){escaped=false;continue;}
+    if(quoted && char==='\\'){escaped=true;continue;}
+    if(char==='"')quoted=!quoted;
+    else if(!quoted && char===separator){parts.push(value.slice(start,i).trim());start=i+1;}
+  }
+  return quoted||escaped?null:[...parts,value.slice(start).trim()];
+}
+function storageEvidence(value){
+  const members=splitField(value??"",",");
+  if(!members?.length)return "inconclusive";
+  let uncertain=false;
+  for(const member of members){
+    const parts=splitField(member,";");
+    if(!parts || !/^(?:[A-Za-z*][A-Za-z0-9!#$%&'*+.^_`|~:/-]*|"(?:[^"\\]|\\["\\])*")$/.test(parts[0])){uncertain=true;continue;}
+    const params=new Map();
+    for(const part of parts.slice(1)){
+      const match=part.match(/^([a-z*][a-z0-9_.*-]*)(?:=(.+))?$/);
+      if(!match || params.has(match[1])){uncertain=true;continue;}
+      params.set(match[1],match[2]??"?1");
+    }
+    for(const key of ["hit","stored"]){
+      if(params.get(key)==="?1")return key;
+      if(params.has(key) && params.get(key)!=="?0")uncertain=true;
+    }
+    if(params.get("fwd")!=="bypass" && !(params.has("fwd") && params.get("stored")==="?0"))uncertain=true;
+  }
+  return uncertain?"inconclusive":"not-stored";
+}
 async function request(route,headers={},method="GET",privatePath=false){
   for(let hop=0;hop<3;hop++){
     const response=await fetch(origin+route,{method,headers,redirect:"manual",signal:AbortSignal.timeout(15000)});
@@ -17,7 +51,9 @@ async function request(route,headers={},method="GET",privatePath=false){
     if(privatePath){
       assert.match(response.headers.get("cache-control")??"",/no-store/);
       for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]){const value=response.headers.get(field);if(value!==null)assert.equal(value,"no-store");}
-      assert.doesNotMatch(response.headers.get("cache-status")??"",/(?:^|[;,\s])hit(?:[;,\s]|$)/i);
+      const evidence=storageEvidence(response.headers.get("cache-status"));
+      assert.ok(!["hit","stored"].includes(evidence),"Protected response reports CDN "+evidence);
+      if(evidence==="inconclusive")inconclusive++;
       assert.ok(Number(response.headers.get("age")??0)===0,"Protected output must not report positive shared-cache age");
       assert.ok([200,303,307,308].includes(response.status));
     }else assert.equal(response.status,200);
@@ -41,4 +77,7 @@ for(let repeat=0;repeat<3;repeat++){
     if(route===asset)assert.match(response.headers.get("cache-control")??"",/public.*immutable/);
   }
 }
-console.log("PASS: repeated anonymous protected responses enforce no-store without shared hits/age; public/static controls remain cacheable. Authenticated hosted isolation remains deferred.");
+if(inconclusive){
+  console.log(`INCONCLUSIVE: policy checks passed, but ${inconclusive} protected responses lack affirmative CDN bypass/non-storage evidence. Missing Cache-Status or fwd=miss alone cannot certify non-storage.`);
+  process.exitCode=2;
+}else console.log("PASS: repeated anonymous protected responses enforce no-store with affirmative CDN bypass/non-storage evidence; public/static controls remain cacheable. Authenticated hosted isolation remains deferred.");

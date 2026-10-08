@@ -82,7 +82,10 @@ SMOKE_BASE_URL=https://deploy-preview-<PR-number>--voloapp.netlify.app node scri
 The report makes anonymous GET/HEAD requests only, repeats identical protected
 HTML/RSC/prefetch and public/static URLs three times, and prints whitelisted cache
 policy/status/age fields with cookie count. Require no-store and no reported
-shared hit/positive age; a miss alone is insufficient. Preserve RSC negotiation.
+shared hit/storage/positive age. Require affirmative `fwd=bypass` or forwarded
+`stored=?0` evidence from reported cache layers. Missing or miss-only status is
+INCONCLUSIVE (exit 2), never PASS; explicit `hit`/`stored` Booleans fail (exit 1).
+A miss alone is insufficient. Preserve RSC negotiation.
 Hosted previews share production Supabase, so no fictional hosted cookies,
 authenticated writes or hosted test users are used. These anonymous checks cannot
 prove authenticated CDN isolation. VOLO-110 owns that procedure once real downstream
