@@ -6,10 +6,10 @@ select no_plan();
 select has_table('public', 'invitations', 'Invitation persistence exists');
 select has_table('public', 'invitation_send_attempts', 'Durable send reservations exist');
 insert into auth.users (id, email) values
- ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','inviter@example.invalid'),
- ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','recipient@example.invalid'),
- ('cccccccc-cccc-4ccc-8ccc-cccccccccccc','disabled@example.invalid'),
- ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','unadmitted@example.invalid');
+ ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','invitation-test-inviter@example.invalid'),
+ ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','invitation-test-recipient@example.invalid'),
+ ('cccccccc-cccc-4ccc-8ccc-cccccccccccc','invitation-test-disabled@example.invalid'),
+ ('dddddddd-dddd-4ddd-8ddd-dddddddddddd','invitation-test-unadmitted@example.invalid');
 insert into public.memberships (user_id, role, status, disabled_at, disabled_reason) values
  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','admin','active',null,null),
  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc','member','disabled',now(),'Test fixture');

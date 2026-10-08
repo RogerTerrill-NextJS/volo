@@ -12,7 +12,7 @@ create table public.invitations (
   id uuid primary key default gen_random_uuid(),
   recipient_email text not null,
   recipient_email_key text collate "C" generated always as
-    (translate(recipient_email collate "C", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')) stored,
+    (translate(recipient_email collate "C", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')) stored not null,
   invited_by_user_id uuid not null references auth.users (id) on delete restrict,
   status public.invitation_status not null default 'pending_issuance',
   version bigint not null default 1,
