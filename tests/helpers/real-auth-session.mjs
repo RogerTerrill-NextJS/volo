@@ -47,6 +47,11 @@ function wrap(stack,jar,canaries=new Set()) {
     assertNoCredentialLeaks(text){remember();if([...canaries].some(value=>value&&text.includes(value)))throw new Error('Session credential leak detected');},
     async refresh(){const data=payload(jar);const result=await client(stack,jar).auth.refreshSession({refresh_token:data.refresh_token});if(result.error)throw new Error('Real session refresh rejected');remember();},
     async signOut(){const result=await client(stack,jar).auth.signOut({scope:'local'});if(result.error)throw new Error('Real signout rejected');remember();},
+    async setAdmissionMetadata(){
+      const result=await client(stack,jar).auth.updateUser({data:{role:'admin',status:'active',membership_status:'active',email_verified:true}});
+      if(result.error||result.data.user?.user_metadata?.role!=='admin'||result.data.user?.user_metadata?.status!=='active')throw new Error('Local metadata fixture update failed');
+      remember();
+    },
     async probeRetainedCredentials(){
       const data=payload(jar);const fresh=()=>createClient(stack.apiUrl,stack.publicKey,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:localFetch(stack)}});
       const claims=await fresh().auth.getClaims(data.access_token),user=await fresh().auth.getUser(data.access_token),refresh=await fresh().auth.refreshSession({refresh_token:data.refresh_token});

@@ -21,6 +21,19 @@ function assertClean(text){stack.assertNoCredentialLeaks(text);for(const session
 try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
     stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal});
+    await scenario('invitation_only_admission_configuration',async()=>{
+      const result=await stack.probePublicAdmission();
+      check(result.settings.signupDisabled===true,'global public signup disabled');
+      check(result.settings.providers.email===true,'email/password authentication enabled');
+      check(result.settings.providers.phone===false&&result.settings.providers.anonymous_users===false,'phone and anonymous providers disabled');
+      for(const [name,enabled] of Object.entries(result.settings.providers))if(name!=='email')check(enabled===false,'unused provider disabled');
+      for(const outcome of [result.email,result.anonymous,result.oauth]){
+        check(outcome.status>=400&&outcome.status<500,'direct admission request rejected');
+        check(!outcome.hasIdentity&&!outcome.hasSession,'no public identity/session issued');
+      }
+      check(result.email.code==='signup_disabled','email signup rejected by admission policy');
+      return 'Owned real Auth settings plus direct public email/anonymous/OAuth requests; no identity or session issued.';
+    });
     setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal});
     setupStage='accounts';const accounts={},users={};
     const fresh=async label=>{const session=await signInSession(stack,accounts[label]);sessions.push(session);return session;};
@@ -66,6 +79,18 @@ try{
       const anonymous=await read('/dashboard');const body=await anonymous.text();privatePolicy(anonymous);
       check(anonymous.status===307?new URL(anonymous.headers.get('location'),app.origin).href===app.origin+'/login?reason=authentication-required':body.includes('/login?reason=authentication-required'),'fixed login destination');
       for(const transport of ['json','native','fetched']){await deny(transport,undefined);await deny(transport,users.A,{admin:true});await success(transport,users.A);await success(transport,users.admin,{admin:true});}
+    });
+    await scenario('editable_metadata_cannot_admit_or_promote',async()=>{
+      for(const label of ['absent','disabled','A']){
+        const before=JSON.stringify(await stack.readMembership(accounts[label].id));
+        await users[label].setAdmissionMetadata();users[label]=await fresh(label);
+        check(JSON.stringify(await stack.readMembership(accounts[label].id))===before,'metadata cannot mutate membership');
+        const response=await read('/api/subject',{session:users[label]});
+        check(response.status===(label==='A'?200:403),'metadata cannot admit absent or disabled membership');
+        if(label==='A')check((await response.json()).role==='member','metadata cannot promote role');
+        for(const transport of ['json','native','fetched'])await deny(transport,users[label],{admin:true});
+      }
+      return 'Real self-edited Auth metadata and fresh sessions preserve missing/disabled denial and member role.';
     });
     if(!process.argv.includes('--scenario')){
       await scenario('current_membership',async()=>{

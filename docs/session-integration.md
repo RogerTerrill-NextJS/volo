@@ -20,9 +20,13 @@ Docker absence fails explicitly; the command never falls back to simulated Auth.
 
 The controller provisions confirmed `example.invalid` accounts through local
 Auth Admin with random passwords, then creates active A/B/admin, disabled and
-absent memberships. The disposable config enables the email/password provider
-for those Admin-created users while global self-signup remains disabled. No email
-is sent. The checked-in developer and hosted Auth configuration is unchanged. Only the
+absent memberships. VOLO-147 aligns checked-in local configuration with this
+policy: email/password authentication enabled, global public signup and anonymous
+sign-in disabled, and SMS/unused providers disabled. The CLI's
+`auth.email.enable_signup` enables the email provider; global
+`auth.enable_signup = false` still blocks public account creation. The disposable
+stack inherits these admission settings unchanged so integration catches drift.
+No email is sent, and hosted settings are unchanged. Only the
 controller receives the local service-role key; the compiled Next fixture gets
 the local API and publishable key. All writes and effects belong to disposable resources.
 
@@ -80,6 +84,7 @@ semantics without a scoped decision.
 | --- | --- | --- |
 | Controller and cookie safety | `npm test` | Destination/ownership/environment guards, cleanup ordering, redaction and independent jars; no Docker required. |
 | Real service integration | `npm run test:auth:integration` / dedicated CI | Real issuance, admission/roles, membership changes, HTTP RLS, malformed credentials, refresh persistence, logout probes, A/B isolation, origins and local no-store/public controls. |
+| Invitation-only admission foundation / VOLO-147 | Same real service integration job | Auth reports global signup disabled and only email provider enabled; direct public email/anonymous/OAuth requests fail without identity/session issuance. Real editable metadata and fresh sessions cannot admit missing/disabled memberships or promote a member. |
 | Deterministic failure injection | `test:clients`, `test:proxy`, `test:access`, `test:protected-app`, `test:mutations`, `test:cache` | Real Next/SDK with simulated Auth/PostgREST: outages, deadlines, malformed responses, cookie writes and recovery. |
 | SQL permissions and rebuild | Existing database CI / `npm run db:test` | Migration/pgTAP RLS and grants; seeds are not usable Auth sessions. |
 | Browser history and Router Cache | Dated observations in [private caching](private-caching.md) / VOLO-22 | Delivered content may survive Back; refresh reauthorizes. Browser session-change behavior remains downstream. |
@@ -105,6 +110,12 @@ unavailable here; only an exact-head successful integration job establishes the
 real matrix. Consult the PR checks and sanitized summary for current results.
 
 ## Remaining feature work
+
+VOLO-125 will extend this same stack and compiled app for the full invitation
+matrix, including successful invited activation, provider/setup expiry, wrong
+identity/version, resend/replay and atomic redemption. VOLO-147 proves admission
+configuration and identity/metadata isolation only; it does not prove those
+future flows or deploy settings to the shared hosted project.
 
 The approved [invitation activation contract](superpowers/specs/2026-10-07-volo-121-invitation-contract-design.md)
 coordinates VOLO-21's implementation subtasks with invitation persistence,
