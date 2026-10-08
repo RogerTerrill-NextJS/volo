@@ -104,6 +104,27 @@ test("real SDK Proxy isolates refreshes, preserves replacements and rejects outa
   }
 });
 
+test("Auth transport accepts legacy numeric HTTP code with a recognized error_code", async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(400, {"content-type":"application/json"});
+    response.end(JSON.stringify({code:request.url === "/unknown" ? "unknown_failure" : 400,
+      error_code:"refresh_token_not_found",msg:"private-upstream-canary"}));
+  });
+  server.listen(0,"127.0.0.1");await once(server,"listening");
+  const origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
+  try {
+    for(const route of ["/legacy","/unknown"]){
+      const transport=createProxyAuthTransport();
+      try {
+        const response=await transport.fetch(origin+route),body=await response.json();
+        assert.equal(transport.isUnavailable(),route === "/unknown");
+        assert.equal(body.error_code,route === "/unknown" ? "volo_auth_unavailable" : "refresh_token_not_found");
+        assert.ok(!JSON.stringify(body).includes("private-upstream-canary"));
+      } finally {transport.close();}
+    }
+  } finally {server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});
+
 test("Auth transport preserves success/rejection and bounds every outage including bodies", async () => {
   let calls = 0;
   const server = createServer((request, response) => {

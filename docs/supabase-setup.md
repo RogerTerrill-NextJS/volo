@@ -49,7 +49,8 @@ in guarded server code: verify the caller through Supabase Auth, then read their
 membership using their session and require **both** `status = active` and `role = admin`
 before using a privileged client. Missing membership denies access. Future protected
 table policies must check current active membership, so disabling invalidates access
-even with an existing JWT. This migration does not yet implement application auth guards.
+even with an existing JWT. Application identity/current-membership guards now live
+in `lib/auth/access.ts`; see [session integration and auth handoff](session-integration.md).
 
 Membership foreign keys restrict Auth user deletion until retention is agreed.
 Storage and Realtime services are enabled locally, but there are no buckets or published
@@ -71,8 +72,9 @@ npm run db:types:check
 
 `db:reset` explicitly targets **local**. It rebuilds from checked-in migrations and
 fictional seeds. The seeds use `example.invalid` addresses and create no passwords
-or identities; they are database fixtures, not working login accounts. Use local
-Auth invitations and the local mail viewer for sign-in testing.
+or identities; they are database fixtures, not working login accounts. The separate
+`npm run test:auth:integration` command provisions confirmed fictional accounts in
+its own disposable stack without sending mail; see [its ownership and cleanup](session-integration.md).
 
 The pgTAP suite creates its own fixtures inside a rolled-back transaction and tests
 RLS, row isolation, unauthorized admission, self-promotion, reactivation, metadata
@@ -126,9 +128,11 @@ were left empty. The current Netlify plan permits All scopes; only public values
 No secret/service-role key, database password, or access token was added to Netlify.
 Untrusted fork deploys require approval.
 
-Both contexts rebuilt successfully. Hosted page/navigation checks passed, but the
-application does not yet consume these variables through a Supabase client. Auth,
-database connections, and feature flows need verification when implemented.
+At the October 6 VOLO-100 verification, both contexts rebuilt and hosted navigation
+passed before the application consumed the variables through a Supabase client.
+Request-scoped clients, Proxy and guards have since been implemented. Their current
+evidence and remaining hosted feature checks are listed in [session integration](session-integration.md);
+the earlier observation does not prove today's hosted authenticated flows.
 
 A Deploy Preview is not a separate database and is not automatically read-only.
 Use local/disposable databases with fictional records for write tests, seeds,
