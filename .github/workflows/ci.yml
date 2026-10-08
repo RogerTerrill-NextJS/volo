@@ -110,11 +110,17 @@ jobs:
         run: npx --no-install supabase db reset --local --no-seed
       - name: Test policies without seed dependencies
         run: npm run db:test
+      - name: Verify invitation upgrade preserves existing accounts and memberships
+        run: node scripts/verify-invitation-upgrade.mjs
       - name: Check committed database types
+        id: database-types-check
         run: npm run db:types:check
       - name: Generate database types
+        if: success() || steps.database-types-check.outcome == 'failure'
+        id: generate-database-types
         run: npm run db:types
       - name: Upload generated database types
+        if: always() && steps.generate-database-types.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: database-types
