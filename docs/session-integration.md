@@ -106,6 +106,14 @@ real matrix. Consult the PR checks and sanitized summary for current results.
 
 ## Remaining feature work
 
+The approved [invitation activation contract](superpowers/specs/2026-10-07-volo-121-invitation-contract-design.md)
+coordinates VOLO-21's implementation subtasks with invitation persistence,
+admission, issuance and redemption under VOLO-27/28/29/30. Invitations are
+email-specific and have no application expiry; provider links/setup sessions
+remain time-limited. Issuance is admin-only for the MVP, with member invitations
+reserved for future work. Callback implementation and local schema/admission/
+redemption are still downstream; hosted callback activation remains VOLO-107.
+
 - [VOLO-21](https://outsidethecockpit.atlassian.net/browse/VOLO-21): invitation-gated session establishment and admission.
 - [VOLO-22](https://outsidethecockpit.atlassian.net/browse/VOLO-22): login/logout UI, supported Router Cache invalidation and fresh session-change navigation.
 - [VOLO-23](https://outsidethecockpit.atlassian.net/browse/VOLO-23): recovery and configured mail delivery.

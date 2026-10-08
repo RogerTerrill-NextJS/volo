@@ -85,6 +85,30 @@ not a login loop. No hosted callback setting is activated by this route contract
 
 ### Invitation and recovery callback
 
+VOLO-121's approved [invitation activation contract](superpowers/specs/2026-10-07-volo-121-invitation-contract-design.md)
+defines the invitation branch. Invitations target one specific email address and
+do not expire with age: they remain eligible until redeemed, revoked or
+superseded. Provider verification links and setup authorization still expire;
+an admin resend can renew the link for the same eligible invitation. MVP sending
+is active-admin-only. Member invitations are future work, with issuer permissions
+kept separate from the recipient's member role.
+
+The planned `/auth/confirm` GET/HEAD does not verify or consume the invitation.
+An explicit origin/CSRF-checked acceptance POST verifies `type=invite`, persists
+session cookies and creates server-owned setup authorization bound to the user,
+session and invitation version. Token transport stays in short-lived secret
+server state behind an opaque cookie; it must not appear in rendered HTML/RSC or
+subsequent redirects. After verification, use fixed `/account/setup`.
+General login/recovery sessions do not grant invitation setup authority.
+
+The server-observed password step precedes a single database transaction that
+activates member membership and redeems the invitation. Existing or disabled
+memberships are not reset or re-enabled by acceptance. Provider operations and
+cookie delivery are outside that transaction; ambiguity leaves access denied
+and follows the documented reconciliation/retry path. The recovery branch stays
+separate and cannot redeem invitations. These are implementation requirements for
+VOLO-122/124/27/28/29/30, not evidence that those flows currently exist.
+
 Invitation and recovery emails must land at the approved origin's
 `/auth/confirm`. The auth implementation must coordinate its `redirectTo`,
 email templates, and token verification so the path is added exactly once.
