@@ -20,7 +20,9 @@ Docker absence fails explicitly; the command never falls back to simulated Auth.
 
 The controller provisions confirmed `example.invalid` accounts through local
 Auth Admin with random passwords, then creates active A/B/admin, disabled and
-absent memberships. Signup remains disabled and no email is sent. Only the
+absent memberships. The disposable config enables the email/password provider
+for those Admin-created users while global self-signup remains disabled. No email
+is sent. The checked-in developer and hosted Auth configuration is unchanged. Only the
 controller receives the local service-role key; the compiled Next fixture gets
 the local API and publishable key. All writes and effects belong to disposable resources.
 

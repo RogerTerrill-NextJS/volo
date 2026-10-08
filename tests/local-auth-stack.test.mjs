@@ -66,6 +66,8 @@ test('membership_deleted_before_user_and_cleanup_is_idempotent',async()=>{
     const stack=await h.start();assert.equal(stack.publicKey,'sb_publishable_local_fixture');
     const config=await readFile(path.join(stack.workdir,'supabase/config.toml'),'utf8');
     assert.match(config,/jwt_expiry = 120/);
+    assert.match(config,/\[auth\][\s\S]*?enable_signup = false/);
+    assert.match(config,/\[auth\.email\][\s\S]*?enable_signup = true/);
     const account=await stack.createAccount({label:'A',role:'member',status:'active'});
     assert.match(account.email,/@example\.invalid$/);
     const state=await readFile(h.stateFile,'utf8');assert.ok(!state.includes('admin-canary'));assert.ok(!state.includes(account.password));

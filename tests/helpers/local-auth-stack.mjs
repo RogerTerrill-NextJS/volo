@@ -51,6 +51,10 @@ async function prepareConfig(root,workdir,projectId,jwtExpirySeconds,allocate) {
   let config=await readFile(path.join(root,'supabase/config.toml'),'utf8');
   config=replaceSetting(config,'','project_id',JSON.stringify(projectId));
   config=replaceSetting(config,'auth','jwt_expiry',String(jwtExpirySeconds));
+  // CLI maps email.enable_signup to GOTRUE_EXTERNAL_EMAIL_ENABLED.
+  // Permit password sign-in for Admin-created users; global signup stays disabled.
+  config=replaceSetting(config,'auth','enable_signup','false');
+  config=replaceSetting(config,'auth.email','enable_signup','true');
   config=replaceSetting(config,'db.seed','enabled','false');
   config=replaceSetting(config,'db.seed','sql_paths','[]');
   config=replaceSetting(config,'auth','site_url','"http://127.0.0.1"');
