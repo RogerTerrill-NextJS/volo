@@ -100,11 +100,25 @@ provider errors, passwords, reusable tokens or session credentials.
 
 ### Downstream server operations
 
-These names describe the existing approved semantic contract, not implemented
-exports or publicly callable RPCs. Exact inputs/results are in the
+These names describe the existing approved semantic contract. The eligibility
+read below is implemented; the other operations remain downstream work. None is
+a publicly callable RPC. Exact inputs/results are in the
 [persistence interface table](superpowers/specs/2026-10-07-volo-127-invitation-schema-design.md#persistence-interface-contract).
 Identity, requester role, verified email and setup evidence must come from trusted
 server checks, never request fields or a caller-supplied snapshot.
+
+VOLO-146 implements `readInvitationEligibility` in
+[`lib/auth/invitation-eligibility.ts`](../lib/auth/invitation-eligibility.ts).
+It accepts an invitation ID, positive safe-integer expected version and
+server-verified Auth subject/email, returning only `eligible`, `not_eligible` or
+`unavailable`. Each call performs a fresh privileged read with a five-second
+deadline covering headers and body, no redirects, no retries and no caching.
+The server secret is read lazily through the existing configuration boundary.
+No invitation rows or credentials are returned. The read does not validate
+provider tokens, session/setup expiry or password completion; VOLO-122/124 must
+validate those separately, and VOLO-30 must recheck eligibility under its lock.
+It grants no membership. `npm run test:access:unit` includes its focused policy
+and HTTP failure regressions using fictional responses and a loopback server.
 
 | Consumer | Operation | Required persistence boundary |
 | --- | --- | --- |
