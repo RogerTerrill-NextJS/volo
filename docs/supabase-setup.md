@@ -39,8 +39,8 @@ These are dated observations, not a live health monitor. Recheck before producti
 The first migration creates only `memberships`, matching VOLO-13's server-owned
 `member`/`admin` roles and `active`/`disabled` status. All Auth accounts start without
 application admission. No Auth trigger automatically creates memberships, and no role
-is accepted from user-editable metadata. Profile, invitation, flight, messaging and
-moderation tables follow in their feature tickets after the open design decisions.
+is accepted from user-editable metadata. Invitation persistence is documented below.
+Profile, flight, messaging and moderation tables follow in their feature tickets.
 
 Members can read only their own membership, including disabled status. Browser clients
 cannot insert, update or delete memberships, even when the application role is `admin`.
@@ -57,68 +57,120 @@ Storage and Realtime services are enabled locally, but there are no buckets or p
 application tables yet. Add private buckets, object policies and Realtime publications
 with the feature that needs them; do not publish role data.
 
-## Invitation schema handoff
+## Invitation persistence handoff
 
-VOLO-127's approved [invitation schema and persistence interfaces](superpowers/specs/2026-10-07-volo-127-invitation-schema-design.md)
-defines `invitations` and `invitation_send_attempts` on the PostgreSQL 17 baseline.
-This is a design contract; no invitation migration has been applied by VOLO-127.
-Invitations are email-specific and never expire with age. Provider verification
-links and setup sessions remain time-limited. MVP email matching accepts ASCII
-addresses with deterministic case folding while preserving dots and plus suffixes;
-real-provider matching must be verified before activation.
+VOLO-128 delivered the PostgreSQL 17 invitation schema in
+[`20261008010000_create_invitations.sql`](../supabase/migrations/20261008010000_create_invitations.sql).
+VOLO-130 added
+[`20261008020000_validate_revocation_reason_whitespace.sql`](../supabase/migrations/20261008020000_validate_revocation_reason_whitespace.sql)
+without rewriting that migration. The approved
+[activation contract](superpowers/specs/2026-10-07-volo-121-invitation-contract-design.md)
+and [schema/interface contract](superpowers/specs/2026-10-07-volo-127-invitation-schema-design.md)
+remain authoritative for consuming features; persistence alone is not a working
+invitation/signup flow. This handoff records checked-in schema and disposable CI
+behavior, not deployment to the shared hosted database.
 
-The two tables are trusted-server-only with explicit privileges and RLS; browser
-clients, including admins, have no direct access. Provider operations reserve a
-generation before sending and reconcile uncertain results before retrying.
-Invitation insertion/verification does not create membership. Setup correlation
-IDs are not authority; VOLO-122 owns separate verified session-bound setup state.
+### Current snapshot and send history
 
-VOLO-128 implements tables/constraints, VOLO-129 privileges/RLS, VOLO-130 database
-regressions, and VOLO-131 generated types and final handoff. VOLO-29 owns sends,
-VOLO-30 atomic membership/redemption, and VOLO-124 password orchestration. Auth
-references restrict deletion until account-retention work explicitly resolves
-them; this design does not authorize indefinite PII retention or hosted writes.
+| Table | Stores | Does not establish |
+| --- | --- | --- |
+| `public.invitations` | Current email-specific invitation, generation (`version`), bound Auth subject, setup/password snapshot and terminal outcome | Historical transition authority, a verified Auth session, or membership admission |
+| `public.invitation_send_attempts` | One durable provider operation per `(invitation_id, invitation_version)`, requester, first safe outcome and later reconciliation | Current eligibility, email delivery, or a full history of setup/password changes |
 
-### VOLO-128 migration implementation
+Application invitations never expire with age. Only redemption, revocation or
+supersession ends eligibility; provider links and separate setup authorizations
+expire. Pending or uncertain provider/setup state remains denied. The generated
+ASCII email key folds case and preserves dots and plus suffixes. Database input
+checks require trimmed ASCII addresses of 1–254 bytes; application syntax and real
+provider matching remain VOLO-29/125 responsibilities.
 
-`supabase/migrations/20261008010000_create_invitations.sql` implements the two
-invitation tables, enums, lifecycle snapshot checks, live email/subject uniqueness
-and restricted references in one transaction. It also enables RLS and revokes
-client access immediately; service_role receives SELECT/INSERT/UPDATE only.
-Deletion is explicit owner maintenance. VOLO-129 retains the access-policy review
-and expanded isolation tests; no browser role, including admins, can access either
-table directly.
+Both tables have RLS enabled and no direct privileges for `anon` or
+`authenticated`, including browser sessions belonging to admins. `service_role`
+has SELECT/INSERT/UPDATE only, with USAGE on the four invitation enums. Privileged
+access is not caller authorization: issuance/resend must first verify the caller's
+current active admin membership. Member invitations remain future work; recipients
+activate as members only. No business RPC, admission trigger or Realtime publication
+is supplied by this schema.
 
-The generated ASCII key preserves dots/plus. Database checks reject untrimmed,
-non-ASCII, empty and over-254-byte addresses; application syntax validation and
-provider matching remain VOLO-29/125. Revocation reasons are limited to 500
-characters, and attempt errors accept only safe categories: timeout,
-provider_rejected, rate_limited, provider_unavailable, identity_conflict, unknown.
-Raw provider errors and reusable secrets do not belong in these records.
+Revocation reasons require 1–500 characters with no surrounding ASCII whitespace.
+The corrective migration fails atomically on invalid history rather than rewriting
+it. Attempt errors allow only timeout, provider_rejected, rate_limited,
+provider_unavailable, identity_conflict and unknown. Neither table may contain raw
+provider errors, passwords, reusable tokens or session credentials.
 
-`supabase/tests/database/invitations.test.sql` uses transaction-owned fictional
-fixtures and tests snapshot constraints, uniqueness, send history, deletion,
-client denial and membership preservation. It runs with and without seeds.
-The CI-only `node scripts/verify-invitation-upgrade.mjs` verifies a labeled owned
-PostgreSQL 17 container, resets the disposable runner database to membership
-migration 20261006040000, snapshots existing fixtures, applies pending local
-migrations with `db push --local --skip-vault`, and compares those snapshots
-before rerunning database tests. It rejects destination arguments and developer
-or self-hosted execution; it is intentionally not a hosted maintenance command.
+### Downstream server operations
 
-Generated public-schema types must be refreshed alongside this migration to
-satisfy CI drift checks. VOLO-131 retains the final type/interface handoff;
-VOLO-130 retains comprehensive database/concurrency coverage. Row validity does
-not establish trusted state transitions, provider identity or setup authority.
-No hosted migration has been applied by this work.
+These names describe the existing approved semantic contract, not implemented
+exports or publicly callable RPCs. Exact inputs/results are in the
+[persistence interface table](superpowers/specs/2026-10-07-volo-127-invitation-schema-design.md#persistence-interface-contract).
+Identity, requester role, verified email and setup evidence must come from trusted
+server checks, never request fields or a caller-supplied snapshot.
 
-[VOLO-128 database CI](https://github.com/RogerTerrill-NextJS/volo/actions/runs/37736643436/job/113177880304)
-verified all 139 database assertions (125 invitation + 14 membership) on seeded,
-seedless and upgraded databases, including exact preservation of previous fixture
-rows. Its type-drift check detected the old generated file; the new generated
-artifact was imported unchanged after verifying its source head `08e6fb1` and ZIP
-SHA256 `b4d262dfffc0b4cb7256e8f203687501bbeb48c605b2923b748021dc48fc0252`.
-A fresh CI drift check must pass for the final PR revision.
+| Consumer | Operation | Required persistence boundary |
+| --- | --- | --- |
+| VOLO-28 | `readInvitationEligibility` | Check current invitation/version, verified subject/email and eligible state; distinguish denial from service failure; never reject for age alone |
+| VOLO-29 | `reserveInvitationSend` | Lock/check eligibility and expected resend version; reserve operation ID and one attempt per generation, then commit before the provider call |
+| VOLO-29 | `recordInvitationSendOutcome` | Use captured attempt/version to record a safe outcome; reconcile started/unknown before retry; stale results may update history but cannot advance current state |
+| VOLO-122 | `recordVerifiedSetup` | Require provider/session validation for the current bound subject/version; correlate separate expiring, session-bound setup authority |
+| VOLO-124 | `recordPasswordEstablished` | Record server-observed password success for the current subject/version and valid setup authorization; do not grant membership |
+| VOLO-30 | `redeemInvitation` | Lock/check invitation and current setup authority; create member membership and record redemption atomically; never overwrite or reactivate an existing membership |
+
+Resend advances `version`, retains the bound subject, clears the setup/password
+snapshot and invalidates old setup authority. Fence later writes with the captured
+version; terminal rows never reopen. Repeated operation IDs reuse identical outcomes
+and reject different inputs. Never hold transactions open during Auth/email calls;
+multi-row changes require one transaction rather than separate REST writes.
+
+`setup_authorization_id` is correlation only. VOLO-122 owns separate expiring,
+session-bound setup authority and encrypted confirmation transport. Row validity
+does not prove Auth or transition authority; the consuming flows enforce it and
+VOLO-125 verifies real-provider behavior. `getAccess()` remains the app access gate.
+
+Auth, parent-invitation and supersession references use ON DELETE RESTRICT.
+Follow the approved contract's explicit owned-fixture cleanup order; never cascade
+away audit data or use hosted data for tests. VOLO-91 must resolve account erasure
+and retention; these references do not approve indefinite PII retention.
+
+### Generated types and verified evidence
+
+[`lib/supabase/database.types.ts`](../lib/supabase/database.types.ts) is unchanged
+pinned CLI output already delivered by VOLO-128. Consumers can use the generated
+`Tables<'invitations'>`, `Tables<'invitation_send_attempts'>`, `TablesInsert`,
+`TablesUpdate` and `Enums` helpers. `recipient_email_key` is generated and cannot
+be supplied on insert/update. These types describe database rows and nullable
+fields, not authorized transitions or validated setup state; generated update
+shapes do not make identity/email changes permissible. Public `Functions` is empty.
+
+VOLO-130's schema change only affected a CHECK constraint, so regeneration is
+unnecessary. After [PR #24](https://github.com/RogerTerrill-NextJS/volo/pull/24)
+merged at `3ee1a4b8ffafee76ed794f515b340fbcf7719185`, main's
+[database CI](https://github.com/RogerTerrill-NextJS/volo/actions/runs/37809551484/job/113422534730)
+passed the committed-type drift check. For later schema changes, use the existing
+pinned `db:types`/`db:types:check` commands and artifact workflow below; never
+manually edit generated types or add an interface framework.
+
+[VOLO-129's access review](https://outsidethecockpit.atlassian.net/browse/VOLO-129)
+confirmed the shipped least-privilege boundary using source review and
+[post-merge CI](https://github.com/RogerTerrill-NextJS/volo/actions/runs/37794789433).
+[VOLO-130](https://outsidethecockpit.atlassian.net/browse/VOLO-130) extended the
+existing suite to 150 assertions (136 invitation + 14 membership), passing
+[seeded, seedless and upgrade CI](https://github.com/RogerTerrill-NextJS/volo/actions/runs/37807861387/job/113416889405)
+with fixture preservation. Its test-first
+[red run](https://github.com/RogerTerrill-NextJS/volo/actions/runs/37807317540/job/113414895739)
+exposed four accepted invalid whitespace cases before the corrective migration.
+
+The existing CI-only `node scripts/verify-invitation-upgrade.mjs` also proved
+concurrent live-email/subject creation: the second session blocked, then failed
+with 23505 on the expected index after the first committed. Cleanup and original
+Auth/membership preservation passed. It checks its owned PostgreSQL 17 container,
+rejects destination arguments and developer/self-hosted execution, and is not a
+hosted command. Existing tests retain old valid snapshots, client denial, send
+history and restricted deletion; snapshots never admit members.
+
+VOLO-27 can close after this handoff is merged and its remaining gates are verified.
+Sending/resend, setup authority, password orchestration, atomic redemption and
+real-provider verification remain with the consumers above. No additional build,
+Deploy Preview or hosted migration is required to validate this documentation.
 
 ## Local development and verification
 
