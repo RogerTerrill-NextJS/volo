@@ -5,12 +5,8 @@ import { NextResponse, type NextRequest } from "next/server.js";
 import type { Database } from "./database.types";
 import { getSupabasePublicConfig } from "./public-config.mjs";
 import { AUTH_CREDENTIAL_CODES, createProxyAuthTransport } from "./proxy-auth.ts";
-
-const privateHeaders = {
-  "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0",
-  Expires: "0",
-  Pragma: "no-cache",
-};
+import { applyPrivateResponseHeaders } from "../http/private-response.ts";
+import { isProtectedPagePath } from "../http/protected-path.ts";
 
 /** Refresh only. Consumers still verify identity and membership at their boundary. */
 export async function refreshSupabaseSession(request: NextRequest) {
@@ -60,8 +56,8 @@ export async function refreshSupabaseSession(request: NextRequest) {
     // Incoming request cookies are forwarded explicitly, never through a browser-visible header.
     response.headers.delete("x-middleware-set-cookie");
     for (const [key, value] of metadata) response.headers.set(key, value);
-    if (original.length > 0 || failed) {
-      for (const [key, value] of Object.entries(privateHeaders)) response.headers.set(key, value);
+    if (original.length > 0 || updates.size > 0 || failed || isProtectedPagePath(request.nextUrl.pathname)) {
+      applyPrivateResponseHeaders(response.headers);
     }
     return response;
   };

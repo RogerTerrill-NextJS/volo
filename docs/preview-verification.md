@@ -79,3 +79,11 @@ during those interactions. No deployment-specific routing failures were found.
 
 These checks do not cover sessions, invitation/reset callbacks, private caching,
 or database access. Those remain under VOLO-110 and VOLO-19.
+
+## Private cache verification
+
+Use `SMOKE_BASE_URL=https://deploy-preview-<PR-number>--voloapp.netlify.app node scripts/verify-preview-cache.mjs`
+for repeated anonymous GET/HEAD policy, cache-status and age observations. See the
+[cache evidence and limits](private-caching.md), including actual local browser
+history observations. No hosted authenticated isolation claim is made; VOLO-110
+owns that verification after downstream auth flows exist.

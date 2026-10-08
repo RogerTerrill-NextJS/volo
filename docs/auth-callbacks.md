@@ -138,3 +138,15 @@ unapproved return destinations.
 - [Supabase request-scoped SSR clients](https://supabase.com/docs/guides/auth/server-side/creating-a-client?framework=nextjs)
 - [Environment context and fork policy](environment-configuration.md#netlify-and-ci)
 - [Release workflow](release-workflow.md)
+
+## Session response caching handoff (VOLO-118)
+
+VOLO-21/22/23 and future invitation/reset callbacks must apply
+`applyPrivateResponseHeaders` from `lib/http/private-response.ts` to every
+session/token-bearing response, success or failure, including before membership
+exists. Writable SDK clients apply it through the existing header sink before
+cookie persistence. Preserve cookie/redirect ownership. Login/logout must also
+invalidate retained Router Cache state and perform fresh session-change navigation
+using supported installed Next APIs. HTTP policy cannot erase already-delivered
+history. See the [cache contract](private-caching.md); VOLO-110 retains hosted
+authenticated session/callback/CDN verification with an explicitly approved account.

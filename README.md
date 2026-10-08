@@ -123,3 +123,6 @@ or private user data. Review staged changes before committing.
 Only intentionally public values may use `NEXT_PUBLIC_`. Supabase secret and
 service-role keys must stay in server code; modules using privileged credentials
 must import `server-only`. Never return those values in page props or API responses.
+
+Private/session responses share explicit browser and CDN no-store policy. See the
+[cache contract and verification](docs/private-caching.md); run `npm run test:cache`.

@@ -10,7 +10,7 @@ const fixture=await startMutationFixture({actions:withActions});
 try {
   const member=await fixture.seed("member"),admin=await fixture.seed("admin",{role:"admin"});
   const post=(account=member,body={value:"valid"},headers={},route="/api/write")=>fixture.request(route,account.jar,{method:"POST",body:JSON.stringify(body),headers:{"Content-Type":"application/json",...headers}});
-  const privateResponse=({response})=>{assert.match(response.headers.get("cache-control"),/private/);assert.match(response.headers.get("cache-control"),/no-store/);assert.equal(response.headers.get("access-control-allow-origin"),null);};
+  const privateResponse=({response})=>{for(const field of ["cdn-cache-control","netlify-cdn-cache-control"])assert.equal(response.headers.get(field),"no-store");assert.match(response.headers.get("cache-control"),/private/);assert.match(response.headers.get("cache-control"),/no-store/);assert.equal(response.headers.get("access-control-allow-origin"),null);};
   const denied=async(call,status,code)=>{const before=fixture.effects.length;const result=await call();assert.equal(result.response.status,status,result.body);assert.equal(JSON.parse(result.body).code,code);assert.equal(fixture.effects.length,before);privateResponse(result);return result;};
   const success=async(account,route="/api/write")=>{const before=fixture.effects.length;const queries=fixture.backend.calls.filter(x=>x.service==="membership").length;
     const result=await post(account,{value:"valid"},{},route);assert.equal(result.response.status,200,result.body);assert.deepEqual(JSON.parse(result.body),{ok:true,data:{saved:true}});
@@ -72,7 +72,12 @@ try {
       let body,requestHeaders=headers;
       if(transport==="fetch"){body=await encodeReply([null,formData]);requestHeaders={Accept:"text/x-component","Next-Action":ids[index],...headers};}
       else {body=new FormData();for(const [key,value] of forms[index])body.append(key,value);for(const [key,value] of formData)body.append(key,value);}
-      return fixture.request("/",account.jar,{method:"POST",body,headers:requestHeaders});
+      const result=await fixture.request("/",account.jar,{method:"POST",body,headers:requestHeaders});
+      if(account.jar.size) {
+        for(const field of ["cdn-cache-control","netlify-cdn-cache-control"])assert.equal(result.response.headers.get(field),"no-store");
+        assert.match(result.response.headers.get("cache-control"),/no-store/);
+      }
+      return result;
     };
     for(const transport of ["fetch","native"]){const before=fixture.effects.length;const result=await invoke(transport,member,form());assert.equal(result.response.status,200,result.body);assert.equal(fixture.effects.length,before+1);if(transport==="fetch")assert.match(result.body,/"ok":true/);}
     console.log("PASS: fetched and native Server Actions invoke the guarded effect once");

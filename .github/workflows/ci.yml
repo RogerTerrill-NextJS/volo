@@ -51,6 +51,8 @@ jobs:
         run: npm run test:protected-app
       - name: Protected mutation authorization, input limits and origin enforcement
         run: npm run test:mutations
+      - name: Private response cache isolation and public cache controls
+        run: npm run test:cache
       - name: Supabase browser and server boundaries
         run: npm run test:boundaries
 

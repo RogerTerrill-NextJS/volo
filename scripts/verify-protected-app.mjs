@@ -90,6 +90,7 @@ try {
   }
   assert.ok(ready, "Fixture server starts");
   const privateHeaders = response => {
+    for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]) assert.equal(response.headers.get(field),"no-store");
     const policy = response.headers.get("cache-control") ?? "";
     assert.match(policy, /private/, "Protected responses must be private");
     assert.match(policy, /no-store/, "Protected responses must not be stored");

@@ -488,3 +488,10 @@ owning service and update ignored local files and affected Netlify contexts;
 record variable names and verification results, never the values. Consult
 [Next.js environment variables](https://nextjs.org/docs/app/guides/environment-variables)
 and [Supabase API key types](https://supabase.com/docs/guides/getting-started/api-keys).
+
+## Private response caching
+
+See the [VOLO-118 cache contract](private-caching.md) for the five browser/CDN
+headers, protected path registration, SDK header-sink ownership and request-scoped
+authorization. Public/static caching is preserved. Fixtures use fictional local
+services only; hosted preview verification remains anonymous.

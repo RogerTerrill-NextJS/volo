@@ -77,6 +77,15 @@ test("public login provides the agreed destination and navigation home", async (
   assert.match(html, /href="\/"/);
 });
 
+function protectedPolicy(response) {
+  assert.match(response.headers.get("cache-control")??"",/no-store/);
+  for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]) {
+    const value=response.headers.get(field);
+    if(value!==null)assert.equal(value,"no-store");
+  }
+  assert.equal(response.headers.getSetCookie().length,0);
+}
+
 test("anonymous dashboard requests redirect to login without workspace content", async () => {
   for (const query of ["verification=volo-116", "reason=untrusted&next=https://example.invalid&token=query-secret-canary"]) {
     const response = await fetch(`${baseUrl}/dashboard?${query}`, {
@@ -84,6 +93,7 @@ test("anonymous dashboard requests redirect to login without workspace content",
       redirect: "manual", signal: AbortSignal.timeout(5000),
     });
     const html = await response.text();
+    protectedPolicy(response);
     assert.doesNotMatch(html, /Workspace overview/);
     assert.match(response.headers.get("cache-control") ?? "", /private/);
     assert.match(response.headers.get("cache-control") ?? "", /no-store/);
@@ -101,6 +111,7 @@ test("anonymous dashboard RSC cannot expose workspace content", async () => {
   for (let attempt = 0; attempt < 3; attempt++) {
     const response = await fetch(baseUrl + route, {redirect: "manual", headers: {RSC: "1"}, signal: AbortSignal.timeout(5000)});
     const body = await response.text();
+    protectedPolicy(response);
     assert.doesNotMatch(body, /Workspace overview/);
     if (response.status === 307) {
       const target = new URL(response.headers.get("location"), baseUrl);

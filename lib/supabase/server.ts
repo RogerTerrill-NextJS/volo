@@ -3,6 +3,7 @@ import { createServerClient, type CookieMethodsServer } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "./database.types";
 import { getSupabasePublicConfig } from "./public-config.mjs";
+import { applyPrivateResponseHeaders } from "../http/private-response.ts";
 
 type ServerClientOptions = {fetch?: typeof globalThis.fetch} & (
   | { cookieMode: "read-only" }
@@ -25,7 +26,9 @@ export async function createServerSupabaseClient(options: ServerClientOptions) {
   const adapter: CookieMethodsServer = { getAll: () => store.getAll() };
   if (options.cookieMode === "read-write") {
     adapter.setAll = async (updates, headers) => {
-      await options.setResponseHeaders(headers);
+      const responseHeaders = new Headers(headers);
+      applyPrivateResponseHeaders(responseHeaders);
+      await options.setResponseHeaders(Object.fromEntries(responseHeaders));
       for (const { name, value, options: cookieOptions } of updates) {
         store.set(name, value, cookieOptions);
       }
