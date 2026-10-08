@@ -60,7 +60,9 @@ denial to 403; unavailable to 503; input to 400/413/415; unsupported method to
 405; internal failure to 500. Actions return semantic result codes through Next's
 transport rather than promising an HTTP 403. Recognized bad credentials clear
 only the current project's session cookies. Auth outages/deadlines return safe
-503 without destroying a potentially valid session.
+503 without destroying a potentially valid session. Legacy Auth error payloads
+with a numeric HTTP `code` use their string `error_code` for the same recognized
+credential decisions; unknown error codes remain unavailable.
 
 Current membership changes take effect on new guarded requests even with an
 existing JWT. This is distinct from session revocation. The termination scenario
@@ -90,6 +92,8 @@ waits on actual issued expiration, never edits a valid JWT's expiry, with a
 180-second maximum wait and 240-second scenario bound. Concurrent requests use
 snapshots of the same expired session alongside independent B traffic; immutable
 account IDs are checked both on refresh and on requests using returned cookies.
+The unusable-refresh case retains credentials from a separately signed-out real
+session; it tests server rejection rather than malformed token syntax.
 Separate sessions prevent
 destructive refresh/logout probes from contaminating other cases. Bodies,
 non-cookie headers, browser assets and captured logs are scanned for credential

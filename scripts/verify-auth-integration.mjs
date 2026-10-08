@@ -124,7 +124,7 @@ try{
         return {...observations,application:application.status===200?'accepted':'rejected',contract:'Unexpired access-token acceptance is measured separately from refresh revocation.'};
       });
       await scenario('natural_expiry',async()=>{
-        const started=Date.now(),valid=await fresh('A'),independent=await fresh('B'),invalid=invalidSession(await fresh('B'),'refresh');sessions.push(invalid);
+        const started=Date.now(),valid=await fresh('A'),independent=await fresh('B'),terminated=await fresh('B'),invalid=terminated.clone();sessions.push(invalid);await terminated.signOut();
         const concurrent=[valid,valid.clone(),valid.clone()];sessions.push(...concurrent.slice(1));
         const before=valid.cookieHeader(),wait=Math.max(valid.expiresAt,independent.expiresAt,invalid.expiresAt)*1000+2000-Date.now();check(wait>0&&wait<=180000,'bounded real expiry');
         // Short waits allow a cancellation signal to reach owned cleanup promptly.

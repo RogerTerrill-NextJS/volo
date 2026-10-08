@@ -34,7 +34,8 @@ export function createProxyAuthTransport() {
         const body = await response.text();
         const data = JSON.parse(body);
         if (!response.ok) {
-          const upstreamCode = data?.code ?? data?.error_code;
+          // Older Auth responses use a numeric HTTP code beside error_code.
+          const upstreamCode = typeof data?.code === "string" ? data.code : data?.error_code;
           if (!AUTH_CREDENTIAL_CODES.has(upstreamCode)) return terminal();
           const code = upstreamCode;
           return Response.json({code, error_code:code, message:"Authentication rejected."}, {status:response.status, headers:response.headers});
