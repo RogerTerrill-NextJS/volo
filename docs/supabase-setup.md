@@ -79,6 +79,47 @@ VOLO-30 atomic membership/redemption, and VOLO-124 password orchestration. Auth
 references restrict deletion until account-retention work explicitly resolves
 them; this design does not authorize indefinite PII retention or hosted writes.
 
+### VOLO-128 migration implementation
+
+`supabase/migrations/20261008010000_create_invitations.sql` implements the two
+invitation tables, enums, lifecycle snapshot checks, live email/subject uniqueness
+and restricted references in one transaction. It also enables RLS and revokes
+client access immediately; service_role receives SELECT/INSERT/UPDATE only.
+Deletion is explicit owner maintenance. VOLO-129 retains the access-policy review
+and expanded isolation tests; no browser role, including admins, can access either
+table directly.
+
+The generated ASCII key preserves dots/plus. Database checks reject untrimmed,
+non-ASCII, empty and over-254-byte addresses; application syntax validation and
+provider matching remain VOLO-29/125. Revocation reasons are limited to 500
+characters, and attempt errors accept only safe categories: timeout,
+provider_rejected, rate_limited, provider_unavailable, identity_conflict, unknown.
+Raw provider errors and reusable secrets do not belong in these records.
+
+`supabase/tests/database/invitations.test.sql` uses transaction-owned fictional
+fixtures and tests snapshot constraints, uniqueness, send history, deletion,
+client denial and membership preservation. It runs with and without seeds.
+The CI-only `node scripts/verify-invitation-upgrade.mjs` verifies a labeled owned
+PostgreSQL 17 container, resets the disposable runner database to membership
+migration 20261006040000, snapshots existing fixtures, applies pending local
+migrations with `db push --local --skip-vault`, and compares those snapshots
+before rerunning database tests. It rejects destination arguments and developer
+or self-hosted execution; it is intentionally not a hosted maintenance command.
+
+Generated public-schema types must be refreshed alongside this migration to
+satisfy CI drift checks. VOLO-131 retains the final type/interface handoff;
+VOLO-130 retains comprehensive database/concurrency coverage. Row validity does
+not establish trusted state transitions, provider identity or setup authority.
+No hosted migration has been applied by this work.
+
+[VOLO-128 database CI](https://github.com/RogerTerrill-NextJS/volo/actions/runs/37736643436/job/113177880304)
+verified all 139 database assertions (125 invitation + 14 membership) on seeded,
+seedless and upgraded databases, including exact preservation of previous fixture
+rows. Its type-drift check detected the old generated file; the new generated
+artifact was imported unchanged after verifying its source head `08e6fb1` and ZIP
+SHA256 `b4d262dfffc0b4cb7256e8f203687501bbeb48c605b2923b748021dc48fc0252`.
+A fresh CI drift check must pass for the final PR revision.
+
 ## Local development and verification
 
 Use Node 24, `npm ci`, and a running Docker-compatible runtime. The CLI is pinned

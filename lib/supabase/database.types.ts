@@ -5,7 +5,45 @@ export type Database = {
   
   "public": {
           Tables: {
-            "memberships": {
+            "invitation_send_attempts": {
+                  Row: {
+                    "completed_at": string | null,"id": string,"invitation_id": string,"invitation_version": number,"kind": Database["public"]['Enums']["invitation_send_kind"],"outcome": Database["public"]['Enums']["invitation_send_outcome"],"provider_error_code": string | null,"reconciled_at": string | null,"reconciled_outcome": Database["public"]['Enums']["invitation_send_resolution"] | null,"requested_by_user_id": string,"started_at": string
+                  }
+                  Insert: {
+                    "completed_at"?: string | null,"id"?: string,"invitation_id": string,"invitation_version": number,"kind": Database["public"]['Enums']["invitation_send_kind"],"outcome"?: Database["public"]['Enums']["invitation_send_outcome"],"provider_error_code"?: string | null,"reconciled_at"?: string | null,"reconciled_outcome"?: Database["public"]['Enums']["invitation_send_resolution"] | null,"requested_by_user_id": string,"started_at"?: string
+                  }
+                  Update: {
+                    "completed_at"?: string | null,"id"?: string,"invitation_id"?: string,"invitation_version"?: number,"kind"?: Database["public"]['Enums']["invitation_send_kind"],"outcome"?: Database["public"]['Enums']["invitation_send_outcome"],"provider_error_code"?: string | null,"reconciled_at"?: string | null,"reconciled_outcome"?: Database["public"]['Enums']["invitation_send_resolution"] | null,"requested_by_user_id"?: string,"started_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "invitation_send_attempts_invitation_id_fkey"
+      columns: ["invitation_id"]
+isOneToOne: false
+      referencedRelation: "invitations"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"invitations": {
+                  Row: {
+                    "auth_user_id": string | null,"created_at": string,"id": string,"invited_by_user_id": string,"password_established_at": string | null,"recipient_email": string,"recipient_email_key": string,"redeemed_at": string | null,"revocation_reason": string | null,"revoked_at": string | null,"revoked_by_user_id": string | null,"setup_authorization_id": string | null,"status": Database["public"]['Enums']["invitation_status"],"superseded_at": string | null,"superseded_by_id": string | null,"updated_at": string,"verified_at": string | null,"verified_user_id": string | null,"version": number
+                  }
+                  Insert: {
+                    "auth_user_id"?: string | null,"created_at"?: string,"id"?: string,"invited_by_user_id": string,"password_established_at"?: string | null,"recipient_email": string,"recipient_email_key"?: never,"redeemed_at"?: string | null,"revocation_reason"?: string | null,"revoked_at"?: string | null,"revoked_by_user_id"?: string | null,"setup_authorization_id"?: string | null,"status"?: Database["public"]['Enums']["invitation_status"],"superseded_at"?: string | null,"superseded_by_id"?: string | null,"updated_at"?: string,"verified_at"?: string | null,"verified_user_id"?: string | null,"version"?: number
+                  }
+                  Update: {
+                    "auth_user_id"?: string | null,"created_at"?: string,"id"?: string,"invited_by_user_id"?: string,"password_established_at"?: string | null,"recipient_email"?: string,"recipient_email_key"?: never,"redeemed_at"?: string | null,"revocation_reason"?: string | null,"revoked_at"?: string | null,"revoked_by_user_id"?: string | null,"setup_authorization_id"?: string | null,"status"?: Database["public"]['Enums']["invitation_status"],"superseded_at"?: string | null,"superseded_by_id"?: string | null,"updated_at"?: string,"verified_at"?: string | null,"verified_user_id"?: string | null,"version"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "invitations_superseded_by_id_fkey"
+      columns: ["superseded_by_id"]
+isOneToOne: false
+      referencedRelation: "invitations"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"memberships": {
                   Row: {
                     "created_at": string,"disabled_at": string | null,"disabled_reason": string | null,"role": Database["public"]['Enums']["member_role"],"status": Database["public"]['Enums']["membership_status"],"user_id": string
                   }
@@ -27,7 +65,7 @@ export type Database = {
             [_ in never]: never
           }
           Enums: {
-            "member_role": "member"|"admin","membership_status": "active"|"disabled"
+            "invitation_send_kind": "initial"|"resend","invitation_send_outcome": "started"|"accepted"|"rejected"|"unknown","invitation_send_resolution": "accepted"|"rejected","invitation_status": "pending_issuance"|"issued"|"setup_verified"|"password_established"|"redeemed"|"revoked"|"superseded","member_role": "member"|"admin","membership_status": "active"|"disabled"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -143,7 +181,7 @@ export type CompositeTypes<
 export const Constants = {
   "public": {
           Enums: {
-            "member_role": ["member", "admin"],"membership_status": ["active", "disabled"]
+            "invitation_send_kind": ["initial", "resend"],"invitation_send_outcome": ["started", "accepted", "rejected", "unknown"],"invitation_send_resolution": ["accepted", "rejected"],"invitation_status": ["pending_issuance", "issued", "setup_verified", "password_established", "redeemed", "revoked", "superseded"],"member_role": ["member", "admin"],"membership_status": ["active", "disabled"]
           }
         }
 } as const
