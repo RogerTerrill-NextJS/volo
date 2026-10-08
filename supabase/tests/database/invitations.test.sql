@@ -59,6 +59,20 @@ select throws_ok('select pg_temp.invite(''{"updated_at": "1999-01-01T00:00:00Z"}
 select throws_ok('select pg_temp.invite(''{"invited_by_user_id": "88888888-8888-4888-8888-888888888888"}''::jsonb)','23503',null,'Missing invited_by_user_id FK rejected');
 select throws_ok('select pg_temp.invite(''{"auth_user_id": "88888888-8888-4888-8888-888888888888", "status": "issued"}''::jsonb)','23503',null,'Missing auth_user_id FK rejected');
 select throws_ok('select pg_temp.invite(''{"auth_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "verified_user_id": "88888888-8888-4888-8888-888888888888", "verified_at": "2000-01-02T00:00:00Z", "setup_authorization_id": "99999999-9999-4999-8999-999999999999", "status": "setup_verified"}''::jsonb)','23514',null,'Unknown verified subject cannot replace the bound recipient');
+-- Equality rejects a different verified subject before FK checks run. Isolate the
+-- verified-user FK in this rollback-only test so its removal cannot go unnoticed.
+savepoint verified_fk;
+alter table public.invitations drop constraint invitations_auth_user_id_fkey;
+select throws_ok($sql$select pg_temp.invite('{
+ "recipient_email":"missing-verified@example.invalid", "status":"setup_verified",
+ "auth_user_id":"88888888-8888-4888-8888-888888888888",
+ "verified_user_id":"88888888-8888-4888-8888-888888888888",
+ "verified_at":"2000-01-02T00:00:00Z",
+ "setup_authorization_id":"99999999-9999-4999-8999-999999999999"}'::jsonb)$sql$,
+ '23503','insert or update on table "invitations" violates foreign key constraint "invitations_verified_user_id_fkey"',
+ 'Equal but missing verified subject fails the verified-user FK');
+rollback to savepoint verified_fk;
+release savepoint verified_fk;
 select throws_ok('select pg_temp.invite(''{"revoked_by_user_id": "88888888-8888-4888-8888-888888888888", "status": "revoked", "revoked_at": "2000-01-03T00:00:00Z", "revocation_reason": "Test"}''::jsonb)','23503',null,'Missing revoked_by_user_id FK rejected');
 select throws_ok('select pg_temp.invite(''{"status": "issued"}''::jsonb)','23514',null,'issued requires Auth binding');
 select throws_ok('select pg_temp.invite(''{"status": "setup_verified"}''::jsonb)','23514',null,'setup_verified requires Auth binding');
@@ -66,8 +80,21 @@ select throws_ok('select pg_temp.invite(''{"status": "password_established"}''::
 select throws_ok('select pg_temp.invite(''{"status": "redeemed"}''::jsonb)','23514',null,'redeemed requires Auth binding');
 select lives_ok('select pg_temp.invite(''{"recipient_email": "issued@example.invalid", "status": "issued", "auth_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}''::jsonb)','Issued snapshot valid');
 select throws_ok('select pg_temp.invite(''{"recipient_email": "second-subject@example.invalid", "status": "issued", "auth_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}''::jsonb)','23505',null,'One live invitation per subject');
-select lives_ok('select pg_temp.invite(''{"auth_user_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "verified_user_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "verified_at": "2000-01-02T00:00:00Z", "setup_authorization_id": "99999999-9999-4999-8999-999999999999", "recipient_email": "setup_verified@example.invalid", "status": "setup_verified"}''::jsonb)','setup_verified snapshot valid');
-select lives_ok('select pg_temp.invite(''{"auth_user_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "verified_user_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "verified_at": "2000-01-02T00:00:00Z", "setup_authorization_id": "99999999-9999-4999-8999-999999999999", "recipient_email": "password_established@example.invalid", "status": "password_established", "password_established_at": "2000-01-03T00:00:00Z"}''::jsonb)','password_established snapshot valid');
+select lives_ok('select pg_temp.invite(''{"auth_user_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "verified_user_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc", "verified_at": "2000-01-02T00:00:00Z", "setup_authorization_id": "99999999-9999-4999-8999-999999999999", "recipient_email": "setup_verified@example.invalid", "status": "setup_verified"}''::jsonb)','Old setup_verified snapshot remains valid without age expiry');
+select lives_ok('select pg_temp.invite(''{"auth_user_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "verified_user_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "verified_at": "2000-01-02T00:00:00Z", "setup_authorization_id": "99999999-9999-4999-8999-999999999999", "recipient_email": "password_established@example.invalid", "status": "password_established", "password_established_at": "2000-01-03T00:00:00Z"}''::jsonb)','Old password_established snapshot remains valid without age expiry');
+-- Each later live state must keep both uniqueness reservations. These otherwise
+-- valid candidates target one index at a time (no subject in the email case).
+select throws_ok(format('select pg_temp.invite(%L::jsonb)',
+ jsonb_build_object('recipient_email',upper(email))::text),
+ '23505',null,state || ' reserves its live email')
+from (values ('setup_verified','setup_verified@example.invalid'),
+ ('password_established','password_established@example.invalid')) as fixture(state,email);
+select throws_ok(format('select pg_temp.invite(%L::jsonb)',
+ jsonb_build_object('recipient_email',state || '-other@example.invalid',
+ 'status','issued','auth_user_id',subject)::text),
+ '23505',null,state || ' reserves its live Auth subject')
+from (values ('setup_verified','cccccccc-cccc-4ccc-8ccc-cccccccccccc'),
+ ('password_established','dddddddd-dddd-4ddd-8ddd-dddddddddddd')) as fixture(state,subject);
 select lives_ok('select pg_temp.invite(''{"auth_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "verified_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "verified_at": "2000-01-02T00:00:00Z", "setup_authorization_id": "99999999-9999-4999-8999-999999999999", "recipient_email": "redeemed@example.invalid", "status": "redeemed", "password_established_at": "2000-01-03T00:00:00Z", "redeemed_at": "2000-01-04T00:00:00Z"}''::jsonb)','Redeemed history releases subject uniqueness');
 select throws_ok('select pg_temp.invite(''{"auth_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "verified_user_id": null, "verified_at": "2000-01-02T00:00:00Z", "setup_authorization_id": "99999999-9999-4999-8999-999999999999", "status": "setup_verified"}''::jsonb)','23514',null,'Incomplete setup triple rejected: verified_user_id');
 select throws_ok('select pg_temp.invite(''{"auth_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "verified_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "verified_at": null, "setup_authorization_id": "99999999-9999-4999-8999-999999999999", "status": "setup_verified"}''::jsonb)','23514',null,'Incomplete setup triple rejected: verified_at');
@@ -95,6 +122,22 @@ select throws_ok('select pg_temp.invite(''{"status": "revoked", "revoked_at": "2
 select throws_ok('select pg_temp.invite(''{"status": "revoked", "revoked_at": "2000-01-03T00:00:00Z", "revoked_by_user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "revocation_reason": ""}''::jsonb)','23514',null,'Invalid revocation reason rejected 0');
 select throws_ok('select pg_temp.invite(''{"status": "revoked", "revoked_at": "2000-01-03T00:00:00Z", "revoked_by_user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "revocation_reason": "  "}''::jsonb)','23514',null,'Invalid revocation reason rejected 2');
 select throws_ok('select pg_temp.invite(''{"status": "revoked", "revoked_at": "2000-01-03T00:00:00Z", "revoked_by_user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "revocation_reason": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}''::jsonb)','23514',null,'Invalid revocation reason rejected 501');
+-- Reverting to the old space-only btrim would accept these invalid reasons.
+select throws_ok(format('select pg_temp.invite(%L::jsonb)',
+ jsonb_build_object('status','revoked','revoked_at','2000-01-03T00:00:00Z',
+ 'revoked_by_user_id','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'revocation_reason',reason)::text),
+ '23514',null,description)
+from (values (chr(9),'Tab-only revocation reason rejected'),
+ (chr(10),'Newline-only revocation reason rejected'),
+ (' ' || chr(9) || chr(10) || chr(11) || chr(12) || chr(13),'Mixed blank revocation reason rejected'),
+ (chr(9) || 'Test','Leading tab in revocation reason rejected'),
+ ('Test' || chr(13),'Trailing carriage return in revocation reason rejected')) as fixture(reason,description);
+select lives_ok(format('select pg_temp.invite(%L::jsonb)',
+ jsonb_build_object('status','revoked','revoked_at','2000-01-03T00:00:00Z',
+ 'revoked_by_user_id','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'recipient_email','bounded-reason@example.invalid','revocation_reason',repeat('x',500))::text),
+ 'Trimmed 500-character revocation reason remains valid');
 select throws_ok('select pg_temp.invite(''{"status": "revoked", "revoked_at": "1999-01-01T00:00:00Z", "revoked_by_user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "revocation_reason": "Test"}''::jsonb)','23514',null,'Revocation cannot precede creation');
 select throws_ok('select pg_temp.invite(''{"status": "revoked", "revoked_at": "2000-01-03T00:00:00Z", "revoked_by_user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "revocation_reason": "Test", "password_established_at": "2000-01-03T00:00:00Z"}''::jsonb)','23514',null,'Terminal password without verified evidence rejected');
 select lives_ok('select pg_temp.invite(''{"status": "superseded", "superseded_at": "2000-01-03T00:00:00Z", "superseded_by_id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "recipient_email": "superseded@example.invalid"}''::jsonb)','Supersession snapshot valid');
