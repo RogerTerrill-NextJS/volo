@@ -1,6 +1,6 @@
 # Invitation schema and persistence interfaces
 
-VOLO-127 under VOLO-27. Status: draft for written-spec review.
+VOLO-127 under VOLO-27. Status: written spec approved by Roger.
 
 ## Purpose and approved decisions
 
