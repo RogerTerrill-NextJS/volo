@@ -37,6 +37,12 @@ direct provider signup bypass, not only the absence of a signup screen.
 
 VOLO-27 owns schema and migrations. Its record must support:
 
+The approved [VOLO-127 schema and persistence design](2026-10-07-volo-127-invitation-schema-design.md)
+specifies the invitation/send-attempt tables, live-email/subject uniqueness,
+version fencing and trusted-server-only access. It defines current state and
+send history; verified setup authority and encrypted confirmation transport remain
+separate VOLO-122 persistence. It is a design handoff, not an applied migration.
+
 - A stable invitation ID, intended email, server-derived inviter user ID, created
   time, lifecycle state and send-attempt outcome. Application invitations have
   no expiry timestamp or age-based eligibility cutoff.

@@ -57,6 +57,28 @@ Storage and Realtime services are enabled locally, but there are no buckets or p
 application tables yet. Add private buckets, object policies and Realtime publications
 with the feature that needs them; do not publish role data.
 
+## Invitation schema handoff
+
+VOLO-127's approved [invitation schema and persistence interfaces](superpowers/specs/2026-10-07-volo-127-invitation-schema-design.md)
+defines `invitations` and `invitation_send_attempts` on the PostgreSQL 17 baseline.
+This is a design contract; no invitation migration has been applied by VOLO-127.
+Invitations are email-specific and never expire with age. Provider verification
+links and setup sessions remain time-limited. MVP email matching accepts ASCII
+addresses with deterministic case folding while preserving dots and plus suffixes;
+real-provider matching must be verified before activation.
+
+The two tables are trusted-server-only with explicit privileges and RLS; browser
+clients, including admins, have no direct access. Provider operations reserve a
+generation before sending and reconcile uncertain results before retrying.
+Invitation insertion/verification does not create membership. Setup correlation
+IDs are not authority; VOLO-122 owns separate verified session-bound setup state.
+
+VOLO-128 implements tables/constraints, VOLO-129 privileges/RLS, VOLO-130 database
+regressions, and VOLO-131 generated types and final handoff. VOLO-29 owns sends,
+VOLO-30 atomic membership/redemption, and VOLO-124 password orchestration. Auth
+references restrict deletion until account-retention work explicitly resolves
+them; this design does not authorize indefinite PII retention or hosted writes.
+
 ## Local development and verification
 
 Use Node 24, `npm ci`, and a running Docker-compatible runtime. The CLI is pinned
