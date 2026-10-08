@@ -12,7 +12,7 @@ const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'})
 const cancellation=new AbortController();const interrupt=()=>{process.exitCode=130;cancellation.abort();};process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
 let stack,app,setupStage='stack';const sessions=[];
 const check=(condition,message)=>assert.ok(condition,message);
-async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch{summary.scenarios.push({name,status:'failed'});throw new Error(`Integration scenario failed: ${name}`);}}
+async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){summary.scenarios.push({name,status:'failed',evidence:error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:'Service/transport failure'});throw new Error(`Integration scenario failed: ${name}`);}}
 function privatePolicy(response){
   check(/no-store/.test(response.headers.get('cache-control')??''),'browser no-store');
   for(const field of ['cdn-cache-control','netlify-cdn-cache-control'])check(response.headers.get(field)==='no-store','CDN no-store');
@@ -142,7 +142,7 @@ try{
   }
 }catch(error){
   if(error.fixtureDiagnostic)summary.fixtureDiagnostic=error.fixtureDiagnostic;
-  if(error.operation)summary.setupOperation={operation:error.operation,status:error.httpStatus??'transport'};
+  if(error.operation)summary.setupOperation={operation:error.operation,status:error.httpStatus??'transport',...(error.authCode?{code:error.authCode}:{})};
   console.error(`Setup stage: ${setupStage}`);
   const missingDocker=error.message==='Real local Auth stack requires a running Docker engine; no simulated fallback';
   console.error(error.message.startsWith('Integration scenario failed:')||missingDocker?error.message:'Real Auth integration failed during setup or cleanup; no credentials logged');process.exitCode=1;

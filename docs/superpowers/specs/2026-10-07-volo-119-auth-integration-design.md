@@ -1,6 +1,6 @@
 # VOLO-119 — Real Auth integration and session handoff
 
-Status: written spec approved; implementation plan awaiting review.
+Status: spec and implementation plan approved; implementation verification in progress.
 
 ## Purpose and agreed scope
 

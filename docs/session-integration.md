@@ -22,7 +22,7 @@ The controller provisions confirmed `example.invalid` accounts through local
 Auth Admin with random passwords, then creates active A/B/admin, disabled and
 absent memberships. Signup remains disabled and no email is sent. Only the
 controller receives the local service-role key; the compiled Next fixture gets
-the local API/public key. All writes and effects belong to disposable resources.
+the local API and publishable key. All writes and effects belong to disposable resources.
 
 Cleanup deletes memberships before Auth users, stops only the generated project
 and removes owned files. SIGINT/SIGTERM and CI's `always()` cleanup cover normal
@@ -34,9 +34,10 @@ node scripts/verify-auth-integration.mjs --cleanup
 ```
 
 No global Docker prune, `stop --all`, remote reset or production linking occurs.
-The ignored summary contains commit/version/scenario results only. CLI status,
+The ignored summary contains commit/version/scenario results and, on setup failure,
+a sanitized fixture build diagnostic or an operation/status category. CLI status,
 cookies, raw SDK/child errors, keys and passwords are not uploaded. A sanitized
-fixture build diagnostic may remain locally in the ignored evidence directory.
+fixture build diagnostic is also kept in the ignored evidence directory.
 
 ## Foundation interfaces
 
@@ -84,7 +85,10 @@ semantics without a scoped decision.
 
 The real suite uses one compiled fixture and independent SSR cookie jars. It
 waits on actual issued expiration, never edits a valid JWT's expiry, with a
-180-second maximum wait and 240-second scenario bound. Separate sessions prevent
+180-second maximum wait and 240-second scenario bound. Concurrent requests use
+snapshots of the same expired session alongside independent B traffic; immutable
+account IDs are checked both on refresh and on requests using returned cookies.
+Separate sessions prevent
 destructive refresh/logout probes from contaminating other cases. Bodies,
 non-cookie headers, browser assets and captured logs are scanned for credential
 canaries; intentional Set-Cookie transport stays in memory.

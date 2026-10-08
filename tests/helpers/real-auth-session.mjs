@@ -63,7 +63,7 @@ function wrap(stack,jar,canaries=new Set()) {
 
 export async function signInSession(stack,account) {
   const jar=createCookieJar();const result=await client(stack,jar).auth.signInWithPassword({email:account.email,password:account.password});
-  if(result.error||result.data.user?.id!==account.id||!result.data.session)throw new Error('Real password sign-in failed');
+  if(result.error||result.data.user?.id!==account.id||!result.data.session){const error=new Error('Real password sign-in failed');error.operation='password-signin';error.httpStatus=result.error?.status;const code=result.error?.code;error.authCode=typeof code==='string'&&/^[a-z_]{1,64}$/.test(code)?code:result.error?'transport':!result.data.session?'missing-session':'identity-mismatch';throw error;}
   return wrap(stack,jar,new Set([account.password]));
 }
 
