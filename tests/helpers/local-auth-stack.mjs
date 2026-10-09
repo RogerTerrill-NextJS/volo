@@ -188,7 +188,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         const token=link.searchParams.get('token_hash'),type=link.searchParams.get('type'),resume=link.searchParams.get('resume');
         if(link.origin!==applicationOrigin||link.pathname!=='/auth/confirm'||!token||!['invite','recovery'].includes(type))throw new Error('Invalid owned callback');
         if(resume&&!/^[A-Za-z0-9_-]{43}$/.test(resume))throw new Error('Invalid owned proof');
-        secrets.push(token,resume);const data=await api('/auth/v1/verify',{method:'POST',body:{token_hash:token,type}});
+        secrets.push(token,...(resume?[resume]:[]));const data=await api('/auth/v1/verify',{method:'POST',body:{token_hash:token,type}});
         for(const key of ['access_token','refresh_token'])if(typeof data[key]==='string')secrets.push(data[key]);
         requireOwned(data.user?.id);return {subjectId:data.user.id,resume,type};
       },

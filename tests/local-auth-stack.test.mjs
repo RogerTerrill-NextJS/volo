@@ -171,3 +171,18 @@ test('refuses_cleanup_SQL_after_owned_configuration_changes',async()=>{
  const h=await harness();let stack;
  try{stack=await h.start();const config=path.join(stack.workdir,'supabase/config.toml');await writeFile(config,'project_id = "unowned"\n');await assert.rejects(stack.close(),/cleanup failed/);assert.ok(!h.calls.some(x=>x.args[2]==='query'));assert.equal(h.calls.filter(x=>x.args[1]==='stop').length,1);}finally{await h.dispose();}
 });
+
+test('explicit_owned_token_verification_registers_credentials_without_null_canaries',async()=>{
+ const id='00000000-0000-4000-8000-000000000001';
+ const h=await harness({publicResponse:async()=>Response.json({user:{id},access_token:'owned_access_canary',refresh_token:'owned_refresh_canary'})});let stack;
+ try{
+  stack=await h.start();const account=await stack.createAccount({label:'verify',role:null});
+  const html='<a href="http://127.0.0.1:3000/auth/confirm?token_hash=owned_token_canary&amp;type=invite">Accept</a>';
+  assert.deepEqual(await stack.verifyCapturedLink(account.email,html),{subjectId:id,resume:null,type:'invite'});
+  assert.doesNotThrow(()=>stack.assertNoCredentialLeaks('null'));
+  for(const canary of ['owned_access_canary','owned_refresh_canary','owned_token_canary'])assert.throws(()=>stack.assertNoCredentialLeaks(canary),/credential leak/);
+  const verification=h.requests.find(r=>r.url.endsWith('/auth/v1/verify'));assert.equal(verification.options.method,'POST');assert.equal(verification.options.redirect,'error');
+  assert.ok(!h.requests.some(r=>r.url.includes('/auth/confirm')));
+  await assert.rejects(stack.verifyCapturedLink('foreign@example.invalid',html),/not owned/);
+ }finally{await stack?.close();await h.dispose();}
+});
