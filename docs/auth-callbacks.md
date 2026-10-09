@@ -236,3 +236,38 @@ An uncertain result never automatically retries or offers another send. These
 controls do not provide login, recipient setup or a browser-selected reconciliation
 receipt. Until VOLO-22 supplies login, authenticated UI evidence uses disposable
 fixtures; previews share production and must not be used for test email writes.
+
+### Implemented invitation acceptance boundary (VOLO-122)
+
+The Node `/auth/confirm` handler now retains a valid invitation email link in
+short-lived encrypted server transport, sets an opaque host-only HttpOnly cookie,
+and redirects to the fixed clean `/auth/confirm` URL. The clean HTML form contains
+only CSRF. GET never calls Auth verification; HEAD and prefetch create no transport
+or cookies. The exact route is excluded from Proxy session refresh so scanning a
+link cannot refresh or consume a preexisting session.
+
+Explicit same-origin, fetch-metadata and CSRF-checked POST claims transport once,
+verifies the retained provider token, verifies claims and a fresh provider user,
+and binds the subject/email/session to the current invitation. Current resend
+proof consumption and setup authority creation share one locked transaction.
+Successful POST persists Auth cookies, sets a distinct opaque setup cookie and
+redirects only to `/account/setup`. It grants no membership or admin access.
+VOLO-123 owns the setup page; VOLO-124 owns password/activation behavior.
+
+Downstream server code calls `getVerifiedInvitationSetup()` from
+`lib/auth/invitation-setup.ts`. Its minimal authorized result includes invitation
+ID/version, authorization ID and expiry. Each read revalidates Auth and checks the
+matching session, subject/email, origin, current version/correlation and database
+expiry. A general login, another session, expired grant or ordinary recovery
+without the current invitation proof cannot acquire setup authority.
+
+All confirmation responses carry private browser/CDN no-store, no-referrer and
+restrictive CSP. Wrong origin or old CSRF cannot consume a newer transport. Once
+claimed, failures do not retry provider verification. A later store failure clears
+newly issued Auth/setup cookies. If a link was consumed or the outcome is uncertain,
+ask an admin to inspect or renew the provider link; do not repeatedly submit the
+same form. Missing configuration/service outages produce safe temporary failure.
+
+Hosted activation stays gated on the key/cleanup/ingress-log prerequisites in
+[environment configuration](environment-configuration.md). Local disposable CI
+is the only environment used for provider/database writes in VOLO-122.

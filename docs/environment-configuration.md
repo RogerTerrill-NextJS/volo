@@ -497,3 +497,36 @@ authorization. Public/static caching is preserved. The deterministic suites use
 fictional local services; hosted preview verification remains anonymous. The
 separate [real Auth integration suite](session-integration.md) uses an owned
 disposable Supabase stack and does not read hosted environment files.
+
+### Invitation confirmation keys and cleanup (VOLO-122)
+
+`VOLO_CONFIRMATION_KEYS` is server-only runtime JSON:
+`{"active":"current","keys":{"current":"<base64-encoded-32-byte-key>"}}`.
+Each key ID contains 1–32 ASCII letters, digits, underscores or hyphens. Use one
+active key and optionally one retiring key. These examples are placeholders.
+Missing or invalid configuration makes confirmation unavailable without breaking
+other routes. Never put these keys in public variables, source control or logs.
+
+For rotation, deploy the new active key while retaining the previous key in the
+same `keys` object. Keep the retiring key for at least the ten-minute transport
+lifetime plus deployment overlap, then remove it. Setup cookies use digests and
+are independent of transport encryption keys. Crypto tests cover both keys.
+
+Migration `20261009030000` installs `pg_cron` and the named
+`volo-invitation-confirmation-cleanup` job every five minutes. Transport stores
+retain encrypted provider material for at most ten minutes, claim it once, and
+erase ciphertext on claim or same-browser replacement. Cleared tombstones count
+against 60 creations per minute per origin and the global 1,024-row cap until
+expiry. Cleanup runs without subsequent web requests. The separate setup grant
+expires 30 minutes after database creation; cleanup removes it and clears only a
+matching live setup snapshot. Invitations themselves have no age expiry.
+
+Hosted activation requires separate approval because Deploy Previews and
+production share Supabase. Before activation, verify the migration, restricted
+service RPC grants, active cleanup job and successful job executions; provision
+runtime keys; review the exact callback allowlist/email templates; and establish
+that hosting/proxy/observability ingress logs exclude `token_hash` and `resume`
+query values. Application responses and diagnostics contain neither value, but
+application code cannot prove platform ingress log redaction. Do not activate
+hosted email links until that gate is satisfied. Production publication remains
+locked. No hosted database, Auth, keys or templates were changed for this ticket.

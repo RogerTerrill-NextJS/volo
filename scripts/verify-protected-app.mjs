@@ -46,7 +46,6 @@ try {
   await put("next.config.mjs", `export default {outputFileTracingRoot:${JSON.stringify(directory)}};`);
   await put("app/layout.tsx", "export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}");
   await put("app/page.tsx", 'import Link from "next/link"; export default function Page(){return <main><h1>Public home</h1><Link href="/dashboard" prefetch={false}>Open dashboard</Link></main>}');
-  await put("app/auth/confirm/page.tsx", "export default function Page(){return <p>Public callback fixture</p>}");
   await put("instrumentation.js", `export function register(){const original=globalThis.fetch;globalThis.fetch=(input,init)=>{
     const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);
     if(url.origin!==${JSON.stringify(backend.origin)})throw new Error('Fixture forbids outbound requests');return original(input,init);};}`);
@@ -88,6 +87,13 @@ try {
     try {if ((await request("/api/health")).response.status === 200) {ready = true; break;}} catch { /* Startup. */ }
     await delay(100);
   }
+  const confirmUnavailable=await fetch(origin+'/auth/confirm?token_hash=provider_canary&type=invite',{redirect:'manual'});
+  assert.equal(confirmUnavailable.status,503,'confirmation cannot retain a token without encryption configuration');
+  assert.match(confirmUnavailable.headers.get('cache-control')??'',/private.*no-store/);
+  assert.equal(confirmUnavailable.headers.get('referrer-policy'),'no-referrer');
+  assert.ok(!(await confirmUnavailable.text()).includes('provider_canary'));
+  const unclaimed=await fetch(origin+'/auth/confirm',{method:'POST',redirect:'manual',headers:{Origin:origin,'content-type':'application/x-www-form-urlencoded',Cookie:'volo-confirmation='+Buffer.alloc(32,1).toString('base64url')},body:'csrf='+Buffer.alloc(32,2).toString('base64url')});
+  assert.ok(!unclaimed.headers.getSetCookie().some(value=>value.startsWith('volo-confirmation=')),'unclaimed failure preserves newer browser transport');
   assert.ok(ready, "Fixture server starts");
   const privateHeaders = response => {
     for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]) assert.equal(response.headers.get(field),"no-store");

@@ -61,7 +61,24 @@ insert into public.invitation_send_proofs(attempt_id,secret_digest,transport) va
 select is(pg_temp.setup(v=>2)->>'code','denied','initial link cannot authorize the newer resend generation');
 select is(pg_temp.setup(v=>2,attempt=>'44000000-0000-4000-8000-000000000002',resume=>repeat('e',64),transport=>'invite')->>'code','denied','wrong provider transport cannot consume resend proof');
 select ok((select consumed_at is null from public.invitation_send_proofs where attempt_id='44000000-0000-4000-8000-000000000002'),'denied setup leaves proof untouched');
+-- A late uniqueness conflict must roll the consumed proof back with the grant.
+insert into public.invitations(id,recipient_email,invited_by_user_id) values ('33000000-0000-4000-8000-000000000002','other-confirm@example.invalid','11000000-0000-4000-8000-000000000001');
+insert into public.invitation_setup_authorizations(lookup_digest,invitation_id,invitation_version,verified_user_id,session_id,origin,created_at,expires_at) values (repeat('d',64),'33000000-0000-4000-8000-000000000002',1,'11000000-0000-4000-8000-000000000001','55000000-0000-4000-8000-000000000001','https://confirm.example.invalid',now(),now()+interval '30 minutes');
+select is(pg_temp.setup(v=>2,attempt=>'44000000-0000-4000-8000-000000000002',resume=>repeat('e',64),transport=>'recovery')->>'code','conflict','late grant insertion conflict denies setup');
+select ok((select consumed_at is null from public.invitation_send_proofs where attempt_id='44000000-0000-4000-8000-000000000002'),'late insertion failure rolls proof consumption back');
+delete from public.invitation_setup_authorizations where invitation_id='33000000-0000-4000-8000-000000000002';
 select is(pg_temp.setup(v=>2,attempt=>'44000000-0000-4000-8000-000000000002',resume=>repeat('e',64),transport=>'recovery')->>'code','recorded','verified resend consumes proof with setup');
 select ok((select consumed_at is not null from public.invitation_send_proofs where attempt_id='44000000-0000-4000-8000-000000000002'),'proof consumed by successful setup transaction');
+insert into public.memberships(user_id,role,status) values ('22000000-0000-4000-8000-000000000001','member','disabled');
+select is(public.read_verified_invitation_setup(repeat('d',64),'22000000-0000-4000-8000-000000000001','Confirm+tag@example.invalid','55000000-0000-4000-8000-000000000001','https://confirm.example.invalid')->>'code','denied','even disabled membership invalidates setup authority');
+delete from public.memberships where user_id='22000000-0000-4000-8000-000000000001';
+update public.invitations set setup_authorization_id='66000000-0000-4000-8000-000000000001' where id='33000000-0000-4000-8000-000000000001';
+update public.invitation_setup_authorizations set created_at=now()-interval '31 minutes',expires_at=now()-interval '1 minute';
+select public.cleanup_invitation_confirmation();
+select is((select setup_authorization_id::text from public.invitations where id='33000000-0000-4000-8000-000000000001'),'66000000-0000-4000-8000-000000000001','expiry cannot erase newer correlation');
+insert into public.invitation_setup_authorizations(id,lookup_digest,invitation_id,invitation_version,verified_user_id,session_id,origin,created_at,expires_at) values ('66000000-0000-4000-8000-000000000001',repeat('d',64),'33000000-0000-4000-8000-000000000001',2,'22000000-0000-4000-8000-000000000001','55000000-0000-4000-8000-000000000001','https://confirm.example.invalid',now()-interval '31 minutes',now()-interval '1 minute');
+update public.invitations set status='redeemed',password_established_at=now(),redeemed_at=now() where id='33000000-0000-4000-8000-000000000001';
+select public.cleanup_invitation_confirmation();
+select ok((select status='redeemed' and verified_user_id is not null and setup_authorization_id='66000000-0000-4000-8000-000000000001' and password_established_at is not null from public.invitations where id='33000000-0000-4000-8000-000000000001'),'cleanup preserves terminal redemption evidence');
 select * from finish();
 rollback;

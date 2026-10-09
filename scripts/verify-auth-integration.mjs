@@ -5,7 +5,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
 import {startLocalAuthStack,cleanupOwnedStack,evidenceDirectory,reservePort} from '../tests/helpers/local-auth-stack.mjs';
-import {signInSession,invalidSession} from '../tests/helpers/real-auth-session.mjs';
+import {signInSession,invalidSession,emptySession} from '../tests/helpers/real-auth-session.mjs';
 import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
@@ -118,6 +118,26 @@ try{
       await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});
       return 'Real guarded requests deny signed-out/member/disabled/stale-admin and foreign-origin issuance.';
     });
+    const linkFrom=html=>new URL(html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&'));
+    const prepareConfirmation=async(link,session)=>{
+      const response=await app.request(link.pathname+link.search,{session});privatePolicy(response);await audit(response);
+      check(response.status===303&&response.headers.get('location')===app.origin+'/auth/confirm','provider URL becomes fixed clean location');
+      check(response.headers.get('referrer-policy')==='no-referrer','confirmation suppresses referrer');
+      const clean=await app.request('/auth/confirm',{session});privatePolicy(clean);const body=await clean.text();assertClean(body);
+      check(clean.status===200&&body.includes('Accept invitation'),'clean static acceptance form');
+      const csrf=body.match(/name="csrf" value="([A-Za-z0-9_-]{43})"/)?.[1];check(Boolean(csrf),'form has CSRF only');return csrf;
+    };
+    const postConfirmation=async(session,csrf,requestOrigin=app.origin)=>{
+      const response=await app.request('/auth/confirm',{session,method:'POST',headers:{Origin:requestOrigin,'content-type':'application/x-www-form-urlencoded'},body:'csrf='+csrf});privatePolicy(response);await audit(response);return response;
+    };
+    const confirmedSetup=async(session,invitation)=>{
+      check(session.userId===invitation.auth_user_id,'persisted cookie has provider subject');
+      const response=await app.request('/api/confirmation-session',{session});privatePolicy(response);const data=await response.json();
+      check(data.session.code==='verified'&&data.session.subject===invitation.auth_user_id,'fresh request revalidates Auth subject');
+      check(data.setup.status==='authorized'&&data.setup.invitationId===invitation.id,'fresh request reads committed session-bound setup');
+      check(await stack.readMembership(invitation.auth_user_id)===null,'confirmation grants no membership');
+      const denied=await app.request('/api/subject',{session});check(denied.status===403,'setup recipient cannot enter member API');
+    };
     await scenario('invitation_issuance_mail',async()=>{
       diagnosticStage='issue';const email=ownedEmail('New+tag');adminQueryEmail=email.toUpperCase();
       const sendForm=(await app.invitationForms(users.admin)).find(form=>form.kind==='send');check(Boolean(sendForm),'actual send form exists');
@@ -135,7 +155,27 @@ try{
       for(const variant of [email.replace('+tag','+other'),email.replace('+tag','.tag')]){
         stack.ownInvitationEmail(variant);check((await issue(variant)).body.data?.code==='accepted','dot/plus variants remain distinct');
       }
-      return 'Real create/bind/invite sequence, captured direct app link, normalization, no membership and no confirmation; link was not fetched.';
+      diagnosticStage='confirm-initial';const session=emptySession(stack);sessions.push(session);
+      for(const options of [{method:'HEAD'},{headers:{'Next-Router-Prefetch':'1'}},{headers:{Purpose:'prefetch'}}]){const noop=await app.request(link.pathname+link.search,{session,...options});privatePolicy(noop);check(noop.status===200&&noop.headers.getSetCookie().length===0,'scanner cannot create cookies or verify Auth');}
+      check(!(await stack.readAuthUser(invitation.auth_user_id)).email_confirmed_at,'HEAD/prefetch leaves provider token unused');
+      const oldCsrf=await prepareConfirmation(link,session),csrf=await prepareConfirmation(link,session);
+      check(!(await stack.readAuthUser(invitation.auth_user_id)).email_confirmed_at,'GET leaves provider token unused');
+      check((await postConfirmation(session,csrf,'https://foreign.invalid')).status===403,'foreign origin cannot accept');
+      const oldForm=await postConfirmation(session,oldCsrf);check(oldForm.status===400&&!oldForm.headers.getSetCookie().some(v=>v.startsWith('volo-confirmation=')),'old form preserves latest transport cookie');
+      check((await postConfirmation(session,csrf)).status===303,'explicit initial acceptance succeeds');await confirmedSetup(session,invitation);
+      const replay=emptySession(stack);sessions.push(replay);const replayCsrf=await prepareConfirmation(link,replay);check((await postConfirmation(replay,replayCsrf)).status===400,'provider link replay cannot create authority');
+      return 'Actual initial GET/HEAD/prefetch and explicit POST, two-tab CSRF fencing, persisted verified session, separate setup authority, replay denial and no membership.';
+    });
+    await scenario('invitation_confirmation_late_store_failure',async()=>{
+      diagnosticStage='confirm-store-failure';const email=adminQueryEmail.toLowerCase().replace('+tag','+other'),row=await stack.readInvitationForEmail(email);await stack.trackIssuedSubject(row.auth_user_id);
+      const link=linkFrom((await captured(email,1))[0]),session=emptySession(stack);sessions.push(session);const csrf=await prepareConfirmation(link,session);
+      await app.request('/api/confirmation-failure',{method:'POST',body:'on'});
+      try{const failed=await postConfirmation(session,csrf);check(failed.status===503,'late setup persistence failure is unavailable');
+        check(!session.cookieHeader().includes('auth-token')&&!session.cookieHeader().includes('volo-setup'),'new Auth/setup cookies cleared after provider verification');
+        check((await stack.readInvitationForEmail(email)).status==='issued','failed setup grants no durable snapshot');
+        check(Boolean((await stack.readAuthUser(row.auth_user_id)).email_confirmed_at),'provider verification actually preceded store failure');
+      }finally{await app.request('/api/confirmation-failure',{method:'POST',body:'off'});}
+      return 'Real verifyOtp issued a session before injected local store failure; response clears new session/setup cookies, no membership or setup snapshot.';
     });
     await scenario('invitation_admin_queries',async()=>{
       const email=adminQueryEmail;check(Boolean(email),'owned initial invitation available');
@@ -182,7 +222,6 @@ try{
       const email=ownedEmail(label);check((await issue(email)).body.data?.code==='accepted','initial accepted');
       const invitation=await stack.readInvitationForEmail(email);await stack.trackIssuedSubject(invitation.auth_user_id);return {email,invitation};
     };
-    const linkFrom=html=>new URL(html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&'));
     await scenario('invitation_renewal_real_transports',async()=>{
       diagnosticStage='renew-unconfirmed';const {email,invitation}=await setupRenewal('renewal');
       const form=(await app.invitationForms(users.admin)).find(form=>form.kind==='renew'&&form.fields.some(([key,value])=>key==='invitationId'&&value===invitation.id));check(Boolean(form),'actual renewal form exists');
@@ -197,19 +236,25 @@ try{
       const messages=await captured(email,2);const html=messages.find(m=>linkFrom(m).searchParams.has('resume'));check(Boolean(html),'resend proof retained');
       let link=linkFrom(html);check(link.searchParams.get('type')==='invite','unconfirmed invitation transport');
       let attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===2);const proof=await stack.readSendProof(attempt.id);check(proof?.transport==='invite'&&!proof.consumed_at,'proof persisted before send');
-      diagnosticStage='verify-owned-invite';let verified=await stack.verifyCapturedLink(email,html);check(verified.subjectId===row.auth_user_id,'actual invite token preserves subject');
+      diagnosticStage='verify-owned-invite';const inviteSession=emptySession(stack);sessions.push(inviteSession);const inviteCsrf=await prepareConfirmation(link,inviteSession);
+      const races=await Promise.all([postConfirmation(inviteSession,inviteCsrf),postConfirmation(inviteSession.clone(),inviteCsrf)]);check(races.filter(r=>r.status===303).length===1,'one concurrent explicit accept succeeds');
+      // Apply the winning response to the owned browser after both race responses.
+      inviteSession.applyResponse(races.find(r=>r.status===303));await confirmedSetup(inviteSession,row);
+      check(Boolean((await stack.readSendProof(attempt.id)).consumed_at),'invite proof consumed atomically with setup');
+      let verified={subjectId:row.auth_user_id,resume:link.searchParams.get('resume'),type:'invite'};
       const consume=()=>stack.consumeSendProof(attempt.id,row.version,verified.subjectId,verified.resume,verified.type);
-      const races=await Promise.all([consume(),consume()]);check(races.filter(r=>r.code==='consumed').length===1,'proof consumes exactly once concurrently');
       await stack.checkpointAuth(row.auth_user_id);await delay(1100);
       diagnosticStage='renew-confirmed';check((await renew(row)).body.data?.code==='accepted','confirmed recovery resend accepted');
       await stack.checkpointAuth(row.auth_user_id,true);row=await stack.readInvitationForEmail(email);check(row.version===3&&row.auth_user_id===invitation.auth_user_id,'confirmed resend retains subject');
       const recovery=(await captured(email,3)).find(m=>linkFrom(m).searchParams.get('type')==='recovery');check(Boolean(recovery),'dedicated recovery captured');
       link=linkFrom(recovery);check(Boolean(link.searchParams.get('resume')),'recovery callback retains proof');
-      attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===3);verified=await stack.verifyCapturedLink(email,recovery);check(verified.subjectId===row.auth_user_id,'actual recovery token preserves subject');
+      attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===3);verified={subjectId:row.auth_user_id,resume:link.searchParams.get('resume'),type:'recovery'};
       check((await stack.consumeSendProof(attempt.id,row.version,verified.subjectId,verified.resume,'invite')).code==='conflict','wrong transport fails');
       check((await stack.consumeSendProof(attempt.id,row.version,verified.subjectId,'','recovery')).code==='conflict','ordinary recovery without proof denied');
+      const recoverySession=emptySession(stack);sessions.push(recoverySession);const recoveryCsrf=await prepareConfirmation(link,recoverySession);check((await postConfirmation(recoverySession,recoveryCsrf)).status===303,'proof-bearing recovery accepts explicitly');await confirmedSetup(recoverySession,row);
+      check(Boolean((await stack.readSendProof(attempt.id)).consumed_at),'recovery proof consumed atomically');
       await delay(1100);const overlap=await Promise.all([consume(),renew(row)]);
-      check(['consumed','stale'].includes(overlap[0].code)&&overlap[1].body.data?.code==='accepted','proof consumption and renewal serialize');
+      check(['conflict','stale'].includes(overlap[0].code)&&overlap[1].body.data?.code==='accepted','proof consumption and renewal serialize');
       check((await consume()).code==='stale','renewal fences previous generation');check(await stack.readSendProof(attempt.id)===null,'old proof removed');row=await stack.readInvitationForEmail(email);
       const currentAttempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===4);check(!(await stack.readSendProof(currentAttempt.id)).consumed_at,'old consumer cannot consume new proof');
       await stack.revokeInvitation(row.id,accounts.admin.id);check((await renew(row)).body.data?.code==='conflict','terminal renewal denied');await captured(email,4);
