@@ -59,7 +59,7 @@ begin
   or p_expires_at is null or p_expires_at<=confirmation_time or p_expires_at>confirmation_time+interval '10 minutes'
   or p_key_id is null or p_key_id collate "C" !~ '^[A-Za-z0-9_-]{1,32}$'
   or p_nonce is null or p_nonce collate "C" !~ '^[A-Za-z0-9_-]{16}$'
-  or p_ciphertext is null or p_ciphertext collate "C" !~ '^[A-Za-z0-9_-]{1,2048}$'
+  or p_ciphertext is null or length(p_ciphertext) not between 1 and 2048 or p_ciphertext collate "C" !~ '^[A-Za-z0-9_-]+$'
   or p_tag is null or p_tag collate "C" !~ '^[A-Za-z0-9_-]{22}$' then return jsonb_build_object('code','denied'); end if;
  perform pg_advisory_xact_lock(hashtextextended('volo-confirmation-transports',0));
  delete from public.invitation_confirmation_transports where expires_at<=confirmation_time;
