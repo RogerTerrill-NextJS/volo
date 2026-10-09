@@ -12,11 +12,11 @@ import { startAuthFixture, seedSession, cookieHeader, fixtureKey } from "./helpe
 const { unstable_doesMiddlewareMatch: unstable_doesProxyMatch } = nextTesting;
 
 test("Proxy matcher covers application requests and excludes exact public assets", () => {
-  for (const url of ["/", "/dashboard", "/dashboard/report.csv", "/auth/confirm", "/login", "/api/private", "/api/health-extra", "/file.svg/private", "/_next/data/build/dashboard.json"]) {
+  for (const url of ["/", "/dashboard", "/dashboard/report.csv", "/auth/confirm/child", "/auth/confirm-extra", "/login", "/api/private", "/api/health-extra", "/file.svg/private", "/_next/data/build/dashboard.json"]) {
     for(const headers of [{},{rsc:"1"},{"next-router-prefetch":"1"}])
       assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url,headers}),true,url);
   }
-  for (const url of ["/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
+  for (const url of ["/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
     assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url}),false,url);
 });
 

@@ -70,6 +70,7 @@ export async function startAccessFixture() {
       if(entry.membership==="null-row")data=[null];
       res.end(JSON.stringify(data));return;
     }
+    if(req.method==='POST'&&url.pathname==='/rest/v1/rpc/claim_invitation_confirmation_transport'){res.setHeader('content-type','application/json');res.end(JSON.stringify({code:'denied'}));return;}
     unexpected.push({method:req.method,path:url.pathname});res.writeHead(418).end("{}");
   });
   server.listen(0,"127.0.0.1");await once(server,"listening");

@@ -87,3 +87,56 @@ for repeated anonymous GET/HEAD policy, cache-status and age observations. See t
 [cache evidence and limits](private-caching.md), including actual local browser
 history observations. No hosted authenticated isolation claim is made; VOLO-110
 owns that verification after downstream auth flows exist.
+
+## VOLO-122 invitation confirmation
+
+PR #32 adds `/auth/confirm`; the password/setup UI remains VOLO-123. Public
+preview checks may use clean GET or HEAD without cookies or query parameters.
+Do not submit hosted email tokens or acceptance forms as smoke checks: previews
+share production Supabase, and hosted activation is a separate approval.
+
+On October 9, 2026, the PR #32 preview's clean HEAD returned HTTP 200 with browser
+private no-store, both CDN no-store policies, no-referrer, restrictive CSP and no
+Set-Cookie. This establishes the deployed public response boundary only.
+
+Implementation commit `ccf75da` passed all three jobs in
+[CI run 37967437831](https://github.com/RogerTerrill-NextJS/volo/actions/runs/37967437831):
+application typecheck/lint/default build/full tests and compiled boundaries;
+seeded/unseeded SQL, upgrade preservation, exact schema types, real acceptance
+and renewal transaction overlap, cleanup correlation races and scheduled idle
+cleanup; and disposable real Auth/mail acceptance/session/expiry/leak scenarios.
+The final PR commit must retain green checks before merge.
+
+Disposable Auth tests submit the actual initial invite, resend invite and
+proof-bearing recovery form, then revalidate the persisted session and setup
+reader on a fresh request. They cover two-tab CSRF, replay, stale initial links,
+ordinary recovery without proof, wrong verified subject, no membership, and a
+store failure after real provider verification that clears new Auth/setup cookies.
+Compiled tests also prove GET/HEAD/prefetch cannot refresh expired Auth cookies.
+
+The local default Turbopack build could not bind its worker port in this execution
+environment. The local webpack production build and 44 core tests passed; the
+required default Turbopack build passed in CI. These results do not prove hosted
+key provisioning, ingress token-log exclusion, Auth template settings or actual
+hosted cleanup executions. Those activation prerequisites are documented in
+[environment configuration](environment-configuration.md).
+
+The single independent branch review found no blocking correctness or security
+issues. Deferred minor: a consumed/uncertain confirmation can display temporary
+retry wording; opening a current email or asking an admin to renew remains the
+recovery path. No authorization is delivered on that failure.
+
+Execution decisions: use pinned Node and disposable CI because local npm/Docker
+were unavailable; advance independent crypto/input work during SQL CI (possible
+adapter revision); split the bounded parser into one separate module (one extra
+file); recover exact generated public types from temporary CI output when ZIP
+download stalled (temporary log volume, then removed); preserve generator
+whitespace for exact type comparison (formatting only); use local webpack after
+Turbopack worker-port restrictions while retaining default CI build (Mac-specific
+Turbopack behavior verified only in CI); and validate immutable exact-commit CI
+results for Docker-dependent task completion (no independent Mac DB/Auth rerun).
+Hosted ingress-log exclusion, key/template/allowlist/migration/cron health and
+production publication remain separate activation/release gates. Setup UI,
+password/membership activation and ordinary recovery stay with downstream
+owners. The executor checked this documentation against observed evidence;
+functional review covered the immutable implementation range.
