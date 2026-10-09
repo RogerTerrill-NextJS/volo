@@ -1,8 +1,8 @@
 # Fenced invitation resend and explicit reconciliation
 
-VOLO-149, step 2 of VOLO-29. Status: proposed written spec for Roger's review.
-Roger approved the approach and the invitation-specific recovery transport
-amendment in conversation; this written specification awaits review.
+VOLO-149, step 2 of VOLO-29. Status: written spec approved by Roger.
+Roger approved the approach, the invitation-specific recovery transport amendment,
+and this written specification in conversation.
 
 ## Intent and scope
 
