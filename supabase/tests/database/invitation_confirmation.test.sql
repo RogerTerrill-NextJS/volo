@@ -1,0 +1,11 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path = public, extensions;
+select no_plan();
+select has_table('public','invitation_confirmation_transports','encrypted transport persistence exists');
+select has_table('public','invitation_setup_authorizations','separate setup authority exists');
+select has_function('public','claim_invitation_confirmation_transport',array['text','text','text'],'transport is claimed through an atomic server function');
+select has_function('public','record_verified_invitation_setup',array['uuid','text','uuid','text','text','uuid','bigint','uuid','text','text'],'setup and resend proof share a transaction');
+select has_function('public','cleanup_invitation_confirmation',array[]::text[],'idle secret cleanup exists');
+select * from finish();
+rollback;
