@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
-import {startLocalAuthStack,cleanupOwnedStack,evidenceDirectory} from '../tests/helpers/local-auth-stack.mjs';
+import {startLocalAuthStack,cleanupOwnedStack,evidenceDirectory,reservePort} from '../tests/helpers/local-auth-stack.mjs';
 import {signInSession,invalidSession} from '../tests/helpers/real-auth-session.mjs';
 import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
 const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.']};
 const cancellation=new AbortController();const interrupt=()=>{process.exitCode=130;cancellation.abort();};process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
-let stack,app,setupStage='stack';const sessions=[];
+let stack,app,setupStage='stack',diagnosticStage='scenario';const sessions=[];
 const check=(condition,message)=>assert.ok(condition,message);
-async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){summary.scenarios.push({name,status:'failed',evidence:error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:'Service/transport failure'});throw new Error(`Integration scenario failed: ${name}`);}}
+async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){summary.scenarios.push({name,status:'failed',evidence:error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:`Service/transport failure (${diagnosticStage}; ${error.operation??'unknown'}; ${Number.isInteger(error.httpStatus)?error.httpStatus:'no-status'})`});throw new Error(`Integration scenario failed: ${name}`);}}
 function privatePolicy(response){
   check(/no-store/.test(response.headers.get('cache-control')??''),'browser no-store');
   for(const field of ['cdn-cache-control','netlify-cdn-cache-control'])check(response.headers.get(field)==='no-store','CDN no-store');
@@ -20,7 +21,8 @@ function privatePolicy(response){
 function assertClean(text){stack.assertNoCredentialLeaks(text);for(const session of sessions)session.assertNoCredentialLeaks(text);}
 try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
-    stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal});
+    const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
+    stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal,applicationOrigin});
     await scenario('invitation_only_admission_configuration',async()=>{
       const result=await stack.probePublicAdmission();
       check(result.settings.signupDisabled===true,'global public signup disabled');
@@ -34,7 +36,7 @@ try{
       check(result.email.code==='signup_disabled','email signup rejected by admission policy');
       return 'Owned real Auth settings plus direct public email/anonymous/OAuth requests; no identity or session issued.';
     });
-    setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal});
+    setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin});
     setupStage='accounts';const accounts={},users={};
     const fresh=async label=>{const session=await signInSession(stack,accounts[label]);sessions.push(session);return session;};
     const audit=async(response,subject)=>{
@@ -91,6 +93,68 @@ try{
         for(const transport of ['json','native','fetched'])await deny(transport,users[label],{admin:true});
       }
       return 'Real self-edited Auth metadata and fresh sessions preserve missing/disabled denial and member role.';
+    });
+    const ownedEmail=label=>stack.ownInvitationEmail(`${label}-${randomUUID()}@example.invalid`);
+    const issue=async(email,session=users.admin,origin=app.origin,route='/api/invitations')=>{
+      const response=await read(route,{session,method:'POST',headers:{'content-type':'application/json',Origin:origin},body:JSON.stringify({email})});
+      privatePolicy(response);return {status:response.status,body:await response.json()};
+    };
+    const captured=async(email,count)=>{
+      let messages=[];const deadline=Date.now()+5000;
+      do{messages=await stack.readCapturedInvites(email);if(messages.length===count)break;await delay(100);}while(Date.now()<deadline);
+      check(messages.length===count,'captured invite count');return messages;
+    };
+    await scenario('invitation_issuance_authorization',async()=>{
+      for(const session of [undefined,users.A,users.disabled]){
+        const email=ownedEmail('denied');const outcome=await issue(email,session??null);
+        check([401,403].includes(outcome.status),'only active admin may issue');
+        check(await stack.readInvitationForEmail(email)===null,'denied request has no reservation');await captured(email,0);
+      }
+      let email=ownedEmail('origin');check((await issue(email,users.admin,'https://foreign.invalid')).status===403,'wrong origin denied');
+      check(await stack.readInvitationForEmail(email)===null,'wrong origin has no reservation');
+      await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});
+      email=ownedEmail('stale-admin');check((await issue(email)).status===403,'retained admin credentials cannot bypass disabled membership');
+      check(await stack.readInvitationForEmail(email)===null,'stale admin has no reservation');
+      await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});
+      return 'Real guarded requests deny signed-out/member/disabled/stale-admin and foreign-origin issuance.';
+    });
+    await scenario('invitation_issuance_mail',async()=>{
+      diagnosticStage='issue';const email=ownedEmail('New+tag');const result=await issue(` ${email.toUpperCase()} `);
+      check(result.status===200&&result.body.data?.code==='accepted','provider accepted send');
+      diagnosticStage='read-invitation';const invitation=await stack.readInvitationForEmail(email);check(invitation?.status==='issued'&&invitation.version===1,'durable issued generation');
+      diagnosticStage='read-attempts';const attempts=await stack.readSendAttempts(invitation.id);check(attempts.length===1&&attempts[0].outcome==='accepted','one accepted attempt');
+      check(attempts[0].id===invitation.auth_user_id,'reserved UUID owns provider subject');
+      diagnosticStage='track-subject';await stack.trackIssuedSubject(invitation.auth_user_id);diagnosticStage='read-subject';const user=await stack.readAuthUser(invitation.auth_user_id);
+      check(!user.email_confirmed_at,'issuance does not confirm email');diagnosticStage='read-membership';check(await stack.readMembership(invitation.auth_user_id)===null,'issuance grants no membership');
+      diagnosticStage='captured-mail';const [html]=await captured(email,1);const href=html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&');check(Boolean(href),'mail has application link');
+      const link=new URL(href);check(link.origin===app.origin&&link.pathname==='/auth/confirm','exact direct application callback');
+      check(Boolean(link.searchParams.get('token_hash'))&&link.searchParams.get('type')==='invite','token hash and invite type present');
+      check((await issue(email)).body.data?.code==='conflict','normalized duplicate cannot resend');await captured(email,1);
+      for(const variant of [email.replace('+tag','+other'),email.replace('+tag','.tag')]){
+        stack.ownInvitationEmail(variant);check((await issue(variant)).body.data?.code==='accepted','dot/plus variants remain distinct');
+      }
+      return 'Real create/bind/invite sequence, captured direct app link, normalization, no membership and no confirmation; link was not fetched.';
+    });
+    await scenario('invitation_existing_accounts',async()=>{
+      const unconfirmed=await stack.createAccount({label:'unconfirmed',role:null,emailConfirmed:false});
+      for(const account of [accounts.A,accounts.disabled,unconfirmed]){
+        const before=JSON.stringify(await stack.readAuthUser(account.id)),membership=JSON.stringify(await stack.readMembership(account.id));
+        const result=await issue(account.email);check(result.body.data?.code==='conflict','existing account rejected');
+        check(JSON.stringify(await stack.readAuthUser(account.id))===before,'existing Auth account unchanged');
+        check(JSON.stringify(await stack.readMembership(account.id))===membership,'existing membership unchanged');await captured(account.email,0);
+      }
+      const email=ownedEmail('creation-race');const race=await issue(email,users.admin,app.origin,'/api/invitation-race');
+      check(race.body.data?.code==='rejected','duplicate created after reservation rejects');
+      const row=await stack.readInvitationForEmail(email),attempts=await stack.readSendAttempts(row.id);
+      check(row.auth_user_id===null&&row.status==='pending_issuance'&&attempts[0].outcome==='rejected','competing identity never bound or issued');await captured(email,0);
+      return 'Confirmed/unconfirmed/disabled accounts preserved, including a real account created between reservation and createUser.';
+    });
+    await scenario('invitation_parallel_reservations',async()=>{
+      const email=ownedEmail('parallel');const results=await Promise.all([issue(email),issue(email.toUpperCase())]);
+      check(results.filter(x=>x.body.data?.code==='accepted').length===1,'one send wins');
+      check(results.filter(x=>x.body.data?.code==='conflict').length===1,'duplicate loses without send');
+      const row=await stack.readInvitationForEmail(email);check((await stack.readSendAttempts(row.id)).length===1,'one durable attempt');await captured(email,1);
+      return 'Concurrent normalized-email requests produce one reservation, subject and captured email.';
     });
     if(!process.argv.includes('--scenario')){
       await scenario('current_membership',async()=>{
@@ -175,7 +239,7 @@ try{
 }
 finally{
   try{await app?.close();}catch{process.exitCode=1;summary.scenarios.push({name:'fixture_cleanup',status:'failed'});}
-  try{await stack?.close();}catch{process.exitCode=1;summary.scenarios.push({name:'stack_cleanup',status:'failed'});}
+  try{await stack?.close();}catch(error){process.exitCode=1;summary.scenarios.push({name:'stack_cleanup',status:'failed',evidence:error.cleanupStage??'unknown',...(error.cleanupDiagnostic?{diagnostic:error.cleanupDiagnostic}:{})});}
   process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);
   if(!process.argv.includes('--cleanup')){await mkdir(evidenceDirectory(root),{recursive:true});await writeFile(path.join(evidenceDirectory(root),'summary.json'),JSON.stringify(summary,null,2)+'\n');}
 }

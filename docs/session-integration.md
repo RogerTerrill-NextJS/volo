@@ -136,3 +136,14 @@ Deploy Previews share production Supabase; there is no staging environment.
 Production publishing stays locked. A merge is not a release and local fixture
 evidence does not close downstream feature tickets. VOLO-119 is Done only after
 the user merges and merge ancestry is verified.
+
+## Durable invitation issuance coverage
+
+VOLO-148 extends this same disposable stack and compiled fixture with guarded
+initial issuance, real create/bind/invite ownership, protected existing accounts,
+concurrent normalized-email reservations and captured SMTP mail. The app origin
+and callback are exact owned loopback destinations. The modern local server
+secret enters only the fixture's server environment and credential-leak scans.
+Mail token hashes stay in memory and are never emitted in summary artifacts.
+Owner-scoped teardown removes invitation dependencies before referenced users.
+There is no additional stack or CI job and no hosted write test.

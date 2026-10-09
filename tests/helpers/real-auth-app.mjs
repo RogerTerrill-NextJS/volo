@@ -10,7 +10,7 @@ import {promisify} from 'node:util';
 import {reservePort,validateLocalApiUrl,sanitizeDiagnostics,evidenceDirectory} from './local-auth-stack.mjs';
 
 const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
-export async function startRealAuthApp({repositoryRoot:root,stack,signal}) {
+export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin}) {
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
   const directory=await mkdtemp(path.join(tmpdir(),'volo-real-auth-app-'));const effects=[];let server,recorder,output='',closePromise,fixtureStage='files';
   const put=async(name,value)=>{const file=path.join(directory,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,value);};
@@ -23,8 +23,9 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal}) {
     signal?.throwIfAborted();
     recorder=createServer(async(req,res)=>{try{let body='';for await(const chunk of req){body+=chunk;if(body.length>1024)throw new Error();}const data=JSON.parse(body);if(!/^[a-f0-9-]{36}$/i.test(data.userId))throw new Error();effects.push({userId:data.userId});res.end('{}');}catch{res.statusCode=400;res.end();}});
     recorder.listen(0,'127.0.0.1');await once(recorder,'listening');const recordOrigin=`http://127.0.0.1:${recorder.address().port}`;
-    const port=await reservePort(),origin=`http://127.0.0.1:${port}`;
-    const env={PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:process.env.TMPDIR,NEXT_TELEMETRY_DISABLED:'1',NEXT_PUBLIC_SUPABASE_URL:stack.apiUrl,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:stack.publicKey,VOLO_MUTATION_ORIGIN:origin};
+    const port=applicationOrigin?Number(new URL(applicationOrigin).port):await reservePort(),origin=`http://127.0.0.1:${port}`;
+    if(applicationOrigin&&origin!==applicationOrigin)throw new Error('Invalid owned application origin');
+    const env={PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:process.env.TMPDIR,NEXT_TELEMETRY_DISABLED:'1',NEXT_PUBLIC_SUPABASE_URL:stack.apiUrl,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:stack.publicKey,VOLO_MUTATION_ORIGIN:origin,SUPABASE_SECRET_KEY:stack.serverSecret};
     await symlink(path.join(root,'node_modules'),path.join(directory,'node_modules'),'dir');
     for(const name of ['lib','proxy.ts','tsconfig.json','next.config.ts'])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'protected-layout.tsx'));
@@ -37,6 +38,8 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal}) {
     await put('app/dashboard/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';import {getPageAccess} from '../../lib/auth/page-access';export default async function Page(){const access=await getPageAccess();if(access.status!=='authorized')return <p>Access denied</p>;return <main><p>subject:{access.member.userId} role:{access.member.role}</p><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>;}`);
     await put('app/api/subject/route.ts',`import {getAccess} from '../../../lib/auth/access';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const access=await getAccess();const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(access.status==='authorized'?{userId:access.member.userId,role:access.member.role}:{status:access.status},{headers,status:access.status==='authorized'?200:access.status==='unauthenticated'?401:access.status==='forbidden'?403:503});}`);
     await put('fixture-policy.ts',`import type {MutationPolicy} from './lib/auth/mutation';export function policy(admin=false):MutationPolicy<{value:string},{saved:boolean}>{return {allowedRoles:admin?['admin']:['member','admin'],parse(raw){return raw&&typeof raw==='object'&&'value' in raw&&raw.value==='valid'?{ok:true,value:{value:'valid'}}:{ok:false};},authorize(){return true;},async effect(member){const response=await fetch(${JSON.stringify(recordOrigin+'/effect')},{method:'POST',body:JSON.stringify({userId:member.userId}),cache:'no-store'});if(!response.ok)throw new Error('Recorder rejected effect');return {saved:true};}};}`);
+    await put('app/api/invitations/route.ts',`import {handleRouteMutation} from '../../../lib/auth/route-mutation';import {invitationIssuancePolicy} from '../../../lib/auth/invitation-issuance';export function POST(request:Request){return handleRouteMutation(request,{method:'POST',policy:invitationIssuancePolicy()});}`);
+    await put('app/api/invitation-race/route.ts',`import {randomUUID} from 'node:crypto';import {handleRouteMutation} from '../../../lib/auth/route-mutation';import {invitationIssuancePolicy} from '../../../lib/auth/invitation-issuance';import {executeInitialInvitation} from '../../../lib/auth/invitation-send';import {createInitialSendPorts} from '../../../lib/auth/invitation-send-provider';export function POST(request:Request){const policy=invitationIssuancePolicy();policy.effect=async(member,input)=>{const ports=createInitialSendPorts();const create=ports.createSubject;ports.createSubject=async(id,email)=>{const competing=await create(randomUUID(),email);if(competing.code!=='accepted')throw new Error('Owned race fixture failed');return create(id,email);};return executeInitialInvitation({operationId:randomUUID(),recipientEmail:input.email,requesterId:member.userId},ports);};return handleRouteMutation(request,{method:'POST',policy});}`);
     await put('app/api/write/route.ts',`import {handleRouteMutation} from '../../../lib/auth/route-mutation';import {policy} from '../../../fixture-policy';export function POST(request:Request){return handleRouteMutation(request,{method:'POST',policy:policy(new URL(request.url).searchParams.has('admin'))});}`);
     await put('app/actions.ts',`'use server';import {handleActionMutation} from '../lib/auth/action-mutation';import {policy} from '../fixture-policy';export async function mutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy());}export async function adminMutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy(true));}`);
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
@@ -67,7 +70,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal}) {
       },
     };
   }catch(error){
-    const diagnostic=sanitizeDiagnostics(`Fixture stage: ${fixtureStage}\n${error.message}\n`+output+(error.stdout??'')+(error.stderr??''),[stack.publicKey]);
+    const diagnostic=sanitizeDiagnostics(`Fixture stage: ${fixtureStage}\n${error.message}\n`+output+(error.stdout??'')+(error.stderr??''),[stack.publicKey,stack.serverSecret]);
     await mkdir(evidenceDirectory(root),{recursive:true});await writeFile(path.join(evidenceDirectory(root),'fixture-diagnostic.log'),diagnostic,{mode:0o600});
     await close();const failure=new Error('Real Auth Next fixture build/start failed; raw child output withheld');failure.fixtureDiagnostic=diagnostic.slice(-6000);throw failure;
   }

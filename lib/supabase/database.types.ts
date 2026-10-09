@@ -62,7 +62,15 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            [_ in never]: never
+            "bind_invitation_send_subject":
+{ Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_subject_id": string }; Returns: Json
+                           },
+"record_invitation_send_outcome":
+{ Args: { "p_attempt_id": string,"p_error_code": string,"p_expected_version": number,"p_outcome": string,"p_subject_id": string }; Returns: Json
+                           },
+"reserve_invitation_send":
+{ Args: { "p_operation_id": string,"p_recipient_email": string,"p_requester_id": string }; Returns: Json
+                           }
           }
           Enums: {
             "invitation_send_kind": "initial"|"resend","invitation_send_outcome": "started"|"accepted"|"rejected"|"unknown","invitation_send_resolution": "accepted"|"rejected","invitation_status": "pending_issuance"|"issued"|"setup_verified"|"password_established"|"redeemed"|"revoked"|"superseded","member_role": "member"|"admin","membership_status": "active"|"disabled"

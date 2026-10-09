@@ -28,7 +28,8 @@
     "db:reset": "supabase db reset --local",
     "db:test": "supabase test db --local",
     "db:types": "node scripts/database-types.mjs",
-    "db:types:check": "node scripts/database-types.mjs --check"
+    "db:types:check": "node scripts/database-types.mjs --check",
+    "test:invitations:unit": "node --conditions=react-server --test tests/invitation-send.unit.mts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
