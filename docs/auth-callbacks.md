@@ -223,3 +223,9 @@ receipt. Explicit reconciliation requires the exact attempt/version and original
 trusted provider response. Losing every trustworthy response leaves the operation
 pending and blocks another send; there is no timeout takeover or blind retry.
 No hosted templates, allowlists or accounts are changed by this implementation.
+
+The read-only `/admin/invitations` page shows the latest 50 invitations and their
+current-generation send state to current active admins only. Lifecycle status is
+separate from send acceptance, failure or unresolved outcomes; age does not expire
+an invitation and acceptance does not confirm delivery. Queries return minimal
+DTOs with private HTML/RSC cache policy; send/resend controls remain VOLO-151.

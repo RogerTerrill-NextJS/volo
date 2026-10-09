@@ -28,6 +28,6 @@ test("private policy replaces conflicting cache fields and preserves response me
 });
 
 test("protected roots match complete segments", () => {
-  for (const path of ["/dashboard","/dashboard/","/dashboard/report.csv"]) assert.equal(isProtectedPagePath(path),true,path);
-  for (const path of ["/","/login","/dashboard-public","/dashboards","/api/health","/_next/static/app.js"]) assert.equal(isProtectedPagePath(path),false,path);
+  for (const path of ["/dashboard","/dashboard/","/dashboard/report.csv","/admin","/admin/invitations","/admin/invitations/details"]) assert.equal(isProtectedPagePath(path),true,path);
+  for (const path of ["/","/login","/dashboard-public","/dashboards","/administrator","/admin-public","/api/health","/_next/static/app.js"]) assert.equal(isProtectedPagePath(path),false,path);
 });

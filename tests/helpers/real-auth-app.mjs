@@ -29,6 +29,9 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await symlink(path.join(root,'node_modules'),path.join(directory,'node_modules'),'dir');
     for(const name of ['lib','proxy.ts','tsconfig.json','next.config.ts'])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'protected-layout.tsx'));
+    await cp(path.join(root,'app/(protected)/admin'),path.join(directory,'app/(protected)/admin'),{recursive:true});
+    await cp(path.join(root,'app/(protected)/_components'),path.join(directory,'app/(protected)/_components'),{recursive:true});
+    await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/(protected)/layout.tsx'));
     await put('package.json',JSON.stringify({private:true,type:'module'}));
     await put('instrumentation.js',`export function register(){const original=globalThis.fetch;globalThis.fetch=(input,init)=>{const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);if(!${JSON.stringify([stack.apiUrl,recordOrigin])}.includes(url.origin)||url.username||url.password)throw new Error('Fixture forbids outbound requests');return original(input,{...init,redirect:'error'});};}`);
     await put('app/layout.tsx','export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}');
