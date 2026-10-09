@@ -145,9 +145,11 @@ test('owns_application_callback_template_server_secret_and_invitation_cleanup',a
   const config=await readFile(path.join(stack.workdir,'supabase/config.toml'),'utf8');
   assert.match(config,/additional_redirect_urls = \["http:\/\/127\.0\.0\.1:40100\/auth\/confirm"\]/);
   assert.ok((await readFile(path.join(stack.workdir,'supabase/templates/invite.html'),'utf8')).includes('{{ .TokenHash }}'));
+  assert.match(config,/auth.email.template.recovery/);
+  assert.ok((await readFile(path.join(stack.workdir,'supabase/templates/recovery.html'),'utf8')).includes('type=recovery'));
   await stack.close();
   const sql=h.calls.find(x=>x.args[1]==='db'&&x.args[2]==='query');
-  assert.ok(sql);assert.match(sql.args.at(-1),/^do \$cleanup\$ begin[\s\S]*end \$cleanup\$;$/,'one atomic prepared SQL statement');assert.ok(sql.args.at(-1).indexOf('invitation_send_attempts')<sql.args.at(-1).indexOf('public.invitations'));
+  assert.ok(sql);assert.ok(sql.args.at(-1).indexOf('delete from public.invitation_send_proofs')<sql.args.at(-1).indexOf('delete from public.invitation_send_attempts'));assert.ok(sql.args.at(-1).includes('delete from public.invitation_send_proofs'));assert.match(sql.args.at(-1),/^do \$cleanup\$ begin[\s\S]*end \$cleanup\$;$/,'one atomic prepared SQL statement');assert.ok(sql.args.at(-1).indexOf('invitation_send_attempts')<sql.args.at(-1).indexOf('public.invitations'));
   assert.ok(sql.args.includes('--local'));assert.equal(sql.args[sql.args.indexOf('--workdir')+1],stack.workdir);assert.ok(!sql.args.includes('--linked'));
   assert.ok(!h.calls.some(x=>x.command==='docker'),'cleanup uses owned CLI workdir rather than container discovery');
   assert.ok(!(await readFile(h.stateFile,'utf8').catch(()=>'' )).includes('sb_secret_'));
@@ -161,8 +163,8 @@ test('rejects_non_owned_application_origins_before_starting_services',async()=>{
 
 test('reads_owned_Mailpit_short_message_ids_without_consuming_links',async()=>{
  const email='invited@example.invalid',id='YsABjkFERuPyq8XC6WaKs2';
- const h=await harness({mailResponse:async url=>String(url).endsWith('/messages')?Response.json({messages:[{ID:id,To:[{Address:email}]}]}):Response.json({HTML:'<a href="http://127.0.0.1:40100/auth/confirm?token_hash=private_mail_canary">Invite</a>'})});let stack;
- try{stack=await h.start();stack.ownInvitationEmail(email);assert.equal((await stack.readCapturedInvites(email)).length,1);assert.throws(()=>stack.assertNoCredentialLeaks('private_mail_canary'),/credential leak/);assert.ok(h.requests.some(x=>x.url.endsWith('/message/'+id)));assert.ok(h.requests.every(x=>!x.url.includes('/auth/confirm')));}finally{await stack?.close();await h.dispose();}
+ const h=await harness({mailResponse:async url=>String(url).endsWith('/messages')?Response.json({messages:[{ID:id,To:[{Address:email}]}]}):Response.json({HTML:'<a href="http://127.0.0.1:40100/auth/confirm?resume=private_resume_canary&amp;token_hash=private_mail_canary">Invite</a>'})});let stack;
+ try{stack=await h.start();stack.ownInvitationEmail(email);assert.equal((await stack.readCapturedInvites(email)).length,1);assert.throws(()=>stack.assertNoCredentialLeaks('private_mail_canary'),/credential leak/);assert.throws(()=>stack.assertNoCredentialLeaks('private_resume_canary'),/credential leak/);assert.ok(h.requests.some(x=>x.url.endsWith('/message/'+id)));assert.ok(h.requests.every(x=>!x.url.includes('/auth/confirm')));}finally{await stack?.close();await h.dispose();}
 });
 
 test('refuses_cleanup_SQL_after_owned_configuration_changes',async()=>{
