@@ -66,6 +66,20 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     const ids=forms.map(entries=>JSON.parse(entries.find(([name])=>name.endsWith(':0'))[1]).id);if(ids.length!==2)throw new Error();
     const {encodeReply}=createRequire(import.meta.url)('next/dist/compiled/react-server-dom-webpack/client.node.js');
     return {origin,request,close,effects:()=>effects.slice(),diagnostics:()=>output,
+      async invitationForms(session){
+        const html=await (await request('/admin/invitations',{session})).text();
+        return [...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].map(match=>{
+          const fields=[...match[1].matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="([^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
+          const kind=fields.some(([name])=>name==='email')?'send':match[1].includes('Renew provider link')?'renew':'inspect';
+          return {kind,fields,id:JSON.parse(fields.find(([name])=>name.endsWith(':0'))[1]).id};
+        });
+      },
+      async invitationAction(form,{session,fields={},origin:requestOrigin=origin,transport='native'}={}){
+        const headers=new Headers({Origin:requestOrigin});let body;
+        if(transport==='native'){body=new FormData();for(const [key,value] of form.fields)body.append(key,value);for(const [key,value] of Object.entries(fields))body.set(key,value);}
+        else {const data=new FormData();for(const [key,value] of form.fields)if(!key.startsWith('$ACTION_'))data.append(key,value);for(const [key,value] of Object.entries(fields))data.set(key,value);body=await encodeReply([null,data]);headers.set('Accept','text/x-component');headers.set('Next-Action',form.id);}
+        return request('/admin/invitations',{session,method:'POST',headers,body});
+      },
       async scanStatic(check){async function scan(dir){for(const entry of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())await scan(file);else check(await readFile(file,'utf8'));}}await scan(path.join(directory,'.next/static'));},
       async mutate(transport,{session,origin:requestOrigin=origin,admin=false}={}) {
         const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);

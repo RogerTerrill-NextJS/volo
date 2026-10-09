@@ -224,8 +224,15 @@ trusted provider response. Losing every trustworthy response leaves the operatio
 pending and blocks another send; there is no timeout takeover or blind retry.
 No hosted templates, allowlists or accounts are changed by this implementation.
 
-The read-only `/admin/invitations` page shows the latest 50 invitations and their
+The `/admin/invitations` page shows the latest 50 invitations and their
 current-generation send state to current active admins only. Lifecycle status is
 separate from send acceptance, failure or unresolved outcomes; age does not expire
 an invitation and acceptance does not confirm delivery. Queries return minimal
-DTOs with private HTML/RSC cache policy; send/resend controls remain VOLO-151.
+DTOs with private HTML/RSC cache policy. VOLO-151 adds guarded email sending,
+provider-link renewal for issued/setup invitations and status checks for uncertain
+live sends. Terminal invitations offer no send action. Each form rechecks current
+admin membership and origin; generation actions require the displayed version.
+An uncertain result never automatically retries or offers another send. These
+controls do not provide login, recipient setup or a browser-selected reconciliation
+receipt. Until VOLO-22 supplies login, authenticated UI evidence uses disposable
+fixtures; previews share production and must not be used for test email writes.

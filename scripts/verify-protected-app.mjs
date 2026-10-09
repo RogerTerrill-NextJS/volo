@@ -31,9 +31,13 @@ async function scan(folder) {
 }
 const membershipCount = () => backend.calls.filter(call => call.service === "membership").length;
 try {
+  const reservation = createReservation();
+  await reservation.ready;
+  const port = reservation.server.address().port;
+  await new Promise(resolve => reservation.server.close(resolve));
   const env = {PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
     NEXT_TELEMETRY_DISABLED: "1", NEXT_PUBLIC_SUPABASE_URL: backend.origin,
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: accessKey,SUPABASE_SECRET_KEY:invitationQueryKey};
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: accessKey,SUPABASE_SECRET_KEY:invitationQueryKey,VOLO_MUTATION_ORIGIN:`http://127.0.0.1:${port}`};
   await symlink(path.join(root, "node_modules"), path.join(directory, "node_modules"), "dir");
   for (const name of ["lib", "app", "tsconfig.json", "proxy.ts"]) {
     await cp(path.join(root, name), path.join(directory, name), {recursive: true});
@@ -54,10 +58,6 @@ try {
       return <p>{'fixture-private-nested:'+access.member.role}</p>;}`);
   await promisify(execFile)(process.execPath, [path.join(root, "node_modules/next/dist/bin/next"), "build", directory, "--webpack"],
     {cwd: directory, env, timeout: 120000, maxBuffer: 8 * 1024 * 1024});
-  const reservation = createReservation();
-  await reservation.ready;
-  const port = reservation.server.address().port;
-  await new Promise(resolve => reservation.server.close(resolve));
   server = spawn(process.execPath, [path.join(root, "node_modules/next/dist/bin/next"), "start", directory, "--hostname", "127.0.0.1", "--port", String(port)],
     {cwd: directory, env, stdio: ["ignore", "pipe", "pipe"]});
   server.on("error", error => {output += error.message;});
@@ -129,7 +129,38 @@ try {
   assert.doesNotMatch((await request('/dashboard',member.jar)).body,/href="\/admin\/invitations"/);
   admin.entry.status='disabled';const disabledAdmin=await request('/admin/invitations',admin.jar);assert.match(disabledAdmin.body,/Access denied/);privateHeaders(disabledAdmin.response);admin.entry.status='active';
   const rows=backend.invitations.rows;backend.invitations.rows=[];
-  assert.match((await request('/admin/invitations',admin.jar)).body,/No invitations yet/);
+  const emptyAdmin=(await request('/admin/invitations',admin.jar)).body;
+  assert.match(emptyAdmin,/No invitations yet/);assert.match(emptyAdmin,/Send invitation/);assert.match(emptyAdmin,/name="email"/);
+  for(const [status,outcome,want,absent] of [['issued','accepted','Renew provider link','Check send status'],['issued','unknown','Check send status','Renew provider link'],['revoked','unknown',null,'Renew provider link'],['redeemed','accepted',null,'Renew provider link']]){
+    backend.invitations.rows=[{...rows[0],status,invitation_send_attempts:[{invitation_version:2,outcome,reconciled_outcome:null}]}];
+    const controlPage=(await request('/admin/invitations',admin.jar)).body;
+    if(want)assert.ok(controlPage.includes(want));assert.ok(!controlPage.includes(absent));
+    if(!want)assert.ok(!controlPage.includes('Check send status'));
+  }
+  backend.invitations.rows=[{...rows[0],status:'pending_issuance',auth_user_id:admin.entry.userId??'10000000-0000-4000-8000-000000000001',version:3,invitation_send_attempts:[{invitation_version:3,outcome:'rejected',reconciled_outcome:null}]}];
+  const failedRenewal=(await request('/admin/invitations',admin.jar)).body;
+  assert.match(failedRenewal,/Send failed/);assert.match(failedRenewal,/Renew provider link/);assert.match(failedRenewal,/name="expectedVersion" value="3"/);
+  backend.invitations.rows=[{...rows[0],status:'issued',invitation_send_attempts:[{invitation_version:2,outcome:'accepted',reconciled_outcome:null}]}];
+  const controlHtml=(await request('/admin/invitations',admin.jar)).body;
+  const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
+  const forms=[...controlHtml.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].map(match=>[...match[1].matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="([^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];}));
+  assert.equal(forms.length,2);
+  const invoke=async(account,index,fields={},headers={})=>{
+    const body=new FormData();for(const [key,value] of forms[index])body.append(key,value);for(const [key,value] of Object.entries(fields))body.set(key,value);
+    const response=await fetch(origin+'/admin/invitations',{method:'POST',redirect:'manual',headers:{Origin:origin,Cookie:[...account.jar].map(([key,value])=>`${key}=${value}`).join('; '),...headers},body});
+    const text=await response.text();clean(text,'action response');
+    // Next finalizes Server Action Cache-Control; use the existing mutation contract.
+    assert.match(response.headers.get('cache-control')??'',/no-store/);
+    for(const field of ['cdn-cache-control','netlify-cdn-cache-control'])assert.equal(response.headers.get(field),'no-store');
+    return text;
+  };
+  for(const index of [0,1])assert.match(await invoke(member,index),/Access denied/);
+  admin.entry.status='disabled';assert.match(await invoke(admin,1),/Access denied/);admin.entry.status='active';
+  assert.match(await invoke(admin,0,{email:'not-an-email'}),/Invalid input/);
+  assert.match(await invoke(admin,1,{expectedVersion:'1e2'}),/Invalid input/);
+  assert.match(await invoke(admin,1,{role:'admin'}),/Invalid input/);
+  await invoke(admin,1,{}, {Origin:'https://foreign.invalid'});
+  assert.deepEqual(backend.unexpected,[],'Denied and malformed actual forms never reach privileged RPC/provider endpoints');
   backend.invitations.rows=rows;backend.invitations.failure='down';
   const unavailable=await request('/admin/invitations',admin.jar);assert.match(unavailable.body,/Unable to verify access/);assert.doesNotMatch(unavailable.body,/No invitations yet/);assert.match(unavailable.body,/href="\/admin\/invitations"/);privateHeaders(unavailable.response);backend.invitations.failure=null;
   backend.invitations.rows=[{...rows[0],recipient_email:'<script>alert(1)</script>@example.invalid'}];

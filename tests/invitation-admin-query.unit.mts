@@ -26,6 +26,8 @@ test('lifecycle and current-generation send facts stay independent',async()=>{
    const result=await listAdminInvitations(ports([{...row,status,invitation_send_attempts:[{invitation_version:2,outcome,reconciled_outcome:resolution}]}]));
    assert.equal(result.status,'authorized');if(result.status!=='authorized')return;
    assert.equal(result.rows[0].invitationStatus,label);assert.equal(result.rows[0].sendStatus,send);
+   const terminal=['redeemed','revoked','superseded'].includes(status);
+   assert.equal(result.rows[0].action,terminal?null:send==='Needs review'?'inspect':status==='pending_issuance'?null:'renew');
   }
  }
  for(const attempts of [[],[{invitation_version:1,outcome:'accepted',reconciled_outcome:null}]]){
@@ -37,9 +39,17 @@ test('bounded DTO excludes authority fields and distinguishes empty from failure
  assert.deepEqual(await listAdminInvitations(ports([])),{status:'authorized',rows:[],hasMore:false});
  const result=await listAdminInvitations(ports(Array.from({length:51},(_,i)=>({...row,id:`30000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,auth_user_id:'secret-canary',setup_authorization_id:'secret-canary'}))));
  assert.equal(result.status,'authorized');if(result.status!=='authorized')return;
- assert.equal(result.rows.length,50);assert.equal(result.hasMore,true);assert.deepEqual(Object.keys(result.rows[0]).sort(),['email','id','invitationStatus','sendStatus','updatedAt','version']);assert.ok(!JSON.stringify(result).includes('secret-canary'));
+ assert.equal(result.rows.length,50);assert.equal(result.hasMore,true);assert.deepEqual(Object.keys(result.rows[0]).sort(),['action','email','id','invitationStatus','sendStatus','updatedAt','version']);assert.ok(!JSON.stringify(result).includes('secret-canary'));
  for(const rows of [null,{},[null],[{...row,version:0}],[{...row,status:'future'}],[{...row,updated_at:'invalid'}],[{...row,invitation_send_attempts:[{invitation_version:3,outcome:'accepted',reconciled_outcome:null}]}],[{...row,invitation_send_attempts:[{},{}]}]])assert.deepEqual(await listAdminInvitations(ports(rows)),{status:'unavailable'});
  assert.deepEqual(await listAdminInvitations({...ports(),readRows:async()=>{throw new Error('secret-canary');}}),{status:'unavailable'});
+});
+
+test('a rejected renewal remains retryable only with its bound subject and current known outcome',async()=>{
+ for(const [subject,attemptVersion,outcome,expected] of [[admin.member.userId,2,'rejected','renew'],[admin.member.userId,2,'accepted','renew'],[null,2,'rejected',null],[admin.member.userId,1,'rejected',null],[admin.member.userId,2,'unknown','inspect']] as const){
+  const result=await listAdminInvitations(ports([{...row,status:'pending_issuance',auth_user_id:subject,invitation_send_attempts:[{invitation_version:attemptVersion,outcome,reconciled_outcome:null}]}]));
+  assert.equal(result.status,'authorized');if(result.status!=='authorized')return;
+  assert.equal(result.rows[0].action,expected);assert.ok(!JSON.stringify(result.rows).includes(admin.member.userId));
+ }
 });
 
 test('SDK query reads one bounded minimal relation snapshot',async()=>{
@@ -47,7 +57,7 @@ test('SDK query reads one bounded minimal relation snapshot',async()=>{
  const original=globalThis.fetch;let reads=0,broken=false;
  globalThis.fetch=async(input,init)=>{
   reads++;const url=new URL(String(input));assert.equal(url.origin,'https://example.supabase.co');assert.equal(url.pathname,'/rest/v1/invitations');assert.equal(init?.cache,'no-store');assert.equal(init?.redirect,'error');
-  assert.equal(url.searchParams.get('select'),'id,version,recipient_email,status,created_at,updated_at,invitation_send_attempts(invitation_version,outcome,reconciled_outcome)');
+  assert.equal(url.searchParams.get('select'),'id,version,recipient_email,status,auth_user_id,created_at,updated_at,invitation_send_attempts(invitation_version,outcome,reconciled_outcome)');
   assert.equal(url.searchParams.get('order'),'created_at.desc,id.desc');assert.equal(url.searchParams.get('limit'),'51');assert.equal(url.searchParams.get('invitation_send_attempts.order'),'invitation_version.desc');assert.equal(url.searchParams.get('invitation_send_attempts.limit'),'1');
   return broken?Response.json({message:'secret-canary'},{status:503}):Response.json([row]);
  };

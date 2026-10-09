@@ -3,7 +3,7 @@ import type {AccessResult} from './access.ts';
 import {createInvitationServiceClient} from './invitation-send-provider.ts';
 import {invitationUuid,invitationEmail} from './invitation-send.ts';
 import type {Database} from '../supabase/database.types';
-export type InvitationAdminRow={id:string;version:number;email:string;invitationStatus:string;sendStatus:string;updatedAt:string};
+export type InvitationAdminRow={id:string;version:number;email:string;invitationStatus:string;sendStatus:string;updatedAt:string;action:'renew'|'inspect'|null};
 export type InvitationAdminResult={status:'authorized';rows:InvitationAdminRow[];hasMore:boolean}|{status:'unauthenticated'|'forbidden'|'unavailable'};
 export type InvitationQueryPorts={access:()=>Promise<AccessResult>;readRows:()=>Promise<unknown>};
 const labels:Record<Database['public']['Enums']['invitation_status'],string>={
@@ -37,15 +37,19 @@ function project(value:unknown):InvitationAdminRow{
    sendStatus=outcome==='accepted'?'Accepted for sending':outcome==='rejected'?'Send failed':'Needs review';
   }
  }
+ const live=['pending_issuance','issued','setup_verified','password_established'].includes(row.status);
+ const pendingRetry=typeof row.auth_user_id==='string'&&invitationUuid.test(row.auth_user_id)
+  &&['Accepted for sending','Send failed'].includes(sendStatus);
+ const action=live&&row.version<Number.MAX_SAFE_INTEGER?(sendStatus==='Needs review'?'inspect':row.status==='pending_issuance'&&!pendingRetry?null:'renew'):null;
  return {id:row.id,version:row.version,email:row.recipient_email,
-  invitationStatus:labels[row.status as keyof typeof labels],sendStatus,updatedAt:row.updated_at};
+  invitationStatus:labels[row.status as keyof typeof labels],sendStatus,updatedAt:row.updated_at,action};
 }
 
 /** One bounded statement keeps invitation and nested attempt in one snapshot. */
 export function createInvitationQueryPorts():InvitationQueryPorts{
  return {access:async()=>(await import('./access.ts')).getAccess(),async readRows(){
   const result=await createInvitationServiceClient().from('invitations')
-   .select('id,version,recipient_email,status,created_at,updated_at,invitation_send_attempts(invitation_version,outcome,reconciled_outcome)')
+   .select('id,version,recipient_email,status,auth_user_id,created_at,updated_at,invitation_send_attempts(invitation_version,outcome,reconciled_outcome)')
    .order('created_at',{ascending:false}).order('id',{ascending:false}).limit(51)
    .order('invitation_version',{ascending:false,referencedTable:'invitation_send_attempts'})
    .limit(1,{referencedTable:'invitation_send_attempts'}).retry(false);
