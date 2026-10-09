@@ -3,7 +3,7 @@ import type {AccessResult} from './access.ts';
 import {createInvitationServiceClient} from './invitation-send-provider.ts';
 import {invitationUuid,invitationEmail} from './invitation-send.ts';
 import type {Database} from '../supabase/database.types';
-export type InvitationAdminRow={id:string;version:number;email:string;invitationStatus:string;sendStatus:string;updatedAt:string};
+export type InvitationAdminRow={id:string;version:number;email:string;invitationStatus:string;sendStatus:string;updatedAt:string;action:'renew'|'inspect'|null};
 export type InvitationAdminResult={status:'authorized';rows:InvitationAdminRow[];hasMore:boolean}|{status:'unauthenticated'|'forbidden'|'unavailable'};
 export type InvitationQueryPorts={access:()=>Promise<AccessResult>;readRows:()=>Promise<unknown>};
 const labels:Record<Database['public']['Enums']['invitation_status'],string>={
@@ -37,8 +37,10 @@ function project(value:unknown):InvitationAdminRow{
    sendStatus=outcome==='accepted'?'Accepted for sending':outcome==='rejected'?'Send failed':'Needs review';
   }
  }
+ const live=['pending_issuance','issued','setup_verified','password_established'].includes(row.status);
+ const action=live&&row.version<Number.MAX_SAFE_INTEGER?(sendStatus==='Needs review'?'inspect':row.status==='pending_issuance'?null:'renew'):null;
  return {id:row.id,version:row.version,email:row.recipient_email,
-  invitationStatus:labels[row.status as keyof typeof labels],sendStatus,updatedAt:row.updated_at};
+  invitationStatus:labels[row.status as keyof typeof labels],sendStatus,updatedAt:row.updated_at,action};
 }
 
 /** One bounded statement keeps invitation and nested attempt in one snapshot. */

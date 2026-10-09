@@ -119,8 +119,10 @@ try{
       return 'Real guarded requests deny signed-out/member/disabled/stale-admin and foreign-origin issuance.';
     });
     await scenario('invitation_issuance_mail',async()=>{
-      diagnosticStage='issue';const email=ownedEmail('New+tag');adminQueryEmail=email.toUpperCase();const result=await issue(` ${adminQueryEmail} `);
-      check(result.status===200&&result.body.data?.code==='accepted','provider accepted send');
+      diagnosticStage='issue';const email=ownedEmail('New+tag');adminQueryEmail=email.toUpperCase();
+      const sendForm=(await app.invitationForms(users.admin)).find(form=>form.kind==='send');check(Boolean(sendForm),'actual send form exists');
+      const response=await app.invitationAction(sendForm,{session:users.admin,fields:{email:` ${adminQueryEmail} `}});privatePolicy(response);await audit(response,accounts.admin.id);
+      check(response.status===200&&(await response.text()).includes('Accepted for sending'),'actual native UI send accepted');
       diagnosticStage='read-invitation';const invitation=await stack.readInvitationForEmail(email);check(invitation?.status==='issued'&&invitation.version===1,'durable issued generation');
       diagnosticStage='read-attempts';const attempts=await stack.readSendAttempts(invitation.id);check(attempts.length===1&&attempts[0].outcome==='accepted','one accepted attempt');
       check(attempts[0].id===invitation.auth_user_id,'reserved UUID owns provider subject');
@@ -183,7 +185,14 @@ try{
     const linkFrom=html=>new URL(html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&'));
     await scenario('invitation_renewal_real_transports',async()=>{
       diagnosticStage='renew-unconfirmed';const {email,invitation}=await setupRenewal('renewal');
-      check((await renew(invitation)).body.data?.code==='accepted','unconfirmed resend accepted');
+      const form=(await app.invitationForms(users.admin)).find(form=>form.kind==='renew'&&form.fields.some(([key,value])=>key==='invitationId'&&value===invitation.id));check(Boolean(form),'actual renewal form exists');
+      for(const session of [undefined,users.A,users.disabled]){
+        const denied=await app.invitationAction(form,{session});privatePolicy(denied);await audit(denied,session===users.A?accounts.A.id:session===users.disabled?accounts.disabled.id:undefined);
+        check((await stack.readInvitationForEmail(email)).version===1,'forged UI action cannot renew');await captured(email,1);
+      }
+      const foreign=await app.invitationAction(form,{session:users.admin,origin:'https://foreign.invalid'});await audit(foreign,accounts.admin.id);check((await stack.readInvitationForEmail(email)).version===1,'foreign origin cannot renew');await captured(email,1);
+      const sent=await app.invitationAction(form,{session:users.admin,transport:'fetched'});privatePolicy(sent);await audit(sent,accounts.admin.id);check((await sent.text()).includes('Accepted for sending'),'actual fetched UI renewal accepted');
+      const stale=await app.invitationAction(form,{session:users.admin});privatePolicy(stale);await audit(stale,accounts.admin.id);check((await stale.text()).includes('invitation changed'),'stale UI retry explains conflict');await captured(email,2);
       let row=await stack.readInvitationForEmail(email);check(row.version===2&&row.auth_user_id===invitation.auth_user_id&&row.invited_by_user_id===invitation.invited_by_user_id,'same subject and inviter, next version');
       const messages=await captured(email,2);const html=messages.find(m=>linkFrom(m).searchParams.has('resume'));check(Boolean(html),'resend proof retained');
       let link=linkFrom(html);check(link.searchParams.get('type')==='invite','unconfirmed invitation transport');
@@ -219,7 +228,8 @@ try{
         const {email,invitation}=await setupRenewal(mode);check((await renew(invitation,mode)).body.data?.code==='pending_reconciliation','uncertainty fails closed');
         const row=await stack.readInvitationForEmail(email);await captured(email,2);check(row.status==='pending_issuance','uncertainty never issues');
         check((await renew(row)).body.data?.code==='pending_reconciliation','unresolved generation blocks another send');await captured(email,2);
-        check((await renew(row,'inspect')).body.data?.code==='pending_reconciliation','inspection does not infer receipt from Auth state');
+        const inspectForm=(await app.invitationForms(users.admin)).find(form=>form.kind==='inspect'&&form.fields.some(([key,value])=>key==='invitationId'&&value===row.id));check(Boolean(inspectForm),'uncertain row offers status check');
+        const checked=await app.invitationAction(inspectForm,{session:users.admin});privatePolicy(checked);await audit(checked,accounts.admin.id);check((await checked.text()).includes('Needs review'),'UI inspection does not infer receipt from Auth state');await captured(email,2);
         if(mode==='lost-record'){
           check((await renew(row,'reconcile')).body.data?.code==='accepted','original trusted provider response resolves');
           const resolved=await stack.readInvitationForEmail(email),attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===2);

@@ -26,6 +26,8 @@ test('lifecycle and current-generation send facts stay independent',async()=>{
    const result=await listAdminInvitations(ports([{...row,status,invitation_send_attempts:[{invitation_version:2,outcome,reconciled_outcome:resolution}]}]));
    assert.equal(result.status,'authorized');if(result.status!=='authorized')return;
    assert.equal(result.rows[0].invitationStatus,label);assert.equal(result.rows[0].sendStatus,send);
+   const terminal=['redeemed','revoked','superseded'].includes(status);
+   assert.equal(result.rows[0].action,terminal?null:send==='Needs review'?'inspect':status==='pending_issuance'?null:'renew');
   }
  }
  for(const attempts of [[],[{invitation_version:1,outcome:'accepted',reconciled_outcome:null}]]){
@@ -37,7 +39,7 @@ test('bounded DTO excludes authority fields and distinguishes empty from failure
  assert.deepEqual(await listAdminInvitations(ports([])),{status:'authorized',rows:[],hasMore:false});
  const result=await listAdminInvitations(ports(Array.from({length:51},(_,i)=>({...row,id:`30000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,auth_user_id:'secret-canary',setup_authorization_id:'secret-canary'}))));
  assert.equal(result.status,'authorized');if(result.status!=='authorized')return;
- assert.equal(result.rows.length,50);assert.equal(result.hasMore,true);assert.deepEqual(Object.keys(result.rows[0]).sort(),['email','id','invitationStatus','sendStatus','updatedAt','version']);assert.ok(!JSON.stringify(result).includes('secret-canary'));
+ assert.equal(result.rows.length,50);assert.equal(result.hasMore,true);assert.deepEqual(Object.keys(result.rows[0]).sort(),['action','email','id','invitationStatus','sendStatus','updatedAt','version']);assert.ok(!JSON.stringify(result).includes('secret-canary'));
  for(const rows of [null,{},[null],[{...row,version:0}],[{...row,status:'future'}],[{...row,updated_at:'invalid'}],[{...row,invitation_send_attempts:[{invitation_version:3,outcome:'accepted',reconciled_outcome:null}]}],[{...row,invitation_send_attempts:[{},{}]}]])assert.deepEqual(await listAdminInvitations(ports(rows)),{status:'unavailable'});
  assert.deepEqual(await listAdminInvitations({...ports(),readRows:async()=>{throw new Error('secret-canary');}}),{status:'unavailable'});
 });
