@@ -44,6 +44,7 @@ export async function executeInitialInvitation(command:SendCommand,ports:Initial
   if(result.code!=='reserved')return {code:result.code==='conflict'?'conflict':'rejected'};
   reservation=result;
   if(!result.fresh)return {code:result.outcome==='started'||result.outcome==='unknown'?'pending_reconciliation':result.outcome};
+  if(!await ports.currentAdmin(command.requesterId))return finish('rejected','provider_rejected');
   const created=await ports.createSubject(command.operationId,result.recipientEmail);
   if(created.code!=='accepted')return finish(created.code,created.errorCode);
   if(!matches(created.identity))return finish('unknown','identity_conflict');

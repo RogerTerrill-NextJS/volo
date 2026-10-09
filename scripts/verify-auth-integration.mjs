@@ -11,9 +11,9 @@ import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
 const root=path.resolve(import.meta.dirname,'..');
 const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.']};
 const cancellation=new AbortController();const interrupt=()=>{process.exitCode=130;cancellation.abort();};process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
-let stack,app,setupStage='stack';const sessions=[];
+let stack,app,setupStage='stack',diagnosticStage='scenario';const sessions=[];
 const check=(condition,message)=>assert.ok(condition,message);
-async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){summary.scenarios.push({name,status:'failed',evidence:error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:'Service/transport failure'});throw new Error(`Integration scenario failed: ${name}`);}}
+async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){summary.scenarios.push({name,status:'failed',evidence:error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:`Service/transport failure (${diagnosticStage}; ${error.operation??'unknown'}; ${Number.isInteger(error.httpStatus)?error.httpStatus:'no-status'})`});throw new Error(`Integration scenario failed: ${name}`);}}
 function privatePolicy(response){
   check(/no-store/.test(response.headers.get('cache-control')??''),'browser no-store');
   for(const field of ['cdn-cache-control','netlify-cdn-cache-control'])check(response.headers.get(field)==='no-store','CDN no-store');
@@ -119,14 +119,14 @@ try{
       return 'Real guarded requests deny signed-out/member/disabled/stale-admin and foreign-origin issuance.';
     });
     await scenario('invitation_issuance_mail',async()=>{
-      const email=ownedEmail('New+tag');const result=await issue(` ${email.toUpperCase()} `);
+      diagnosticStage='issue';const email=ownedEmail('New+tag');const result=await issue(` ${email.toUpperCase()} `);
       check(result.status===200&&result.body.data?.code==='accepted','provider accepted send');
-      const invitation=await stack.readInvitationForEmail(email);check(invitation?.status==='issued'&&invitation.version===1,'durable issued generation');
-      const attempts=await stack.readSendAttempts(invitation.id);check(attempts.length===1&&attempts[0].outcome==='accepted','one accepted attempt');
+      diagnosticStage='read-invitation';const invitation=await stack.readInvitationForEmail(email);check(invitation?.status==='issued'&&invitation.version===1,'durable issued generation');
+      diagnosticStage='read-attempts';const attempts=await stack.readSendAttempts(invitation.id);check(attempts.length===1&&attempts[0].outcome==='accepted','one accepted attempt');
       check(attempts[0].id===invitation.auth_user_id,'reserved UUID owns provider subject');
-      await stack.trackIssuedSubject(invitation.auth_user_id);const user=await stack.readAuthUser(invitation.auth_user_id);
-      check(!user.email_confirmed_at,'issuance does not confirm email');check(await stack.readMembership(invitation.auth_user_id)===null,'issuance grants no membership');
-      const [html]=await captured(email,1);const href=html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&');check(Boolean(href),'mail has application link');
+      diagnosticStage='track-subject';await stack.trackIssuedSubject(invitation.auth_user_id);diagnosticStage='read-subject';const user=await stack.readAuthUser(invitation.auth_user_id);
+      check(!user.email_confirmed_at,'issuance does not confirm email');diagnosticStage='read-membership';check(await stack.readMembership(invitation.auth_user_id)===null,'issuance grants no membership');
+      diagnosticStage='captured-mail';const [html]=await captured(email,1);const href=html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&');check(Boolean(href),'mail has application link');
       const link=new URL(href);check(link.origin===app.origin&&link.pathname==='/auth/confirm','exact direct application callback');
       check(Boolean(link.searchParams.get('token_hash'))&&link.searchParams.get('type')==='invite','token hash and invite type present');
       check((await issue(email)).body.data?.code==='conflict','normalized duplicate cannot resend');await captured(email,1);
@@ -239,7 +239,7 @@ try{
 }
 finally{
   try{await app?.close();}catch{process.exitCode=1;summary.scenarios.push({name:'fixture_cleanup',status:'failed'});}
-  try{await stack?.close();}catch{process.exitCode=1;summary.scenarios.push({name:'stack_cleanup',status:'failed'});}
+  try{await stack?.close();}catch(error){process.exitCode=1;summary.scenarios.push({name:'stack_cleanup',status:'failed',evidence:error.cleanupStage??'unknown'});}
   process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);
   if(!process.argv.includes('--cleanup')){await mkdir(evidenceDirectory(root),{recursive:true});await writeFile(path.join(evidenceDirectory(root),'summary.json'),JSON.stringify(summary,null,2)+'\n');}
 }

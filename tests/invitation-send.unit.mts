@@ -25,7 +25,7 @@ function harness(changes:Partial<InitialSendPorts>={}) {
 }
 test('initial send binds the newly created subject before inviting and records acceptance',async()=>{
  const h=harness();assert.deepEqual(await h.run(),{code:'accepted'});
- assert.deepEqual(h.trace,['admin','reserve','create','bind','admin','invite','record']);
+ assert.deepEqual(h.trace,['admin','reserve','admin','create','bind','admin','invite','record']);
  assert.equal((h.observations[0] as {outcome:string}).outcome,'accepted');
 });
 test('denial and durable replay cannot execute provider writes',async()=>{
@@ -35,6 +35,15 @@ test('denial and durable replay cannot execute provider writes',async()=>{
   assert.deepEqual(await h.run(),{code:want});assert.deepEqual(h.trace,['admin']);
  }
  h=harness({reserve:async()=>({code:'conflict'})});assert.deepEqual(await h.run(),{code:'conflict'});assert.deepEqual(h.trace,['admin']);
+});
+test('admin revocation or lookup failure after reservation stops before account creation',async()=>{
+ for(const unavailable of [false,true]){
+  let active=true;
+  const h=harness({reserve:async()=>{active=false;return reserved;},currentAdmin:async()=>{if(!active&&unavailable)throw new Error('private-canary');return active;}});
+  assert.deepEqual(await h.run(),{code:unavailable?'pending_reconciliation':'rejected'});
+  assert.ok(!h.trace.includes('create'),'must recheck admin before creating a provider identity');
+  assert.equal((h.observations[0] as {outcome:string}).outcome,unavailable?'unknown':'rejected');
+ }
 });
 test('provider uncertainty and pre-send failures never retry or invite a discovered identity',async()=>{
  for(const [changes,want,observed] of [
@@ -47,7 +56,7 @@ test('provider uncertainty and pre-send failures never retry or invite a discove
   const h=harness(changes);assert.deepEqual(await h.run(),{code:want});assert.ok(!h.trace.includes('invite'));
   assert.equal((h.observations[0] as {outcome:string}).outcome,observed);
  }
- let checks=0;const h=harness({currentAdmin:async()=>++checks===1});
+ let checks=0;const h=harness({currentAdmin:async()=>++checks<3});
  assert.deepEqual(await h.run(),{code:'rejected'});assert.ok(!h.trace.includes('invite'));
 });
 test('mismatched sends and lost finalization require reconciliation',async()=>{
