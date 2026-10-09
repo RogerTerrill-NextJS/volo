@@ -28,7 +28,7 @@ insert into public.invitation_confirmation_transports(lookup_digest,csrf_digest,
 select is(pg_temp.create_transport(1025)->>'code','limited','global cap denies storage growth');
 delete from public.invitation_confirmation_transports;
 select pg_temp.create_transport(1);
-update public.invitation_confirmation_transports set created_at=clock_timestamp()-interval '11 minutes',expires_at=clock_timestamp()-interval '1 minute';
+update public.invitation_confirmation_transports set created_at=now()-interval '11 minutes',expires_at=now()-interval '1 minute';
 select public.cleanup_invitation_confirmation();
 select is((select count(*) from public.invitation_confirmation_transports),0::bigint,'cleanup erases expired transport without a later HTTP request');
 

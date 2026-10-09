@@ -185,9 +185,11 @@ async function confirmationRace(kind) {
     sql(`delete from public.invitation_setup_authorizations where invitation_id='${invitation}';delete from public.invitation_send_proofs where attempt_id in ('${attempt}','${renewOperation}');delete from public.invitation_send_attempts where invitation_id='${invitation}';delete from public.invitations where id='${invitation}';delete from auth.sessions where user_id='${subject}';delete from auth.users where id='${subject}';`);
   }
 }
-await confirmationRace('accept');
-await confirmationRace('renew');
-await confirmationRace('cleanup');
+const raceJob=Number(sql("select jobid from cron.job where jobname='volo-invitation-confirmation-cleanup';"));
+assert.ok(Number.isSafeInteger(raceJob));
+sql(`select cron.alter_job(${raceJob},active:=false);`);
+try{await confirmationRace('accept');await confirmationRace('renew');await confirmationRace('cleanup');}
+finally{sql(`select cron.alter_job(${raceJob},active:=true);`);}
 
 // Accelerate only this disposable database's existing named job, then restore
 // its production five-minute schedule. No HTTP request invokes the cleanup.

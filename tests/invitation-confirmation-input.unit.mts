@@ -15,3 +15,9 @@ test('CSRF form is bounded and rejects duplicate, authority and unsupported cont
  const oversized=new Request('https://example.invalid',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new ReadableStream({start(c){c.enqueue(new Uint8Array(1025));c.close();}}),duplex:'half'} as RequestInit);
  assert.equal(await readConfirmationCsrf(oversized),null);
 });
+
+test('stalled confirmation form hits the body deadline and cancels its stream',async(context)=>{
+ context.mock.timers.enable({apis:['setTimeout']});let cancelled=false;
+ const request=new Request('https://example.invalid/auth/confirm',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new ReadableStream({cancel(){cancelled=true;}}),duplex:'half'} as RequestInit);
+ const pending=readConfirmationCsrf(request);context.mock.timers.tick(5001);assert.equal(await pending,null);assert.equal(cancelled,true);context.mock.timers.reset();
+});
