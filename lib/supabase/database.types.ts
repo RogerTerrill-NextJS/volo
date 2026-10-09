@@ -146,6 +146,9 @@ isOneToOne: false
 "record_verified_invitation_setup":
 { Args: { "p_attempt_id": string,"p_email": string,"p_expected_version": number,"p_invitation_id": string,"p_origin": string,"p_resume_digest": string,"p_session_id": string,"p_setup_digest": string,"p_subject": string,"p_transport": string }; Returns: Json
                            },
+"redeem_invitation":
+{ Args: { "p_email": string,"p_expected_version": number,"p_invitation_id": string,"p_origin": string,"p_session_id": string,"p_setup_authorization_id": string,"p_setup_digest": string,"p_subject": string }; Returns: Json
+                           },
 "reserve_invitation_resend":
 { Args: { "p_expected_version": number,"p_invitation_id": string,"p_operation_id": string,"p_requester_id": string }; Returns: Json
                            },
