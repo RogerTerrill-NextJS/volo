@@ -36,7 +36,7 @@ function ownership() {
   assert.equal(run('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],{quiet:true}),'volo','Unexpected database owner');
   assert.equal(sql('show server_version_num;').slice(0,2),'17','PostgreSQL 17 required');
   const versions=JSON.parse(sql('select coalesce(json_agg(version order by version),\'[]\'::json) from supabase_migrations.schema_migrations;'));
-  assert.ok(versions.length>0 && versions.every(v=>['20261006040000','20261008010000','20261008020000'].includes(v)),'Unexpected migration history');
+  assert.ok(versions.length>0 && versions.every(v=>['20261006040000','20261008010000','20261008020000','20261009010000'].includes(v)),'Unexpected migration history');
 }
 ownership();
 run(process.execPath,[cli,'db','reset','--local','--version','20261006040000','--yes']);
@@ -55,7 +55,7 @@ console.log('Owned PostgreSQL 17 prior schema and three fictional fixtures confi
 run(process.execPath,[cli,'db','push','--local','--skip-vault','--yes']);
 assert.equal(sql(snapshotQuery),before,'Upgrade changed existing memberships or Auth fixture fields');
 assert.equal(sql("select to_regclass('public.invitations') is not null and to_regclass('public.invitation_send_attempts') is not null;"),'t');
-assert.deepEqual(JSON.parse(sql('select json_agg(version order by version) from supabase_migrations.schema_migrations;')),['20261006040000','20261008010000','20261008020000']);
+assert.deepEqual(JSON.parse(sql('select json_agg(version order by version) from supabase_migrations.schema_migrations;')),['20261006040000','20261008010000','20261008020000','20261009010000']);
 run(process.execPath,[cli,'test','db','--local']);
 console.log('Prior-schema upgrade, fixture preservation and database regressions passed');
 
