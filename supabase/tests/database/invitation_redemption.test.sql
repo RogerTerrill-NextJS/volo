@@ -114,15 +114,21 @@ create temporary table before_failure as select pg_temp.snapshot() as value;
 select throws_ok('select pg_temp.redeem_fixture()','P0001','Owned forced failure','late failure propagates');
 select is(pg_temp.snapshot(),(select value from before_failure),'late failure rolls membership and invitation back');
 drop trigger owned_fail_redemption on public.invitations;
+-- Provider ban timestamps remain populated after the temporary ban expires.
+update auth.users set banned_until=clock_timestamp()-interval '1 minute' where id='22000000-0000-4000-8000-000000000152';
 set local role service_role;
 -- pg_temp helper is deliberately owned by postgres; the production RPC is invoked as service role.
-select is(public.redeem_invitation('33000000-0000-4000-8000-000000000152',1,(select setup_authorization_id from public.invitations where id='33000000-0000-4000-8000-000000000152'),repeat('d',64),'22000000-0000-4000-8000-000000000152','REDEEM+tag@example.invalid','55000000-0000-4000-8000-000000000152','https://redeem.example.invalid')->>'code','redeemed','old eligible invitation commits through service role');
+select is(public.redeem_invitation('33000000-0000-4000-8000-000000000152',1,(select setup_authorization_id from public.invitations where id='33000000-0000-4000-8000-000000000152'),repeat('d',64),'22000000-0000-4000-8000-000000000152','REDEEM+tag@example.invalid','55000000-0000-4000-8000-000000000152','https://redeem.example.invalid')->>'code','redeemed','old eligible invitation with expired ban commits through service role');
 reset role;
 select ok((select role='member' and status='active' from public.memberships where user_id='22000000-0000-4000-8000-000000000152'),'only active member membership created');
 select ok((select status='redeemed' and redeemed_at>=password_established_at from public.invitations where id='33000000-0000-4000-8000-000000000152'),'redemption evidence committed with membership');
 create temporary table completed_state as select pg_temp.snapshot() as value;
 select is(pg_temp.redeem_fixture()->>'code','already_redeemed','identical retry reports completion');
 select is(pg_temp.snapshot(),(select value from completed_state),'completed retry performs no writes');
+update auth.users set banned_until=clock_timestamp()+interval '1 day' where id='22000000-0000-4000-8000-000000000152';
+select * from pg_temp.expect_rejection('active ban on completed retry');
+update auth.users set banned_until=clock_timestamp()-interval '1 minute' where id='22000000-0000-4000-8000-000000000152';
+select is(pg_temp.redeem_fixture()->>'code','already_redeemed','expired ban permits historical completion retry');
 select is(public.read_verified_invitation_setup(repeat('d',64),'22000000-0000-4000-8000-000000000152','REDEEM+tag@example.invalid','55000000-0000-4000-8000-000000000152','https://redeem.example.invalid')->>'code','denied','retained completion context cannot authorize password setup');
 select * from pg_temp.expect_rejection('wrong digest on completed retry',digest=>repeat('e',64));
 select * from pg_temp.expect_rejection('wrong session on completed retry',session=>'55000000-0000-4000-8000-000000000153');
