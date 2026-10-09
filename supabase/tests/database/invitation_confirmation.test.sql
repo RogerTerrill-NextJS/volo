@@ -77,7 +77,7 @@ update public.invitation_setup_authorizations set created_at=now()-interval '31 
 select public.cleanup_invitation_confirmation();
 select is((select setup_authorization_id::text from public.invitations where id='33000000-0000-4000-8000-000000000001'),'66000000-0000-4000-8000-000000000001','expiry cannot erase newer correlation');
 insert into public.invitation_setup_authorizations(id,lookup_digest,invitation_id,invitation_version,verified_user_id,session_id,origin,created_at,expires_at) values ('66000000-0000-4000-8000-000000000001',repeat('d',64),'33000000-0000-4000-8000-000000000001',2,'22000000-0000-4000-8000-000000000001','55000000-0000-4000-8000-000000000001','https://confirm.example.invalid',now()-interval '31 minutes',now()-interval '1 minute');
-update public.invitations set status='redeemed',password_established_at=now(),redeemed_at=now() where id='33000000-0000-4000-8000-000000000001';
+update public.invitations set status='redeemed',password_established_at=statement_timestamp(),redeemed_at=statement_timestamp() where id='33000000-0000-4000-8000-000000000001';
 select public.cleanup_invitation_confirmation();
 select ok((select status='redeemed' and verified_user_id is not null and setup_authorization_id='66000000-0000-4000-8000-000000000001' and password_established_at is not null from public.invitations where id='33000000-0000-4000-8000-000000000001'),'cleanup preserves terminal redemption evidence');
 select * from finish();
