@@ -239,7 +239,7 @@ try{
 }
 finally{
   try{await app?.close();}catch{process.exitCode=1;summary.scenarios.push({name:'fixture_cleanup',status:'failed'});}
-  try{await stack?.close();}catch(error){process.exitCode=1;summary.scenarios.push({name:'stack_cleanup',status:'failed',evidence:error.cleanupStage??'unknown'});}
+  try{await stack?.close();}catch(error){process.exitCode=1;summary.scenarios.push({name:'stack_cleanup',status:'failed',evidence:error.cleanupStage??'unknown',...(error.cleanupDiagnostic?{diagnostic:error.cleanupDiagnostic}:{})});}
   process.off('SIGINT',interrupt);process.off('SIGTERM',interrupt);
   if(!process.argv.includes('--cleanup')){await mkdir(evidenceDirectory(root),{recursive:true});await writeFile(path.join(evidenceDirectory(root),'summary.json'),JSON.stringify(summary,null,2)+'\n');}
 }

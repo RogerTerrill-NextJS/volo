@@ -100,7 +100,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
     }catch(cause){const error=new Error(`Rejected local Auth operation (${method})`);error.operation=route.startsWith('/auth/')?'auth-user':'membership';error.httpStatus=cause.httpStatus;throw error;}
   }
   const close=()=>closePromise??=(async()=>{
-    let failed=false,cleanupStage='database-owner',failedStage;
+    let failed=false,cleanupStage='database-owner',failedStage,cleanupDiagnostic;
     if(apiUrl&&adminKey)try{
       const state=JSON.parse(await readFile(stateFile,'utf8'));
       const config=await readFile(path.join(workdir,'supabase/config.toml'),'utf8');
@@ -110,14 +110,14 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
          delete from public.invitation_send_attempts; delete from public.invitations;
          delete from public.memberships where user_id in (select id from owned_subjects);
          delete from auth.users where id in (select id from owned_subjects); commit;`],30000);
-    }catch{failed=true;failedStage=cleanupStage;}
+    }catch(cause){failed=true;failedStage=cleanupStage;if(cleanupStage==='database-rows'&&typeof cause.stderr==='string')cleanupDiagnostic=sanitizeDiagnostics(cause.stderr,secrets).replace(/postgres(?:ql)?:\/\/[^\s'"]+/g,'[redacted database URL]').slice(-3000);}
     if(apiUrl&&adminKey)for(const account of accounts){
       try{await api(`/rest/v1/memberships?user_id=eq.${account.id}`,{method:'DELETE'});await api(`/auth/v1/admin/users/${account.id}`,{method:'DELETE'});}catch{failed=true;}
     }
     let stopped=!started;
     if(started)try{await cleanupCli(['stop','--workdir',workdir,'--project-id',projectId,'--no-backup'],120000);stopped=true;}catch{failed=true;}
     if(stopped){await rm(workdir,{recursive:true,force:true});if(stateOwned)await rm(stateFile,{force:true});}
-    if(failed){const error=new Error('Owned local Auth stack cleanup failed; retry integration --cleanup');error.cleanupStage=failedStage??'accounts-or-stop';throw error;}
+    if(failed){const error=new Error('Owned local Auth stack cleanup failed; retry integration --cleanup');error.cleanupStage=failedStage??'accounts-or-stop';error.cleanupDiagnostic=cleanupDiagnostic;throw error;}
   })();
   try {
     signal?.throwIfAborted();
