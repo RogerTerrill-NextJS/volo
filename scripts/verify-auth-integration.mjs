@@ -135,6 +135,8 @@ try{
       const response=await app.request('/api/confirmation-session',{session});privatePolicy(response);const data=await response.json();
       check(data.session.code==='verified'&&data.session.subject===invitation.auth_user_id,'fresh request revalidates Auth subject');
       check(data.setup.status==='authorized'&&data.setup.invitationId===invitation.id,'fresh request reads committed session-bound setup');
+      const setupPair=session.cookieHeader().split('; ').find(v=>v.startsWith('volo-setup='));check(Boolean(setupPair),'separate opaque setup cookie persisted');
+      const swapped=await app.request('/api/confirmation-session',{headers:{Cookie:users.A.cookieHeader()+'; '+setupPair}});const swappedData=await swapped.json();check(swappedData.setup.status==='denied','another verified subject cannot inherit setup cookie');
       check(await stack.readMembership(invitation.auth_user_id)===null,'confirmation grants no membership');
       const denied=await app.request('/api/subject',{session});check(denied.status===403,'setup recipient cannot enter member API');
     };
@@ -235,6 +237,7 @@ try{
       let row=await stack.readInvitationForEmail(email);check(row.version===2&&row.auth_user_id===invitation.auth_user_id&&row.invited_by_user_id===invitation.invited_by_user_id,'same subject and inviter, next version');
       const messages=await captured(email,2);const html=messages.find(m=>linkFrom(m).searchParams.has('resume'));check(Boolean(html),'resend proof retained');
       let link=linkFrom(html);check(link.searchParams.get('type')==='invite','unconfirmed invitation transport');
+      const oldLink=linkFrom(messages.find(m=>!linkFrom(m).searchParams.has('resume'))),oldSession=emptySession(stack);sessions.push(oldSession);const oldCsrf=await prepareConfirmation(oldLink,oldSession);check((await postConfirmation(oldSession,oldCsrf)).status===400,'original initial provider link cannot authorize a renewed generation');
       let attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===2);const proof=await stack.readSendProof(attempt.id);check(proof?.transport==='invite'&&!proof.consumed_at,'proof persisted before send');
       diagnosticStage='verify-owned-invite';const inviteSession=emptySession(stack);sessions.push(inviteSession);const inviteCsrf=await prepareConfirmation(link,inviteSession);
       const races=await Promise.all([postConfirmation(inviteSession,inviteCsrf),postConfirmation(inviteSession.clone(),inviteCsrf)]);check(races.filter(r=>r.status===303).length===1,'one concurrent explicit accept succeeds');
@@ -248,6 +251,7 @@ try{
       await stack.checkpointAuth(row.auth_user_id,true);row=await stack.readInvitationForEmail(email);check(row.version===3&&row.auth_user_id===invitation.auth_user_id,'confirmed resend retains subject');
       const recovery=(await captured(email,3)).find(m=>linkFrom(m).searchParams.get('type')==='recovery');check(Boolean(recovery),'dedicated recovery captured');
       link=linkFrom(recovery);check(Boolean(link.searchParams.get('resume')),'recovery callback retains proof');
+      const ordinary=new URL(link);ordinary.searchParams.delete('resume');check((await app.request(ordinary.pathname+ordinary.search)).status===400,'ordinary recovery without invitation proof never reaches provider verification');
       attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===3);verified={subjectId:row.auth_user_id,resume:link.searchParams.get('resume'),type:'recovery'};
       check((await stack.consumeSendProof(attempt.id,row.version,verified.subjectId,verified.resume,'invite')).code==='conflict','wrong transport fails');
       check((await stack.consumeSendProof(attempt.id,row.version,verified.subjectId,'','recovery')).code==='conflict','ordinary recovery without proof denied');

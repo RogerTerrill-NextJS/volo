@@ -121,6 +121,12 @@ try {
     for (const value of account.jar.values()) canaries.add(value);
     return account;
   };
+  const scanner=await seed('confirmation-expired',{expired:true}),beforeScanner=backend.calls.length;
+  for(const options of [{method:'HEAD'},{headers:{Purpose:'prefetch'}},{headers:{'Next-Router-Prefetch':'1'}},{}, {route:'/auth/confirm'}]){
+    const response=await fetch(origin+(options.route??'/auth/confirm?token_hash=provider_canary&type=invite'),{redirect:'manual',method:options.method??'GET',headers:{Cookie:[...scanner.jar].map(([key,value])=>key+'='+value).join('; '),...options.headers}});
+    privateHeaders(response);assert.equal(response.headers.getSetCookie().length,0,'scanner GET/HEAD cannot refresh expired Auth cookies');assert.ok(!(await response.text()).includes('provider_canary'));
+  }
+  assert.equal(backend.calls.length,beforeScanner,'confirmation reads bypass Auth and membership refresh');
   const member = await seed("member"), admin = await seed("admin", {role: "admin"});
   loginRedirect(await request('/admin/invitations'));
   for(const headers of [{},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){
