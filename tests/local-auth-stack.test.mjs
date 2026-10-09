@@ -31,6 +31,7 @@ async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicRe
     reservePort:async()=>++nextPort,
     run:async(command,args,options)=>{
       calls.push({command,args,options});
+      if(command==='docker'&&args[0]==='ps'){const state=JSON.parse(await readFile(stateFile,'utf8'));assert.ok(args.includes(`label=com.supabase.cli.project=${state.projectId}`));return {stdout:`supabase_db_${state.projectId.slice(0,40)}\n`};}
       if(command==='docker'&&args[0]==='inspect'){const state=JSON.parse(await readFile(stateFile,'utf8'));assert.equal(args.at(-1),`supabase_db_${state.projectId.slice(0,40)}`);return {stdout:state.projectId};}
       if(args[1]==='start'&&onStart)await onStart(options);
       if(args[1]===failAt)throw new Error('service_role=unknown-private-canary');
@@ -150,6 +151,7 @@ test('owns_application_callback_template_server_secret_and_invitation_cleanup',a
   const sql=h.calls.find(x=>x.command==='docker'&&x.args.includes('psql'));
   assert.ok(sql);assert.ok(sql.args.at(-1).indexOf('invitation_send_attempts')<sql.args.at(-1).indexOf('public.invitations'));
   assert.ok(sql.args.includes(`supabase_db_${stack.projectId.slice(0,40)}`));
+  assert.ok(h.calls.some(x=>x.command==='docker'&&x.args[0]==='ps'),'discover container through full ownership label');
   assert.ok(!(await readFile(h.stateFile,'utf8').catch(()=>'' )).includes('sb_secret_'));
  }finally{await stack?.close();await h.dispose();}
 });

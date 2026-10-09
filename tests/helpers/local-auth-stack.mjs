@@ -102,10 +102,14 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
   const close=()=>closePromise??=(async()=>{
     let failed=false,cleanupStage='database-owner',failedStage;
     if(apiUrl&&adminKey)try{
-      // CLI 2.119.0 truncates Docker name components; ownership still uses the full label.
-      const container=`supabase_db_${projectId.slice(0,40)}`;
       const options={env:localProcessEnvironment(),timeout:30000,maxBuffer:1024*1024};
+      const inventory=await run('docker',['ps','--all','--filter',`label=com.supabase.cli.project=${projectId}`,'--format','{{.Names}}'],options);
+      const candidates=inventory.stdout.trim().split(/\s+/).filter(name=>/^supabase_db_[A-Za-z0-9_-]+$/.test(name));
+      cleanupStage=`database-owner-count-${candidates.length}`;
+      if(candidates.length!==1)throw new Error('Owned database container not uniquely identified');
+      const container=candidates[0];
       const owner=await run('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],options);
+      cleanupStage=owner.stdout.trim()===projectId?'database-owner-verified':'database-owner-mismatch';
       if(owner.stdout.trim()!==projectId)throw new Error('Database ownership mismatch');
       cleanupStage='database-rows';await run('docker',['exec',container,'psql','-X','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c',
         `begin; create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
