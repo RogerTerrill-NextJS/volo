@@ -141,6 +141,17 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
     const membership=(role,status)=>({role,status,disabled_at:status==='disabled'?new Date().toISOString():null,disabled_reason:status==='disabled'?'Integration fixture':null});
     return {
       projectId,workdir,apiUrl,publicKey,serverSecret,close,
+      async authFailureCategory(){
+        // Read only this generated project's bounded logs. Export categories,
+        // never provider messages, request URLs, tokens or credential values.
+        try{
+          const container=`supabase_auth_${projectId}`,env=localProcessEnvironment();
+          const owner=await exec('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],{env,timeout:5000});
+          if(owner.stdout.trim()!==projectId)throw new Error('Unowned diagnostic target');
+          const logs=await exec('docker',['logs','--tail','100',container],{env,timeout:5000,maxBuffer:1024*1024});const text=logs.stdout+logs.stderr;
+          return {templateContext:/ambiguous context|different contexts/i.test(text),templateError:/templatemailer|template.*(?:error|failed)/i.test(text),rateLimit:/email rate limit exceeded|over_email_send_rate_limit/i.test(text)};
+        }catch{return {unavailable:true};}
+      },
       ownInvitationEmail(email){
         if(typeof email!=='string'||!/^[A-Za-z0-9.+-]+@example\.invalid$/i.test(email.trim()))throw new Error('Invalid fictional invitation email');
         ownedEmails.add(email.trim().toLowerCase());return email;

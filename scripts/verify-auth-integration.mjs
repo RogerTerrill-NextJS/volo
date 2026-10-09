@@ -182,9 +182,11 @@ try{
       link=linkFrom(recovery);check(Boolean(link.searchParams.get('resume')),'recovery callback retains proof');
       attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===3);verified=await stack.verifyCapturedLink(email,recovery);check(verified.subjectId===row.auth_user_id,'actual recovery token preserves subject');
       check((await stack.consumeSendProof(attempt.id,row.version,verified.subjectId,verified.resume,'invite')).code==='conflict','wrong transport fails');
-      check((await consume()).code==='consumed','recovery proof consumed');
-      await delay(1100);check((await renew(row)).body.data?.code==='accepted','later recovery accepted');
-      check((await consume()).code==='stale','renewal fences previous generation');row=await stack.readInvitationForEmail(email);
+      check((await stack.consumeSendProof(attempt.id,row.version,verified.subjectId,'','recovery')).code==='conflict','ordinary recovery without proof denied');
+      await delay(1100);const overlap=await Promise.all([consume(),renew(row)]);
+      check(['consumed','stale'].includes(overlap[0].code)&&overlap[1].body.data?.code==='accepted','proof consumption and renewal serialize');
+      check((await consume()).code==='stale','renewal fences previous generation');check(await stack.readSendProof(attempt.id)===null,'old proof removed');row=await stack.readInvitationForEmail(email);
+      const currentAttempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===4);check(!(await stack.readSendProof(currentAttempt.id)).consumed_at,'old consumer cannot consume new proof');
       await stack.revokeInvitation(row.id,accounts.admin.id);check((await renew(row)).body.data?.code==='conflict','terminal renewal denied');await captured(email,4);
       check(await stack.readMembership(row.auth_user_id)===null,'renewals grant no membership');
       return 'Real invite and recovery tokens verified against the same owned subject; single-use and stale proof fences; SQL asserts unchanged password hash, confirmation, ban and role during recovery send.';
@@ -284,6 +286,7 @@ try{
     }
   }
 }catch(error){
+  if(stack)summary.authFailureCategory=await stack.authFailureCategory();
   if(error.fixtureDiagnostic)summary.fixtureDiagnostic=error.fixtureDiagnostic;
   if(error.operation)summary.setupOperation={operation:error.operation,status:error.httpStatus??'transport',...(error.authCode?{code:error.authCode}:{})};
   console.error(`Setup stage: ${setupStage}`);
