@@ -102,7 +102,8 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
   const close=()=>closePromise??=(async()=>{
     let failed=false,cleanupStage='database-owner',failedStage;
     if(apiUrl&&adminKey)try{
-      const container=`supabase_db_${projectId}`;
+      // CLI 2.119.0 truncates Docker name components; ownership still uses the full label.
+      const container=`supabase_db_${projectId.slice(0,40)}`;
       const options={env:localProcessEnvironment(),timeout:30000,maxBuffer:1024*1024};
       const owner=await run('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],options);
       if(owner.stdout.trim()!==projectId)throw new Error('Database ownership mismatch');
@@ -157,7 +158,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         const list=await mail('/api/v1/messages');if(!Array.isArray(list.messages))throw new Error('Owned mail capture shape changed');
         const results=[];
         for(const item of list.messages.filter(m=>m.To?.some(to=>to.Address?.toLowerCase()===key))){
-          if(!uuidPattern.test(item.ID))throw new Error('Owned mail identity invalid');
+          if(typeof item.ID!=='string'||!(/^[A-Za-z0-9]{22}$/.test(item.ID)||uuidPattern.test(item.ID)))throw new Error('Owned mail identity invalid');
           const message=await mail(`/api/v1/message/${item.ID}`);const html=message.HTML;
           if(typeof html!=='string')throw new Error('Owned mail HTML missing');
           for(const match of html.matchAll(/token_hash=([A-Za-z0-9_-]+)/g))secrets.push(match[1]);

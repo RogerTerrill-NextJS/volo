@@ -22,7 +22,7 @@ test('does_not_inherit_hosted_settings',async()=>{
   for(const key of ['SUPABASE_ACCESS_TOKEN','NEXT_PUBLIC_SUPABASE_URL','SMTP_PASSWORD'])assert.equal(result[key],undefined);
 });
 
-async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicResponse}={}) {
+async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicResponse,mailResponse}={}) {
   const {createLocalAuthStack}=await load();
   const directory=await mkdtemp(path.join(tmpdir(),'volo-auth-test-'));
   const calls=[],requests=[];let nextPort=40000;
@@ -31,7 +31,7 @@ async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicRe
     reservePort:async()=>++nextPort,
     run:async(command,args,options)=>{
       calls.push({command,args,options});
-      if(command==='docker'&&args[0]==='inspect')return {stdout:args.at(-1).replace('supabase_db_','')};
+      if(command==='docker'&&args[0]==='inspect'){const state=JSON.parse(await readFile(stateFile,'utf8'));assert.equal(args.at(-1),`supabase_db_${state.projectId.slice(0,40)}`);return {stdout:state.projectId};}
       if(args[1]==='start'&&onStart)await onStart(options);
       if(args[1]===failAt)throw new Error('service_role=unknown-private-canary');
       if(args[1]==='status')return {stdout:JSON.stringify({API_URL:'http://127.0.0.1:40001',MAILPIT_URL:'http://127.0.0.1:40006',SECRET_KEY:'sb_secret_local_fixture',ANON_KEY:'legacy-canary',PUBLISHABLE_KEY:'sb_publishable_local_fixture',SERVICE_ROLE_KEY:'admin-canary'}),stderr:''};
@@ -40,6 +40,7 @@ async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicRe
     checkDocker:async()=>{},
     fetch:async(url,options)=>{
       requests.push({url:String(url),options});
+      if(mailResponse&&new URL(url).port==='40006')return mailResponse(url,options);
       if(publicResponse && !String(url).includes('/admin/') && String(url).includes('/auth/'))return publicResponse(url,options);
       if(redirect)return new Response(null,{status:302,headers:{location:'https://remote.invalid'}});
       if(String(url).endsWith('/auth/v1/admin/users')&&options.method==='POST')return Response.json(wrappedUser?{user:{id:'00000000-0000-4000-8000-000000000001'}}:{id:'00000000-0000-4000-8000-000000000001'});
@@ -148,7 +149,7 @@ test('owns_application_callback_template_server_secret_and_invitation_cleanup',a
   await stack.close();
   const sql=h.calls.find(x=>x.command==='docker'&&x.args.includes('psql'));
   assert.ok(sql);assert.ok(sql.args.at(-1).indexOf('invitation_send_attempts')<sql.args.at(-1).indexOf('public.invitations'));
-  assert.ok(sql.args.includes(`supabase_db_${stack.projectId}`));
+  assert.ok(sql.args.includes(`supabase_db_${stack.projectId.slice(0,40)}`));
   assert.ok(!(await readFile(h.stateFile,'utf8').catch(()=>'' )).includes('sb_secret_'));
  }finally{await stack?.close();await h.dispose();}
 });
@@ -156,4 +157,10 @@ test('rejects_non_owned_application_origins_before_starting_services',async()=>{
  for(const applicationOrigin of ['https://voloapp.netlify.app','http://localhost:40100','http://127.0.0.1:40100/path','http://127.0.0.1:40100?x=1']){
   const h=await harness();try{await assert.rejects(h.start({applicationOrigin}));assert.equal(h.calls.length,0);}finally{await h.dispose();}
  }
+});
+
+test('reads_owned_Mailpit_short_message_ids_without_consuming_links',async()=>{
+ const email='invited@example.invalid',id='YsABjkFERuPyq8XC6WaKs2';
+ const h=await harness({mailResponse:async url=>String(url).endsWith('/messages')?Response.json({messages:[{ID:id,To:[{Address:email}]}]}):Response.json({HTML:'<a href="http://127.0.0.1:40100/auth/confirm?token_hash=private_mail_canary">Invite</a>'})});let stack;
+ try{stack=await h.start();stack.ownInvitationEmail(email);assert.equal((await stack.readCapturedInvites(email)).length,1);assert.throws(()=>stack.assertNoCredentialLeaks('private_mail_canary'),/credential leak/);assert.ok(h.requests.some(x=>x.url.endsWith('/message/'+id)));assert.ok(h.requests.every(x=>!x.url.includes('/auth/confirm')));}finally{await stack?.close();await h.dispose();}
 });
