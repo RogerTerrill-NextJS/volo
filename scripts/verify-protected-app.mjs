@@ -137,6 +137,9 @@ try {
     if(want)assert.ok(controlPage.includes(want));assert.ok(!controlPage.includes(absent));
     if(!want)assert.ok(!controlPage.includes('Check send status'));
   }
+  backend.invitations.rows=[{...rows[0],status:'pending_issuance',auth_user_id:admin.entry.userId??'10000000-0000-4000-8000-000000000001',version:3,invitation_send_attempts:[{invitation_version:3,outcome:'rejected',reconciled_outcome:null}]}];
+  const failedRenewal=(await request('/admin/invitations',admin.jar)).body;
+  assert.match(failedRenewal,/Send failed/);assert.match(failedRenewal,/Renew provider link/);assert.match(failedRenewal,/name="expectedVersion" value="3"/);
   backend.invitations.rows=[{...rows[0],status:'issued',invitation_send_attempts:[{invitation_version:2,outcome:'accepted',reconciled_outcome:null}]}];
   const controlHtml=(await request('/admin/invitations',admin.jar)).body;
   const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
