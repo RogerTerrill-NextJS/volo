@@ -76,7 +76,9 @@ export function createInitialSendPorts():InitialSendPorts {
   },
   invite:email=>provider('invite',email),
   async record(r,outcome,subjectId,errorCode){
-   const result=await client().rpc('record_invitation_send_outcome',{p_attempt_id:r.attemptId,p_expected_version:r.version,p_outcome:outcome,p_subject_id:subjectId,p_error_code:errorCode}).retry(false);
+   // The CLI generator models SQL function arguments as non-null even though
+   // PostgreSQL accepts null here. Preserve explicit SQL nulls at this boundary.
+   const result=await client().rpc('record_invitation_send_outcome',{p_attempt_id:r.attemptId,p_expected_version:r.version,p_outcome:outcome,p_subject_id:subjectId!,p_error_code:errorCode!}).retry(false);
    if(result.error)throw unavailable();return code(result.data,['recorded','stale','conflict'] as const);
   },
  };

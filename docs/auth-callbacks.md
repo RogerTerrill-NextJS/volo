@@ -174,3 +174,23 @@ invalidate retained Router Cache state and perform fresh session-change navigati
 using supported installed Next APIs. HTTP policy cannot erase already-delivered
 history. See the [cache contract](private-caching.md); VOLO-110 retains hosted
 authenticated session/callback/CDN verification with an explicitly approved account.
+
+## Initial invitation issuance (VOLO-148)
+
+The server-only issuance policy requires a fresh active admin and reserves a
+durable initial send before calling Auth. It creates a new unconfirmed subject
+with the reserved operation UUID, durably binds it, then sends the invitation.
+Existing confirmed/unconfirmed accounts are rejected; issuance creates no
+membership and never resets or re-enables accounts. Accepted means provider
+acceptance, not delivery. Started/unknown attempts block another send until
+VOLO-149 reconciliation.
+
+The checked-in **local** invite template links directly to the exact application
+`/auth/confirm?token_hash=…&type=invite` using the server-pinned origin. The local
+harness captures mail without fetching the link. VOLO-122 will implement explicit
+acceptance; GET/HEAD must not consume the token or establish a session. Application
+invitations have no age-based expiry, while provider tokens remain finite.
+
+Hosted enablement still requires separate approval for the matching email template,
+exact callback allowlist, server secret and migrations. This change does not install
+those settings or make the hosted invitation/confirmation UI available.

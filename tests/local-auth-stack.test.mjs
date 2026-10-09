@@ -31,9 +31,10 @@ async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicRe
     reservePort:async()=>++nextPort,
     run:async(command,args,options)=>{
       calls.push({command,args,options});
+      if(command==='docker'&&args[0]==='inspect')return {stdout:args.at(-1).replace('supabase_db_','')};
       if(args[1]==='start'&&onStart)await onStart(options);
       if(args[1]===failAt)throw new Error('service_role=unknown-private-canary');
-      if(args[1]==='status')return {stdout:JSON.stringify({API_URL:'http://127.0.0.1:40001',ANON_KEY:'legacy-canary',PUBLISHABLE_KEY:'sb_publishable_local_fixture',SERVICE_ROLE_KEY:'admin-canary'}),stderr:''};
+      if(args[1]==='status')return {stdout:JSON.stringify({API_URL:'http://127.0.0.1:40001',MAILPIT_URL:'http://127.0.0.1:40006',SECRET_KEY:'sb_secret_local_fixture',ANON_KEY:'legacy-canary',PUBLISHABLE_KEY:'sb_publishable_local_fixture',SERVICE_ROLE_KEY:'admin-canary'}),stderr:''};
       return {stdout:'',stderr:''};
     },
     checkDocker:async()=>{},
@@ -134,4 +135,25 @@ test('interrupted_start_settles_before_owned_cleanup',async()=>{
 test('accepts_wrapped_auth_admin_user_response',async()=>{
   const h=await harness({wrappedUser:true});let stack;
   try{stack=await h.start();const account=await stack.createAccount({label:'A',role:'member'});assert.equal(account.id,'00000000-0000-4000-8000-000000000001');}finally{await stack?.close();await h.dispose();}
+});
+test('owns_application_callback_template_server_secret_and_invitation_cleanup',async()=>{
+ const h=await harness();let stack;
+ try {
+  stack=await h.start({applicationOrigin:'http://127.0.0.1:40100'});
+  assert.equal(stack.serverSecret,'sb_secret_local_fixture');
+  assert.throws(()=>stack.assertNoCredentialLeaks('sb_secret_local_fixture'),/credential leak/);
+  const config=await readFile(path.join(stack.workdir,'supabase/config.toml'),'utf8');
+  assert.match(config,/additional_redirect_urls = \["http:\/\/127\.0\.0\.1:40100\/auth\/confirm"\]/);
+  assert.ok((await readFile(path.join(stack.workdir,'supabase/templates/invite.html'),'utf8')).includes('{{ .TokenHash }}'));
+  await stack.close();
+  const sql=h.calls.find(x=>x.command==='docker'&&x.args.includes('psql'));
+  assert.ok(sql);assert.ok(sql.args.at(-1).indexOf('invitation_send_attempts')<sql.args.at(-1).indexOf('public.invitations'));
+  assert.ok(sql.args.includes(`supabase_db_${stack.projectId}`));
+  assert.ok(!(await readFile(h.stateFile,'utf8').catch(()=>'' )).includes('sb_secret_'));
+ }finally{await stack?.close();await h.dispose();}
+});
+test('rejects_non_owned_application_origins_before_starting_services',async()=>{
+ for(const applicationOrigin of ['https://voloapp.netlify.app','http://localhost:40100','http://127.0.0.1:40100/path','http://127.0.0.1:40100?x=1']){
+  const h=await harness();try{await assert.rejects(h.start({applicationOrigin}));assert.equal(h.calls.length,0);}finally{await h.dispose();}
+ }
 });

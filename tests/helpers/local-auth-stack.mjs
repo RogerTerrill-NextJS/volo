@@ -47,29 +47,30 @@ function replaceSetting(config,section,key,value) {
   if(count!==1)throw new Error('Local Auth configuration shape changed');return lines.join('\n');
 }
 
-async function prepareConfig(root,workdir,projectId,jwtExpirySeconds,allocate) {
+async function prepareConfig(root,workdir,projectId,jwtExpirySeconds,allocate,applicationOrigin) {
   let config=await readFile(path.join(root,'supabase/config.toml'),'utf8');
   config=replaceSetting(config,'','project_id',JSON.stringify(projectId));
   config=replaceSetting(config,'auth','jwt_expiry',String(jwtExpirySeconds));
   // Inherit admission/provider policy unchanged so runtime checks catch drift.
   config=replaceSetting(config,'db.seed','enabled','false');
   config=replaceSetting(config,'db.seed','sql_paths','[]');
-  config=replaceSetting(config,'auth','site_url','"http://127.0.0.1"');
-  config=replaceSetting(config,'auth','additional_redirect_urls','[]');
+  config=replaceSetting(config,'auth','site_url',JSON.stringify(applicationOrigin));
+  config=replaceSetting(config,'auth','additional_redirect_urls',JSON.stringify([applicationOrigin+'/auth/confirm']));
   // Disabled optional integrations must not read developer/provider secrets.
   config=config.replace(/"env\([A-Z0-9_]+\)"/g,'""');
-  let apiPort;let section='';const ports=new Set();const lines=[];
+  let apiPort,mailPort;let section='';const ports=new Set();const lines=[];
   for(let line of config.split('\n')) {
     const header=line.match(/^\[([^\]]+)\]/);if(header)section=header[1];
     const match=line.match(/^(port|shadow_port|inspector_port)\s*=/);
-    if(match){let port;do{port=await allocate();}while(ports.has(port));ports.add(port);line=`${match[1]} = ${port}`;if(section==='api'&&match[1]==='port')apiPort=port;}
+    if(match){let port;do{port=await allocate();}while(ports.has(port));ports.add(port);line=`${match[1]} = ${port}`;if(section==='api'&&match[1]==='port')apiPort=port;if(section==='local_smtp'&&match[1]==='port')mailPort=port;}
     lines.push(line);
   }
   if(!apiPort)throw new Error('Local Auth API port missing');
   await mkdir(path.join(workdir,'supabase'),{recursive:true});
   await writeFile(path.join(workdir,'supabase/config.toml'),lines.join('\n'));
   await cp(path.join(root,'supabase/migrations'),path.join(workdir,'supabase/migrations'),{recursive:true});
-  return apiPort;
+  await cp(path.join(root,'supabase/templates'),path.join(workdir,'supabase/templates'),{recursive:true});
+  return {apiPort,mailPort};
 }
 
 function cliRunner(root,run,signal) {
@@ -79,15 +80,17 @@ function cliRunner(root,run,signal) {
 }
 
 // Dependency injection is restricted to this test infrastructure; normal entry uses real operations.
-export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(evidenceDirectory(repositoryRoot),'owned-stack.json'),jwtExpirySeconds=120,signal},adapters={}) {
+export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(evidenceDirectory(repositoryRoot),'owned-stack.json'),jwtExpirySeconds=120,signal,applicationOrigin='http://127.0.0.1:3000'},adapters={}) {
   if(jwtExpirySeconds!==120)throw new Error('Integration JWT lifetime must be 120 seconds');
+  if(!/^http:\/\/127\.0\.0\.1:[1-9][0-9]*$/.test(applicationOrigin))throw new Error('Invalid owned application origin');
+  validateLocalApiUrl(applicationOrigin,Number(new URL(applicationOrigin).port));
   const run=adapters.run??exec,request=adapters.fetch??fetch,allocate=adapters.reservePort??reservePort;
   const cli=cliRunner(repositoryRoot,run,signal),cleanupCli=cliRunner(repositoryRoot,run);
   try{await (adapters.checkDocker??(()=>exec('docker',['info','--format','{{.ServerVersion}}'],{env:localProcessEnvironment(),timeout:15000})))();}
   catch{throw new Error('Real local Auth stack requires a running Docker engine; no simulated fallback');}
   signal?.throwIfAborted();
   const projectId=`volo-auth-${randomUUID()}`,workdir=await mkdtemp(path.join(tmpdir(),`${projectId}-`));
-  const accounts=[],secrets=[];let started=false,stateOwned=false,apiUrl,publicKey,adminKey,closePromise,stage='configuration';
+  const accounts=[],secrets=[],ownedEmails=new Set(),ownedInvitations=new Set();let started=false,stateOwned=false,apiUrl,publicKey,adminKey,serverSecret,mailUrl,closePromise,stage='configuration';
   async function api(route,{method='GET',body}={}) {
     validateLocalApiUrl(apiUrl,Number(new URL(apiUrl).port));
     try{
@@ -98,6 +101,17 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
   }
   const close=()=>closePromise??=(async()=>{
     let failed=false;
+    if(apiUrl&&adminKey)try{
+      const container=`supabase_db_${projectId}`;
+      const options={env:localProcessEnvironment(),timeout:30000,maxBuffer:1024*1024};
+      const owner=await run('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],options);
+      if(owner.stdout.trim()!==projectId)throw new Error('Database ownership mismatch');
+      await run('docker',['exec',container,'psql','-X','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c',
+        `begin; create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
+         delete from public.invitation_send_attempts; delete from public.invitations;
+         delete from public.memberships where user_id in (select id from owned_subjects);
+         delete from auth.users where id in (select id from owned_subjects); commit;`],options);
+    }catch{failed=true;}
     if(apiUrl&&adminKey)for(const account of accounts){
       try{await api(`/rest/v1/memberships?user_id=eq.${account.id}`,{method:'DELETE'});await api(`/auth/v1/admin/users/${account.id}`,{method:'DELETE'});}catch{failed=true;}
     }
@@ -108,7 +122,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
   })();
   try {
     signal?.throwIfAborted();
-    const apiPort=await prepareConfig(repositoryRoot,workdir,projectId,jwtExpirySeconds,allocate);
+    const {apiPort,mailPort}=await prepareConfig(repositoryRoot,workdir,projectId,jwtExpirySeconds,allocate,applicationOrigin);
     await mkdir(path.dirname(stateFile),{recursive:true});
     await writeFile(stateFile,JSON.stringify({projectId,workdir}),{flag:'wx',mode:0o600});
     stateOwned=true;
@@ -118,14 +132,46 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
     const result=await cli(['status','--workdir',workdir,'-o','json'],30000);
     stage='credentials';const status=JSON.parse(result.stdout);
     apiUrl=validateLocalApiUrl(status.API_URL,apiPort).origin;
-    publicKey=status.PUBLISHABLE_KEY;adminKey=status.SERVICE_ROLE_KEY;
-    if(typeof publicKey!=='string'||!publicKey.startsWith('sb_publishable_')||typeof adminKey!=='string'||!adminKey)throw new Error('Local keys missing');
-    secrets.push(adminKey);
+    publicKey=status.PUBLISHABLE_KEY;adminKey=status.SERVICE_ROLE_KEY;serverSecret=status.SECRET_KEY;
+    if(typeof publicKey!=='string'||!publicKey.startsWith('sb_publishable_')||typeof adminKey!=='string'||!adminKey||typeof serverSecret!=='string'||!/^sb_secret_[A-Za-z0-9_-]+$/.test(serverSecret))throw new Error('Local keys missing');
+    secrets.push(adminKey,serverSecret);
+    mailUrl=validateLocalApiUrl(status.MAILPIT_URL,mailPort).origin;
     const owned=new Set();
     const requireOwned=id=>{if(!owned.has(id))throw new Error('Account is not owned by this run');};
     const membership=(role,status)=>({role,status,disabled_at:status==='disabled'?new Date().toISOString():null,disabled_reason:status==='disabled'?'Integration fixture':null});
     return {
-      projectId,workdir,apiUrl,publicKey,close,
+      projectId,workdir,apiUrl,publicKey,serverSecret,close,
+      ownInvitationEmail(email){
+        if(typeof email!=='string'||!/^[A-Za-z0-9.+-]+@example\.invalid$/i.test(email.trim()))throw new Error('Invalid fictional invitation email');
+        ownedEmails.add(email.trim().toLowerCase());return email;
+      },
+      async readInvitationForEmail(email){
+        const key=email.trim().toLowerCase();if(!ownedEmails.has(key))throw new Error('Invitation email not owned');
+        const rows=await api(`/rest/v1/invitations?recipient_email_key=eq.${encodeURIComponent(key)}&select=*`);
+        if(rows.length>1)throw new Error('Duplicate owned invitation');const row=rows[0]??null;if(row)ownedInvitations.add(row.id);return row;
+      },
+      async readSendAttempts(id){if(!ownedInvitations.has(id))throw new Error('Invitation not owned');return api(`/rest/v1/invitation_send_attempts?invitation_id=eq.${id}&select=*`);},
+      async readCapturedInvites(email){
+        const key=email.trim().toLowerCase();if(!ownedEmails.has(key))throw new Error('Invitation email not owned');
+        async function mail(route){const response=await request(mailUrl+route,{redirect:'error',signal:AbortSignal.timeout(5000)});if(!response.ok)throw new Error('Owned mail capture failed');return response.json();}
+        const list=await mail('/api/v1/messages');if(!Array.isArray(list.messages))throw new Error('Owned mail capture shape changed');
+        const results=[];
+        for(const item of list.messages.filter(m=>m.To?.some(to=>to.Address?.toLowerCase()===key))){
+          if(!uuidPattern.test(item.ID))throw new Error('Owned mail identity invalid');
+          const message=await mail(`/api/v1/message/${item.ID}`);const html=message.HTML;
+          if(typeof html!=='string')throw new Error('Owned mail HTML missing');
+          for(const match of html.matchAll(/token_hash=([A-Za-z0-9_-]+)/g))secrets.push(match[1]);
+          results.push(html);
+        }
+        return results;
+      },
+      async readAuthUser(id){requireOwned(id);return api(`/auth/v1/admin/users/${id}`);},
+      async trackIssuedSubject(id){
+        if(!uuidPattern.test(id))throw new Error('Invalid owned subject');
+        const attempts=await api(`/rest/v1/invitation_send_attempts?id=eq.${id}&select=invitation_id`);
+        if(attempts.length!==1||!ownedInvitations.has(attempts[0].invitation_id))throw new Error('Subject not owned by invitation');
+        owned.add(id); // Owner SQL removes initial subjects before ordinary account cleanup.
+      },
       assertNoCredentialLeaks(text){if(secrets.some(secret=>text.includes(secret)))throw new Error('Integration credential leak detected');},
       async probePublicAdmission() {
         validateLocalApiUrl(apiUrl,Number(new URL(apiUrl).port));
@@ -157,13 +203,13 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         const oauth=outcome(await publicRequest('/auth/v1/authorize?provider=apple'));
         return {settings:{signupDisabled:settings.disable_signup,providers},email,anonymous,oauth};
       },
-      async createAccount({label,role,status='active'}) {
+      async createAccount({label,role,status='active',emailConfirmed=true}) {
         if(!/^[A-Za-z0-9-]+$/.test(label)||![null,'member','admin'].includes(role)||!['active','disabled'].includes(status))throw new Error('Invalid account fixture');
         const email=`${label.toLowerCase()}-${randomUUID()}@example.invalid`,password=randomBytes(32).toString('base64url');secrets.push(password);
-        const response=await api('/auth/v1/admin/users',{method:'POST',body:{email,password,email_confirm:true}});
+        const response=await api('/auth/v1/admin/users',{method:'POST',body:{email,password,email_confirm:emailConfirmed}});
         const user=response?.user??response;
         if(!uuidPattern.test(user?.id))throw new Error('Local Auth user identity invalid');
-        const account={id:user.id,email,password};accounts.push(account);owned.add(account.id);
+        const account={id:user.id,email,password};accounts.push(account);owned.add(account.id);ownedEmails.add(email.toLowerCase());
         if(role!==null)await api('/rest/v1/memberships',{method:'POST',body:{user_id:account.id,...membership(role,status)}});
         return account;
       },

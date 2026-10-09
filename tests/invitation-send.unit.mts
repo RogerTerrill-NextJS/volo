@@ -91,6 +91,8 @@ test('provider adapter emits exact creation and callback inputs and refuses malf
   }
   response={code:'reserved',invitation_id:reserved.invitationId,attempt_id:operationId,version:1,recipient_email:command.recipientEmail,fresh:true,outcome:'started'};
   assert.deepEqual(await ports.reserve(command),reserved);
+  response={code:'recorded'};assert.equal(await ports.record(reserved,'unknown',null,'timeout'),'recorded');
+  assert.equal(requests.at(-1)?.body.p_subject_id,null);assert.equal(requests.at(-1)?.body.p_error_code,'timeout');
   response={id:'bad',email:command.recipientEmail};assert.equal((await ports.createSubject(operationId,command.recipientEmail)).code,'unknown');
  }finally {globalThis.fetch=original;delete process.env.SUPABASE_SECRET_KEY;}
 });
