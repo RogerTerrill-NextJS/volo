@@ -233,3 +233,12 @@ successful HTTP result, hence explicit subject verification. The
 and [email template reference](https://supabase.com/docs/guides/auth/auth-email-templates)
 describe the callback/template mechanism. Upstream documentation/source motivates
 the design; tests against the pinned disposable provider are the acceptance evidence.
+
+## Execution clarification: template query shape
+
+The fixed callback carries a non-authorizing `flow=invitation` query marker for
+both initial issuance and resend; resend adds `resume`. Templates append provider
+token/type fields with `&`, avoiding Go HTML-template conditional URL ambiguity
+and SiteURL comparisons that would break separately approved preview origins.
+Future ordinary recovery uses the same fixed-origin/path convention with its
+own non-secret query marker. Flow values never grant invitation authority.

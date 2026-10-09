@@ -18,7 +18,7 @@ function code<T extends string>(value:unknown,allowed:readonly T[]):T {
 function confirmUrl():string {
  const origin=process.env.VOLO_MUTATION_ORIGIN??'';const url=new URL(origin);
  if(url.origin!==origin||url.username||url.password||!(url.protocol==='https:'||url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)))throw unavailable();
- return new URL('/auth/confirm',url).href;
+ const callback=new URL('/auth/confirm',url);callback.searchParams.set('flow','invitation');return callback.href;
 }
 
 function client(){

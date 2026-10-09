@@ -203,7 +203,12 @@ subject and increments the invitation version. Unconfirmed subjects receive an
 invite; confirmed subjects receive recovery transport without changing their
 password, confirmation, ban, membership or role. Both resend links carry a random
 32-byte `resume` secret; only its SHA-256 digest and recorded transport persist.
-Local templates preserve that query alongside `token_hash` and `type`.
+The server’s fixed callback includes `?flow=invitation`, then adds `resume` on
+renewal. Local templates append `&token_hash=...&type=...` uniformly; they never
+compare origins with the project Site URL. `flow` is a non-authorizing marker and
+must never substitute for provider verification or proof. Future ordinary recovery
+must supply its fixed callback with a non-secret query marker too, such as
+`?flow=recovery`; ordinary recovery still requires no invitation proof.
 
 VOLO-122 must verify the actual provider token and exact subject/email, then
 consume the matching current-generation proof **in the same SQL transaction**

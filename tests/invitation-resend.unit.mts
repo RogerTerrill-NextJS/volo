@@ -104,7 +104,7 @@ test('real provider adapter constrains recovery payload and refuses missing-acco
  try {
   const ports=provider.createResendPorts();assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'accepted');
   const request=requests.find(r=>r.url.pathname.endsWith('/recover'))!;assert.deepEqual(request.body,{email,code_challenge:null,code_challenge_method:null,gotrue_meta_security:{}});
-  const redirect=new URL(request.url.searchParams.get('redirect_to')!);assert.equal(redirect.origin,'https://voloapp.netlify.app');assert.equal(redirect.pathname,'/auth/confirm');assert.equal(redirect.searchParams.get('resume'),'a'.repeat(43));
+  const redirect=new URL(request.url.searchParams.get('redirect_to')!);assert.equal(redirect.origin,'https://voloapp.netlify.app');assert.equal(redirect.pathname,'/auth/confirm');assert.equal(redirect.searchParams.get('flow'),'invitation');assert.equal(redirect.searchParams.get('resume'),'a'.repeat(43));
   confirmed=false;const sends=requests.filter(r=>r.url.pathname.endsWith('/recover')).length;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');assert.equal(requests.filter(r=>r.url.pathname.endsWith('/recover')).length,sends);
   confirmed=true;missingAfter=true;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');
   missing=true;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');
