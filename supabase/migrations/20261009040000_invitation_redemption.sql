@@ -38,7 +38,8 @@ begin
   or authority.expires_at<=clock_timestamp()
   then return jsonb_build_object('code','denied'); end if;
  if not exists(select 1 from auth.users u where u.id=p_subject
-   and u.banned_until is null and u.is_anonymous is not true and u.email_confirmed_at is not null
+   and (u.banned_until is null or u.banned_until<=clock_timestamp())
+   and u.is_anonymous is not true and u.email_confirmed_at is not null
    and translate(u.email collate "C",'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')=invitation.recipient_email_key)
   or not exists(select 1 from auth.sessions s where s.id=p_session_id and s.user_id=p_subject
    and (s.not_after is null or s.not_after>clock_timestamp()))
