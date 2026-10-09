@@ -102,20 +102,14 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
   const close=()=>closePromise??=(async()=>{
     let failed=false,cleanupStage='database-owner',failedStage;
     if(apiUrl&&adminKey)try{
-      const options={env:localProcessEnvironment(),timeout:30000,maxBuffer:1024*1024};
-      const inventory=await run('docker',['ps','--all','--filter',`label=com.supabase.cli.project=${projectId}`,'--format','{{.Names}}'],options);
-      const candidates=inventory.stdout.trim().split(/\s+/).filter(name=>/^supabase_db_[A-Za-z0-9_-]+$/.test(name));
-      cleanupStage=`database-owner-count-${candidates.length}`;
-      if(candidates.length!==1)throw new Error('Owned database container not uniquely identified');
-      const container=candidates[0];
-      const owner=await run('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],options);
-      cleanupStage=owner.stdout.trim()===projectId?'database-owner-verified':'database-owner-mismatch';
-      if(owner.stdout.trim()!==projectId)throw new Error('Database ownership mismatch');
-      cleanupStage='database-rows';await run('docker',['exec',container,'psql','-X','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1','-c',
+      const state=JSON.parse(await readFile(stateFile,'utf8'));
+      const config=await readFile(path.join(workdir,'supabase/config.toml'),'utf8');
+      if(!stateOwned||state.projectId!==projectId||state.workdir!==workdir||!config.includes(`project_id = "${projectId}"`))throw new Error('Database ownership mismatch');
+      cleanupStage='database-rows';await cleanupCli(['db','query','--local','--workdir',workdir,
         `begin; create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
          delete from public.invitation_send_attempts; delete from public.invitations;
          delete from public.memberships where user_id in (select id from owned_subjects);
-         delete from auth.users where id in (select id from owned_subjects); commit;`],options);
+         delete from auth.users where id in (select id from owned_subjects); commit;`],30000);
     }catch{failed=true;failedStage=cleanupStage;}
     if(apiUrl&&adminKey)for(const account of accounts){
       try{await api(`/rest/v1/memberships?user_id=eq.${account.id}`,{method:'DELETE'});await api(`/auth/v1/admin/users/${account.id}`,{method:'DELETE'});}catch{failed=true;}

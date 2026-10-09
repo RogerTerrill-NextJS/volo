@@ -31,8 +31,6 @@ async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicRe
     reservePort:async()=>++nextPort,
     run:async(command,args,options)=>{
       calls.push({command,args,options});
-      if(command==='docker'&&args[0]==='ps'){const state=JSON.parse(await readFile(stateFile,'utf8'));assert.ok(args.includes(`label=com.supabase.cli.project=${state.projectId}`));return {stdout:`supabase_db_${state.projectId.slice(0,40)}\n`};}
-      if(command==='docker'&&args[0]==='inspect'){const state=JSON.parse(await readFile(stateFile,'utf8'));assert.equal(args.at(-1),`supabase_db_${state.projectId.slice(0,40)}`);return {stdout:state.projectId};}
       if(args[1]==='start'&&onStart)await onStart(options);
       if(args[1]===failAt)throw new Error('service_role=unknown-private-canary');
       if(args[1]==='status')return {stdout:JSON.stringify({API_URL:'http://127.0.0.1:40001',MAILPIT_URL:'http://127.0.0.1:40006',SECRET_KEY:'sb_secret_local_fixture',ANON_KEY:'legacy-canary',PUBLISHABLE_KEY:'sb_publishable_local_fixture',SERVICE_ROLE_KEY:'admin-canary'}),stderr:''};
@@ -148,10 +146,10 @@ test('owns_application_callback_template_server_secret_and_invitation_cleanup',a
   assert.match(config,/additional_redirect_urls = \["http:\/\/127\.0\.0\.1:40100\/auth\/confirm"\]/);
   assert.ok((await readFile(path.join(stack.workdir,'supabase/templates/invite.html'),'utf8')).includes('{{ .TokenHash }}'));
   await stack.close();
-  const sql=h.calls.find(x=>x.command==='docker'&&x.args.includes('psql'));
+  const sql=h.calls.find(x=>x.args[1]==='db'&&x.args[2]==='query');
   assert.ok(sql);assert.ok(sql.args.at(-1).indexOf('invitation_send_attempts')<sql.args.at(-1).indexOf('public.invitations'));
-  assert.ok(sql.args.includes(`supabase_db_${stack.projectId.slice(0,40)}`));
-  assert.ok(h.calls.some(x=>x.command==='docker'&&x.args[0]==='ps'),'discover container through full ownership label');
+  assert.ok(sql.args.includes('--local'));assert.equal(sql.args[sql.args.indexOf('--workdir')+1],stack.workdir);assert.ok(!sql.args.includes('--linked'));
+  assert.ok(!h.calls.some(x=>x.command==='docker'),'cleanup uses owned CLI workdir rather than container discovery');
   assert.ok(!(await readFile(h.stateFile,'utf8').catch(()=>'' )).includes('sb_secret_'));
  }finally{await stack?.close();await h.dispose();}
 });
@@ -165,4 +163,9 @@ test('reads_owned_Mailpit_short_message_ids_without_consuming_links',async()=>{
  const email='invited@example.invalid',id='YsABjkFERuPyq8XC6WaKs2';
  const h=await harness({mailResponse:async url=>String(url).endsWith('/messages')?Response.json({messages:[{ID:id,To:[{Address:email}]}]}):Response.json({HTML:'<a href="http://127.0.0.1:40100/auth/confirm?token_hash=private_mail_canary">Invite</a>'})});let stack;
  try{stack=await h.start();stack.ownInvitationEmail(email);assert.equal((await stack.readCapturedInvites(email)).length,1);assert.throws(()=>stack.assertNoCredentialLeaks('private_mail_canary'),/credential leak/);assert.ok(h.requests.some(x=>x.url.endsWith('/message/'+id)));assert.ok(h.requests.every(x=>!x.url.includes('/auth/confirm')));}finally{await stack?.close();await h.dispose();}
+});
+
+test('refuses_cleanup_SQL_after_owned_configuration_changes',async()=>{
+ const h=await harness();let stack;
+ try{stack=await h.start();const config=path.join(stack.workdir,'supabase/config.toml');await writeFile(config,'project_id = "unowned"\n');await assert.rejects(stack.close(),/cleanup failed/);assert.ok(!h.calls.some(x=>x.args[2]==='query'));assert.equal(h.calls.filter(x=>x.args[1]==='stop').length,1);}finally{await h.dispose();}
 });
