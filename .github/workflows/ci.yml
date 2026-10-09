@@ -49,6 +49,8 @@ jobs:
         run: npm run test:access
       - name: Protected app pages and login destination
         run: npm run test:protected-app
+      - name: Invitation issuance and provider failure handling
+        run: npm run test:invitations:unit
       - name: Protected mutation authorization, input limits and origin enforcement
         run: npm run test:mutations
       - name: Private response cache isolation and public cache controls
