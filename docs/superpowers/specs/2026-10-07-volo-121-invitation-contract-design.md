@@ -147,7 +147,10 @@ implementation's reviewed server configuration contract;
 do not serialize it into client output. Limit creation attempts and retention to
 avoid unbounded storage from anonymous GET traffic. Local HTTP uses the explicit
 development cookie exception; hosted cookies require HTTPS. The confirmation
-POST binds the CSRF value to this transport context and verifies type=invite.
+POST binds the CSRF value to this transport context and verifies type=invite for
+initial issuance. VOLO-149 resends verify the recorded invite/recovery transport
+and consume the current generation’s single-use opaque proof atomically with
+setup authorization creation.
 
 After verification, persist standard Auth cookies through the existing writable
 client/header sink and establish separate server-owned setup authorization bound
@@ -172,8 +175,11 @@ After redemption, clear setup authorization and perform fresh navigation to
 /dashboard with token/query propagation suppressed. Reauthorize normally there.
 
 Recovery uses the same callback entry but an explicitly separate type=recovery
-branch owned by VOLO-23. It cannot create invitation setup authorization or redeem
-an invitation. Missing/unsupported types fail closed. Existing users use recovery,
+branch owned by VOLO-23. Ordinary recovery cannot create invitation setup
+authorization or redeem an invitation. The approved VOLO-149 exception uses
+recovery transport for a confirmed invitation-bound subject, with actual provider
+verification plus a current, single-use resend proof; recovery session alone
+remains insufficient. Missing/unsupported types fail closed. Existing users use recovery,
 not a new invitation that silently replaces credentials.
 
 ## Ownership and implementation order

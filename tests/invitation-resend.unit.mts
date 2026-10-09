@@ -96,15 +96,17 @@ test('trusted reconciliation is fenced to the exact observed operation and ident
 });
 test('real provider adapter constrains recovery payload and refuses missing-account success',async()=>{
  process.env.NEXT_PUBLIC_SUPABASE_URL='https://example.supabase.co';process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='sb_publishable_ci_fixture';process.env.SUPABASE_SECRET_KEY='sb_secret_resend_fixture';process.env.VOLO_MUTATION_ORIGIN='https://voloapp.netlify.app';
- const original=globalThis.fetch;const requests:{url:URL;body:unknown}[]=[];let missing=false;
+ const original=globalThis.fetch;const requests:{url:URL;body:unknown}[]=[];let missing=false,confirmed=true,missingAfter=false;
  globalThis.fetch=async(input,init)=>{const url=new URL(String(input));assert.equal(url.origin,'https://example.supabase.co');assert.equal(init?.redirect,'error');assert.equal(init?.cache,'no-store');
   requests.push({url,body:init?.body?JSON.parse(String(init.body)):null});
-  if(url.pathname.endsWith('/recover'))return Response.json({});
-  return missing?Response.json({code:'user_not_found',msg:'secret-canary'},{status:404}):Response.json({id:subjectId,email,email_confirmed_at:'2026-01-01T00:00:00Z',banned_until:null});};
+  if(url.pathname.endsWith('/recover')){if(missingAfter)missing=true;return Response.json({});}
+  return missing?Response.json({code:'user_not_found',msg:'secret-canary'},{status:404}):Response.json({id:subjectId,email,email_confirmed_at:confirmed?'2026-01-01T00:00:00Z':null,banned_until:null});};
  try {
   const ports=provider.createResendPorts();assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'accepted');
   const request=requests.find(r=>r.url.pathname.endsWith('/recover'))!;assert.deepEqual(request.body,{email,code_challenge:null,code_challenge_method:null,gotrue_meta_security:{}});
   const redirect=new URL(request.url.searchParams.get('redirect_to')!);assert.equal(redirect.origin,'https://voloapp.netlify.app');assert.equal(redirect.pathname,'/auth/confirm');assert.equal(redirect.searchParams.get('resume'),'a'.repeat(43));
+  confirmed=false;const sends=requests.filter(r=>r.url.pathname.endsWith('/recover')).length;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');assert.equal(requests.filter(r=>r.url.pathname.endsWith('/recover')).length,sends);
+  confirmed=true;missingAfter=true;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');
   missing=true;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');
  }finally{globalThis.fetch=original;delete process.env.SUPABASE_SECRET_KEY;}
 });

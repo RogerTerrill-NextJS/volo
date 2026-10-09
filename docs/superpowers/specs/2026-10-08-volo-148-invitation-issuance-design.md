@@ -129,7 +129,10 @@ historical evidence and must not restore eligibility.
 
 Derive the exact `/auth/confirm` redirect from the pinned server application
 origin, never from request headers or caller input. The invitation email must
-link directly to the application with `token_hash` and `type=invite`; a default
+link directly to the application with `token_hash` and `type=invite` for initial
+issuance. VOLO-149 adds invite/recovery resends for the same bound subject, with
+a current-generation single-use `resume` proof; ordinary recovery grants no
+invitation authority. A default
 provider verification GET link would consume the token before the application's
 explicit acceptance flow. Add a checked-in local invite template using the
 provider's RedirectTo and TokenHash template values and configure it for the

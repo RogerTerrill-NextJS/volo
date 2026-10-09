@@ -26,9 +26,11 @@ sign-in disabled, and SMS/unused providers disabled. The CLI's
 `auth.email.enable_signup` enables the email provider; global
 `auth.enable_signup = false` still blocks public account creation. The disposable
 stack inherits these admission settings unchanged so integration catches drift.
-No email is sent, and hosted settings are unchanged. Only the
-controller receives the local service-role key; the compiled Next fixture gets
-the local API and publishable key. All writes and effects belong to disposable resources.
+Foundation scenarios create accounts without email. VOLO-148/149 additionally
+send email into the owned local SMTP capture; hosted settings are unchanged. The
+controller receives the local service-role key. The compiled Next fixture gets
+the local API/public key and a local modern server secret for guarded invitation
+operations; this secret is excluded from client output and leak-scanned. All writes and effects belong to disposable resources.
 
 Cleanup deletes memberships before Auth users, stops only the generated project
 and removes owned files. SIGINT/SIGTERM and CI's `always()` cleanup cover normal
@@ -147,3 +149,19 @@ secret enters only the fixture's server environment and credential-leak scans.
 Mail token hashes stay in memory and are never emitted in summary artifacts.
 Owner-scoped teardown removes invitation dependencies before referenced users.
 There is no additional stack or CI job and no hosted write test.
+
+## Invitation renewal coverage
+
+VOLO-149 extends the same stack with guarded same-subject renewal, real captured
+invite and recovery tokens, version-bound single-use proof, concurrent renewal,
+and ambiguous-send inspection/reconciliation. Owned SQL snapshots assert recovery
+sending leaves password hash, confirmation, ban and role unchanged without
+exporting those values. The temporary snapshot table is disposable test data,
+client-inaccessible and removed during teardown. Proof rows are deleted before
+attempts. Tokens, sessions and raw resume secrets stay in memory and leak scans.
+
+Initial issuance uses invite transport. Confirmed invitation subjects use recovery
+transport only with a matching single-use resend proof; ordinary recovery remains
+separate. Future VOLO-122 must compose proof consumption and setup creation in
+one transaction. No public confirmation or setup route exists yet. Lost original
+provider evidence cannot be reconstructed from account state or timestamps.
