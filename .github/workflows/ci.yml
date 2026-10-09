@@ -120,12 +120,7 @@ jobs:
       - name: Generate database types
         if: success() || steps.database-types-check.outcome == 'failure'
         id: generate-database-types
-        run: |
-          npm run db:types
-          # Public schema only; recovery when the generated artifact download fails.
-          if [ "${{ steps.database-types-check.outcome }}" = "failure" ]; then
-            cat lib/supabase/database.types.ts
-          fi
+        run: npm run db:types
       - name: Upload generated database types
         if: always() && steps.generate-database-types.outcome == 'success'
         uses: actions/upload-artifact@v7

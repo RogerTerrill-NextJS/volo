@@ -1,5 +1,6 @@
 import 'server-only';
 import {createClient} from '@supabase/supabase-js';
+import type {Database} from '../supabase/database.types.ts';
 import {getSupabasePrivilegedConfig} from '../supabase/privileged-config.mjs';
 import {invitationEmail,invitationUuid} from './invitation-send.ts';
 import type {ConfirmationEnvelope} from './invitation-confirmation-crypto.ts';
@@ -14,14 +15,17 @@ function object(value:unknown):Record<string,unknown>{if(!value||typeof value!==
 function date(value:unknown):string{if(typeof value!=='string'||!Number.isFinite(Date.parse(value)))throw new Error();return new Date(value).toISOString();}
 function service(){
  const {url,secretKey}=getSupabasePrivilegedConfig();
- return createClient(url,secretKey,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:async(input,init)=>{
+ return createClient<Database>(url,secretKey,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:async(input,init)=>{
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
   try{const response=await fetch(input,{...init,signal:controller.signal,cache:'no-store',redirect:'error'});const body=await response.text();if(controller.signal.aborted)throw new Error();return new Response(body,{status:response.status,headers:response.headers});}
   finally{clearTimeout(timer);controller.abort();}
  }}});
 }
-async function rpc(name:string,args:Record<string,unknown>):Promise<Record<string,unknown>>{
- const result=await service().rpc(name,args).retry(false);if(result.error)throw new Error();return object(result.data);
+type Functions=Database['public']['Functions'];
+// The generator omits SQL argument nullability; current initial invitations
+// intentionally have null attempt/resume/previous values, validated by the RPC.
+async function rpc<K extends keyof Functions>(name:K,args:{[P in keyof Functions[K]['Args']]:Functions[K]['Args'][P]|null}):Promise<Record<string,unknown>>{
+ const result=await service().rpc(name,args as Functions[K]['Args']).retry(false);if(result.error)throw new Error();return object(result.data);
 }
 function envelopeResult(raw:Record<string,unknown>):EnvelopeResult{
  if(raw.code==='denied')return {code:'denied'};if(raw.code!=='found'&&raw.code!=='claimed')throw new Error();

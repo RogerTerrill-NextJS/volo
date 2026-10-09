@@ -54,6 +54,7 @@ select is((select count(*) from public.memberships where user_id='22000000-0000-
 select ok((select expires_at=created_at+interval '30 minutes' from public.invitation_setup_authorizations where invitation_id='33000000-0000-4000-8000-000000000001'),'setup expires separately after thirty minutes');
 select is(public.read_verified_invitation_setup(repeat('d',64),'22000000-0000-4000-8000-000000000001','Confirm+tag@example.invalid','55000000-0000-4000-8000-000000000001','https://confirm.example.invalid')->>'code','authorized','matching verified session reads setup');
 select is(public.read_verified_invitation_setup(repeat('d',64),'22000000-0000-4000-8000-000000000001','Confirm+tag@example.invalid','55000000-0000-4000-8000-000000000002','https://confirm.example.invalid')->>'code','denied','another login never inherits setup');
+select is(public.read_verified_invitation_setup(repeat('d',64),'22000000-0000-4000-8000-000000000001','Confirm+tag@example.invalid','55000000-0000-4000-8000-000000000001','https://foreign.example.invalid')->>'code','denied','setup is pinned to its confirmation origin');
 select is(pg_temp.setup()->>'code','stale','same provider evidence cannot recreate setup');
 update public.invitation_setup_authorizations set created_at=now()-interval '31 minutes',expires_at=now()-interval '1 minute';
 select is(public.read_verified_invitation_setup(repeat('d',64),'22000000-0000-4000-8000-000000000001','Confirm+tag@example.invalid','55000000-0000-4000-8000-000000000001','https://confirm.example.invalid')->>'code','denied','expired grant cannot authorize before physical cleanup');
@@ -86,5 +87,10 @@ insert into public.invitation_setup_authorizations(id,lookup_digest,invitation_i
 update public.invitations set status='redeemed',password_established_at=statement_timestamp(),redeemed_at=statement_timestamp() where id='33000000-0000-4000-8000-000000000001';
 select public.cleanup_invitation_confirmation();
 select ok((select status='redeemed' and verified_user_id is not null and setup_authorization_id='66000000-0000-4000-8000-000000000001' and password_established_at is not null from public.invitations where id='33000000-0000-4000-8000-000000000001'),'cleanup preserves terminal redemption evidence');
+select is(pg_temp.setup(v=>2)->>'code','stale','redeemed invitation cannot acquire new setup');
+update public.invitations set status='revoked',redeemed_at=null,revoked_at=statement_timestamp(),revoked_by_user_id='11000000-0000-4000-8000-000000000001',revocation_reason='Owned fixture' where id='33000000-0000-4000-8000-000000000001';
+select is(pg_temp.setup(v=>2)->>'code','stale','revoked invitation cannot acquire new setup');
+update public.invitations set status='superseded',revoked_at=null,revoked_by_user_id=null,revocation_reason=null,superseded_at=statement_timestamp(),superseded_by_id='33000000-0000-4000-8000-000000000002' where id='33000000-0000-4000-8000-000000000001';
+select is(pg_temp.setup(v=>2)->>'code','stale','superseded invitation cannot acquire new setup');
 select * from finish();
 rollback;
