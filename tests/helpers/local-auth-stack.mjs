@@ -106,10 +106,10 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
       const config=await readFile(path.join(workdir,'supabase/config.toml'),'utf8');
       if(!stateOwned||state.projectId!==projectId||state.workdir!==workdir||!config.includes(`project_id = "${projectId}"`))throw new Error('Database ownership mismatch');
       cleanupStage='database-rows';await cleanupCli(['db','query','--local','--workdir',workdir,
-        `begin; create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
+        `do $cleanup$ begin create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
          delete from public.invitation_send_attempts; delete from public.invitations;
          delete from public.memberships where user_id in (select id from owned_subjects);
-         delete from auth.users where id in (select id from owned_subjects); commit;`],30000);
+         delete from auth.users where id in (select id from owned_subjects); end $cleanup$;`],30000);
     }catch(cause){failed=true;failedStage=cleanupStage;if(cleanupStage==='database-rows'&&typeof cause.stderr==='string')cleanupDiagnostic=sanitizeDiagnostics(cause.stderr,secrets).replace(/postgres(?:ql)?:\/\/[^\s'"]+/g,'[redacted database URL]').slice(-3000);}
     if(apiUrl&&adminKey)for(const account of accounts){
       try{await api(`/rest/v1/memberships?user_id=eq.${account.id}`,{method:'DELETE'});await api(`/auth/v1/admin/users/${account.id}`,{method:'DELETE'});}catch{failed=true;}

@@ -147,7 +147,7 @@ test('owns_application_callback_template_server_secret_and_invitation_cleanup',a
   assert.ok((await readFile(path.join(stack.workdir,'supabase/templates/invite.html'),'utf8')).includes('{{ .TokenHash }}'));
   await stack.close();
   const sql=h.calls.find(x=>x.args[1]==='db'&&x.args[2]==='query');
-  assert.ok(sql);assert.ok(sql.args.at(-1).indexOf('invitation_send_attempts')<sql.args.at(-1).indexOf('public.invitations'));
+  assert.ok(sql);assert.match(sql.args.at(-1),/^do \$cleanup\$ begin[\s\S]*end \$cleanup\$;$/,'one atomic prepared SQL statement');assert.ok(sql.args.at(-1).indexOf('invitation_send_attempts')<sql.args.at(-1).indexOf('public.invitations'));
   assert.ok(sql.args.includes('--local'));assert.equal(sql.args[sql.args.indexOf('--workdir')+1],stack.workdir);assert.ok(!sql.args.includes('--linked'));
   assert.ok(!h.calls.some(x=>x.command==='docker'),'cleanup uses owned CLI workdir rather than container discovery');
   assert.ok(!(await readFile(h.stateFile,'utf8').catch(()=>'' )).includes('sb_secret_'));
