@@ -118,13 +118,14 @@ export function createResendPorts():ResendPorts {
    const result=await client().rpc('prepare_invitation_send_proof',{p_attempt_id:r.attemptId,p_expected_version:r.version,p_requester_id:requesterId,p_subject_id:r.subjectId,p_secret_digest:digest,p_transport:transport}).retry(false);
    if(result.error)throw unavailable();return code(result.data,['prepared','denied','stale','conflict'] as const);
   },
-  async send(r,transport,secret):Promise<ProviderResult>{
+  async send(r,transport,secret,canSend):Promise<ProviderResult>{
    try {
     if(!/^[A-Za-z0-9_-]{43}$/.test(secret))return {code:'unknown',errorCode:'identity_conflict'};
     const before=await inspectSubject(r.subjectId);
     const matches=(user:SubjectInspection)=>user.code==='found'&&!user.banned&&user.subjectId===r.subjectId&&invitationEmailKey(user.email)===invitationEmailKey(r.recipientEmail);
     if(!matches(before)||before.code!=='found'||before.confirmed!==(transport==='recovery'))return {code:'unknown',errorCode:'identity_conflict'};
     const redirect=new URL(confirmUrl());redirect.searchParams.set('resume',secret);
+    if(!await canSend())return {code:'rejected',errorCode:'provider_rejected'};
     if(transport==='invite'){
      const result=await client().auth.admin.inviteUserByEmail(r.recipientEmail,{redirectTo:redirect.href});
      if(result.error)return {code:'unknown',errorCode:(result.error.status??0)>=500?'provider_unavailable':'unknown'};

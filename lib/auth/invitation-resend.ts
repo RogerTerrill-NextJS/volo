@@ -11,7 +11,7 @@ export type ResendPorts = {
  reserve(command:ResendCommand):Promise<ResendReservation|{code:'denied'|'conflict'|'stale'|'pending_reconciliation'|'invalid_input'}>;
  inspectSubject(id:string):Promise<SubjectInspection>;
  prepareProof(r:ResendReservation,requesterId:string,digest:string,transport:SendTransport):Promise<'prepared'|'denied'|'stale'|'conflict'>;
- send(r:ResendReservation,transport:SendTransport,secret:string):Promise<ProviderResult>;
+ send(r:ResendReservation,transport:SendTransport,secret:string,canSend:()=>Promise<boolean>):Promise<ProviderResult>;
  record(r:ResendReservation,outcome:'accepted'|'rejected'|'unknown',subjectId:string|null,error:SafeSendError|null):Promise<'recorded'|'stale'|'conflict'>;
 };
 export const invitationVersion=(value:unknown):value is number=>Number.isSafeInteger(value)&&(value as number)>0&&(value as number)<Number.MAX_SAFE_INTEGER;
@@ -40,7 +40,7 @@ export async function executeInvitationResend(command:ResendCommand,ports:Resend
   const secret=randomBytes(32).toString('base64url');const digest=createHash('sha256').update(secret).digest('hex');
   if(await ports.prepareProof(result,command.requesterId,digest,transport)!=='prepared')return finish('rejected','identity_conflict');
   if(!await ports.currentAdmin(command.requesterId))return finish('rejected','provider_rejected');
-  const sent=await ports.send(result,transport,secret);
+  const sent=await ports.send(result,transport,secret,()=>ports.currentAdmin(command.requesterId));
   if(sent.code!=='accepted')return finish(sent.code,sent.errorCode);
   if(sent.identity.subjectId!==result.subjectId||invitationEmailKey(sent.identity.email)!==invitationEmailKey(result.recipientEmail))return finish('unknown','identity_conflict');
   return finish('accepted',null);

@@ -102,12 +102,12 @@ test('real provider adapter constrains recovery payload and refuses missing-acco
   if(url.pathname.endsWith('/recover')){if(missingAfter)missing=true;return Response.json({});}
   return missing?Response.json({code:'user_not_found',msg:'secret-canary'},{status:404}):Response.json({id:subjectId,email,email_confirmed_at:confirmed?'2026-01-01T00:00:00Z':null,banned_until:null});};
  try {
-  const ports=provider.createResendPorts();assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'accepted');
+  const ports=provider.createResendPorts();assert.equal((await ports.send(reserved,'recovery','a'.repeat(43),async()=>true)).code,'accepted');
   const request=requests.find(r=>r.url.pathname.endsWith('/recover'))!;assert.deepEqual(request.body,{email,code_challenge:null,code_challenge_method:null,gotrue_meta_security:{}});
   const redirect=new URL(request.url.searchParams.get('redirect_to')!);assert.equal(redirect.origin,'https://voloapp.netlify.app');assert.equal(redirect.pathname,'/auth/confirm');assert.equal(redirect.searchParams.get('flow'),'invitation');assert.equal(redirect.searchParams.get('resume'),'a'.repeat(43));
-  confirmed=false;const sends=requests.filter(r=>r.url.pathname.endsWith('/recover')).length;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');assert.equal(requests.filter(r=>r.url.pathname.endsWith('/recover')).length,sends);
-  confirmed=true;missingAfter=true;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');
-  missing=true;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43))).code,'unknown');
+  confirmed=false;const sends=requests.filter(r=>r.url.pathname.endsWith('/recover')).length;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43),async()=>true)).code,'unknown');assert.equal(requests.filter(r=>r.url.pathname.endsWith('/recover')).length,sends);
+  confirmed=true;missingAfter=true;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43),async()=>true)).code,'unknown');
+  missing=true;assert.equal((await ports.send(reserved,'recovery','a'.repeat(43),async()=>true)).code,'unknown');
  }finally{globalThis.fetch=original;delete process.env.SUPABASE_SECRET_KEY;}
 });
 
@@ -122,4 +122,23 @@ test('rejected resend reconciliation retains the bound subject at the SQL bounda
  };
  try{await provider.createSendReconciliationPorts().reconcile({attemptId:operationId,expectedVersion:2,requesterId},{attemptId:operationId,version:2,outcome:'rejected',errorCode:'provider_rejected'});assert.equal(bound,subjectId);}
  finally{globalThis.fetch=original;delete process.env.SUPABASE_SECRET_KEY;}
+});
+
+test('adapter refreshes send authority after its awaited subject lookup',async()=>{
+ process.env.NEXT_PUBLIC_SUPABASE_URL='https://example.supabase.co';process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='sb_publishable_ci_fixture';process.env.SUPABASE_SECRET_KEY='sb_secret_resend_fixture';process.env.VOLO_MUTATION_ORIGIN='https://voloapp.netlify.app';
+ const original=globalThis.fetch;
+ try {
+  for(const transport of ['invite','recovery'] as const){
+   for(const unavailable of [false,true]){
+    let active=true,sends=0,checks=0;
+    globalThis.fetch=async(input)=>{
+     const url=new URL(String(input));
+     if(url.pathname.endsWith('/invite')||url.pathname.endsWith('/recover')){sends++;return Response.json({id:subjectId,email});}
+     active=false;return Response.json({id:subjectId,email,email_confirmed_at:transport==='recovery'?'2026-01-01T00:00:00Z':null,banned_until:null});
+    };
+    const result=await provider.createResendPorts().send(reserved,transport,'a'.repeat(43),async()=>{checks++;assert.equal(active,false);if(unavailable)throw new Error('secret-canary');return active;});
+    assert.equal(sends,0);assert.equal(checks,1);assert.equal(result.code,unavailable?'unknown':'rejected');
+   }
+  }
+ }finally{globalThis.fetch=original;delete process.env.SUPABASE_SECRET_KEY;}
 });
