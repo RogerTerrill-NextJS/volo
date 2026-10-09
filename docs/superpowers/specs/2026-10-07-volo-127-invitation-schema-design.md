@@ -179,7 +179,13 @@ cannot bind/rebind identity, restore eligibility or overwrite current setup.
 Uncertain outcomes remain denied and admin-visible until VOLO-29 reconciles them;
 never retry by blindly creating another Auth identity. Resend uses the same bound
 subject and invalidates prior setup attempts. Actual provider renewal after an
-already-consumed invite must be established through disposable Auth evidence.
+already-consumed invite is covered by VOLO-149’s disposable Auth evidence:
+unconfirmed subjects use invite, confirmed subjects use recovery transport,
+both with a generation-bound single-use proof. Only a SHA-256 digest persists in
+`invitation_send_proofs`; future setup consumes it under the invitation lock in
+the same transaction as setup authorization. Provider verification remains
+required. Lost response evidence can leave reconciliation permanently pending;
+account state and elapsed time do not authorize a new send.
 
 ## Persistence interface contract
 

@@ -1,5 +1,5 @@
 import {execFile} from 'node:child_process';
-import {randomBytes,randomUUID} from 'node:crypto';
+import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import {once} from 'node:events';
 import {cp,mkdir,mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
@@ -107,7 +107,8 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
       if(!stateOwned||state.projectId!==projectId||state.workdir!==workdir||!config.includes(`project_id = "${projectId}"`))throw new Error('Database ownership mismatch');
       cleanupStage='database-rows';await cleanupCli(['db','query','--local','--workdir',workdir,
         `do $cleanup$ begin create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
-         delete from public.invitation_send_attempts; delete from public.invitations;
+         delete from public.invitation_send_proofs; delete from public.invitation_send_attempts; delete from public.invitations;
+         drop table if exists public.volo_test_auth_snapshot;
          delete from public.memberships where user_id in (select id from owned_subjects);
          delete from auth.users where id in (select id from owned_subjects); end $cleanup$;`],30000);
     }catch(cause){failed=true;failedStage=cleanupStage;if(cleanupStage==='database-rows'&&typeof cause.stderr==='string')cleanupDiagnostic=sanitizeDiagnostics(cause.stderr,secrets).replace(/postgres(?:ql)?:\/\/[^\s'"]+/g,'[redacted database URL]').slice(-3000);}
@@ -140,6 +141,17 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
     const membership=(role,status)=>({role,status,disabled_at:status==='disabled'?new Date().toISOString():null,disabled_reason:status==='disabled'?'Integration fixture':null});
     return {
       projectId,workdir,apiUrl,publicKey,serverSecret,close,
+      async authFailureCategory(){
+        // Read only this generated project's bounded logs. Export categories,
+        // never provider messages, request URLs, tokens or credential values.
+        try{
+          const container=`supabase_auth_${projectId}`,env=localProcessEnvironment();
+          const owner=await exec('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],{env,timeout:5000});
+          if(owner.stdout.trim()!==projectId)throw new Error('Unowned diagnostic target');
+          const logs=await exec('docker',['logs','--tail','100',container],{env,timeout:5000,maxBuffer:1024*1024});const text=logs.stdout+logs.stderr;
+          return {templateContext:/ambiguous context|different contexts/i.test(text),templateError:/templatemailer|template.*(?:error|failed)/i.test(text),rateLimit:/email rate limit exceeded|over_email_send_rate_limit/i.test(text)};
+        }catch{return {unavailable:true};}
+      },
       ownInvitationEmail(email){
         if(typeof email!=='string'||!/^[A-Za-z0-9.+-]+@example\.invalid$/i.test(email.trim()))throw new Error('Invalid fictional invitation email');
         ownedEmails.add(email.trim().toLowerCase());return email;
@@ -159,12 +171,45 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
           if(typeof item.ID!=='string'||!(/^[A-Za-z0-9]{22}$/.test(item.ID)||uuidPattern.test(item.ID)))throw new Error('Owned mail identity invalid');
           const message=await mail(`/api/v1/message/${item.ID}`);const html=message.HTML;
           if(typeof html!=='string')throw new Error('Owned mail HTML missing');
-          for(const match of html.matchAll(/token_hash=([A-Za-z0-9_-]+)/g))secrets.push(match[1]);
+          for(const match of html.matchAll(/(?:token_hash|resume)=([A-Za-z0-9_-]+)/g))secrets.push(match[1]);
           results.push(html);
         }
         return results;
       },
       async readAuthUser(id){requireOwned(id);return api(`/auth/v1/admin/users/${id}`);},
+      async readSendProof(attemptId){
+        const attempts=await api(`/rest/v1/invitation_send_attempts?id=eq.${attemptId}&select=invitation_id`);
+        if(!uuidPattern.test(attemptId)||attempts.length!==1||!ownedInvitations.has(attempts[0].invitation_id))throw new Error('Attempt not owned');
+        return (await api(`/rest/v1/invitation_send_proofs?attempt_id=eq.${attemptId}&select=*`))[0]??null;
+      },
+      async verifyCapturedLink(email,html){
+        if(!ownedEmails.has(email.toLowerCase()))throw new Error('Email not owned');
+        const href=html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&');const link=new URL(href);
+        const token=link.searchParams.get('token_hash'),type=link.searchParams.get('type'),resume=link.searchParams.get('resume');
+        if(link.origin!==applicationOrigin||link.pathname!=='/auth/confirm'||!token||!['invite','recovery'].includes(type))throw new Error('Invalid owned callback');
+        if(resume&&!/^[A-Za-z0-9_-]{43}$/.test(resume))throw new Error('Invalid owned proof');
+        secrets.push(token,...(resume?[resume]:[]));const data=await api('/auth/v1/verify',{method:'POST',body:{token_hash:token,type}});
+        for(const key of ['access_token','refresh_token'])if(typeof data[key]==='string')secrets.push(data[key]);
+        requireOwned(data.user?.id);return {subjectId:data.user.id,resume,type};
+      },
+      async consumeSendProof(attemptId,version,subjectId,secret,transport){
+        requireOwned(subjectId);if(!uuidPattern.test(attemptId)||!Number.isSafeInteger(version)||version<1||!['invite','recovery'].includes(transport))throw new Error('Invalid owned proof arguments');
+        return api('/rest/v1/rpc/consume_invitation_send_proof',{method:'POST',body:{p_attempt_id:attemptId,p_expected_version:version,p_verified_subject:subjectId,p_secret_digest:createHash('sha256').update(secret).digest('hex'),p_transport:transport}});
+      },
+      async revokeInvitation(id,adminId){
+        if(!ownedInvitations.has(id))throw new Error('Invitation not owned');requireOwned(adminId);
+        await api(`/rest/v1/invitations?id=eq.${id}`,{method:'PATCH',body:{status:'revoked',revoked_at:new Date().toISOString(),revoked_by_user_id:adminId,revocation_reason:'Owned test'}});
+      },
+      async checkpointAuth(id,verify=false){
+        requireOwned(id);if(!uuidPattern.test(id))throw new Error('Invalid owned subject');
+        // Disposable-only SQL checks password/confirmation/ban/role without
+        // returning any credential hash to Node or diagnostic output.
+        const sql=verify?`do $check$ begin if not exists(select 1 from public.volo_test_auth_snapshot s join auth.users u using(id) where s.id='${id}' and s.snapshot=jsonb_build_array(u.encrypted_password,u.email_confirmed_at,u.banned_until,u.raw_app_meta_data)) or exists(select 1 from public.memberships where user_id='${id}') then raise exception 'Owned account changed'; end if; end $check$;`
+          :`do $check$ begin create table if not exists public.volo_test_auth_snapshot(id uuid primary key,snapshot jsonb); revoke all on public.volo_test_auth_snapshot from public,anon,authenticated,service_role; insert into public.volo_test_auth_snapshot select id,jsonb_build_array(encrypted_password,email_confirmed_at,banned_until,raw_app_meta_data) from auth.users where id='${id}' on conflict(id) do update set snapshot=excluded.snapshot; end $check$;`;
+        const state=JSON.parse(await readFile(stateFile,'utf8'));const config=await readFile(path.join(workdir,'supabase/config.toml'),'utf8');
+        if(!stateOwned||state.projectId!==projectId||state.workdir!==workdir||!config.includes(`project_id = "${projectId}"`))throw new Error('Database ownership mismatch');
+        try{await cli(['db','query','--local','--workdir',workdir,sql],30000);}catch{throw new Error('Owned Auth state assertion failed');}
+      },
       async trackIssuedSubject(id){
         if(!uuidPattern.test(id))throw new Error('Invalid owned subject');
         const attempts=await api(`/rest/v1/invitation_send_attempts?id=eq.${id}&select=invitation_id`);

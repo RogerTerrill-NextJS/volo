@@ -89,7 +89,7 @@ test('provider adapter emits exact creation and callback inputs and refuses malf
   assert.equal((await ports.createSubject(operationId,command.recipientEmail)).code,'accepted');
   assert.deepEqual(requests.at(-1)?.body,{id:operationId,email:command.recipientEmail,email_confirm:false});
   assert.equal((await ports.invite(command.recipientEmail)).code,'accepted');
-  assert.equal(requests.at(-1)?.url.searchParams.get('redirect_to'),'https://voloapp.netlify.app/auth/confirm');
+  assert.equal(requests.at(-1)?.url.searchParams.get('redirect_to'),'https://voloapp.netlify.app/auth/confirm?flow=invitation');
   status=422;response={code:'email_exists',msg:'private-canary'};
   assert.deepEqual(await ports.createSubject(operationId,command.recipientEmail),{code:'rejected',errorCode:'identity_conflict'});
   assert.equal((await ports.invite(command.recipientEmail)).code,'unknown');

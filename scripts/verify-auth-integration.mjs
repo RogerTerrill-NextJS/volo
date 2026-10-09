@@ -156,6 +156,62 @@ try{
       const row=await stack.readInvitationForEmail(email);check((await stack.readSendAttempts(row.id)).length===1,'one durable attempt');await captured(email,1);
       return 'Concurrent normalized-email requests produce one reservation, subject and captured email.';
     });
+    const renew=async(invitation,mode='normal',session=users.admin)=>{
+      const response=await read('/api/invitation-renew/'+mode,{session,method:'POST',headers:{'content-type':'application/json',Origin:app.origin},body:JSON.stringify({invitationId:invitation.id,expectedVersion:invitation.version})});
+      privatePolicy(response);return {status:response.status,body:await response.json()};
+    };
+    const setupRenewal=async(label)=>{
+      const email=ownedEmail(label);check((await issue(email)).body.data?.code==='accepted','initial accepted');
+      const invitation=await stack.readInvitationForEmail(email);await stack.trackIssuedSubject(invitation.auth_user_id);return {email,invitation};
+    };
+    const linkFrom=html=>new URL(html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&'));
+    await scenario('invitation_renewal_real_transports',async()=>{
+      diagnosticStage='renew-unconfirmed';const {email,invitation}=await setupRenewal('renewal');
+      check((await renew(invitation)).body.data?.code==='accepted','unconfirmed resend accepted');
+      let row=await stack.readInvitationForEmail(email);check(row.version===2&&row.auth_user_id===invitation.auth_user_id&&row.invited_by_user_id===invitation.invited_by_user_id,'same subject and inviter, next version');
+      const messages=await captured(email,2);const html=messages.find(m=>linkFrom(m).searchParams.has('resume'));check(Boolean(html),'resend proof retained');
+      let link=linkFrom(html);check(link.searchParams.get('type')==='invite','unconfirmed invitation transport');
+      let attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===2);const proof=await stack.readSendProof(attempt.id);check(proof?.transport==='invite'&&!proof.consumed_at,'proof persisted before send');
+      diagnosticStage='verify-owned-invite';let verified=await stack.verifyCapturedLink(email,html);check(verified.subjectId===row.auth_user_id,'actual invite token preserves subject');
+      const consume=()=>stack.consumeSendProof(attempt.id,row.version,verified.subjectId,verified.resume,verified.type);
+      const races=await Promise.all([consume(),consume()]);check(races.filter(r=>r.code==='consumed').length===1,'proof consumes exactly once concurrently');
+      await stack.checkpointAuth(row.auth_user_id);await delay(1100);
+      diagnosticStage='renew-confirmed';check((await renew(row)).body.data?.code==='accepted','confirmed recovery resend accepted');
+      await stack.checkpointAuth(row.auth_user_id,true);row=await stack.readInvitationForEmail(email);check(row.version===3&&row.auth_user_id===invitation.auth_user_id,'confirmed resend retains subject');
+      const recovery=(await captured(email,3)).find(m=>linkFrom(m).searchParams.get('type')==='recovery');check(Boolean(recovery),'dedicated recovery captured');
+      link=linkFrom(recovery);check(Boolean(link.searchParams.get('resume')),'recovery callback retains proof');
+      attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===3);verified=await stack.verifyCapturedLink(email,recovery);check(verified.subjectId===row.auth_user_id,'actual recovery token preserves subject');
+      check((await stack.consumeSendProof(attempt.id,row.version,verified.subjectId,verified.resume,'invite')).code==='conflict','wrong transport fails');
+      check((await stack.consumeSendProof(attempt.id,row.version,verified.subjectId,'','recovery')).code==='conflict','ordinary recovery without proof denied');
+      await delay(1100);const overlap=await Promise.all([consume(),renew(row)]);
+      check(['consumed','stale'].includes(overlap[0].code)&&overlap[1].body.data?.code==='accepted','proof consumption and renewal serialize');
+      check((await consume()).code==='stale','renewal fences previous generation');check(await stack.readSendProof(attempt.id)===null,'old proof removed');row=await stack.readInvitationForEmail(email);
+      const currentAttempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===4);check(!(await stack.readSendProof(currentAttempt.id)).consumed_at,'old consumer cannot consume new proof');
+      await stack.revokeInvitation(row.id,accounts.admin.id);check((await renew(row)).body.data?.code==='conflict','terminal renewal denied');await captured(email,4);
+      check(await stack.readMembership(row.auth_user_id)===null,'renewals grant no membership');
+      return 'Real invite and recovery tokens verified against the same owned subject; single-use and stale proof fences; SQL asserts unchanged password hash, confirmation, ban and role during recovery send.';
+    });
+    await scenario('invitation_renewal_concurrency_and_authorization',async()=>{
+      const {email,invitation}=await setupRenewal('renew-race');
+      for(const session of [null,users.A,users.disabled])check([401,403].includes((await renew(invitation,'normal',session)).status),'non-admin renewal denied');
+      const outcomes=await Promise.all([renew(invitation),renew(invitation)]);check(outcomes.filter(r=>r.body.data?.code==='accepted').length===1,'one concurrent send');
+      check(outcomes.filter(r=>r.body.data?.code==='conflict').length===1,'one stale loser');
+      const row=await stack.readInvitationForEmail(email);check(row.version===2&&(await stack.readSendAttempts(row.id)).length===2,'one new attempt');await captured(email,2);
+    });
+    await scenario('invitation_renewal_uncertainty',async()=>{
+      for(const mode of ['lost-response','lost-record']){
+        const {email,invitation}=await setupRenewal(mode);check((await renew(invitation,mode)).body.data?.code==='pending_reconciliation','uncertainty fails closed');
+        const row=await stack.readInvitationForEmail(email);await captured(email,2);check(row.status==='pending_issuance','uncertainty never issues');
+        check((await renew(row)).body.data?.code==='pending_reconciliation','unresolved generation blocks another send');await captured(email,2);
+        check((await renew(row,'inspect')).body.data?.code==='pending_reconciliation','inspection does not infer receipt from Auth state');
+        if(mode==='lost-record'){
+          check((await renew(row,'reconcile')).body.data?.code==='accepted','original trusted provider response resolves');
+          const resolved=await stack.readInvitationForEmail(email),attempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===2);
+          check(resolved.status==='issued'&&attempt.outcome==='started'&&attempt.reconciled_outcome==='accepted','separate resolution preserves original outcome');await captured(email,2);
+        }
+      }
+      return 'Lost response remains unresolved; lost recording reconciles only from the in-process original response, without another email.';
+    });
     if(!process.argv.includes('--scenario')){
       await scenario('current_membership',async()=>{
         const retained=users.A.cookieHeader();await stack.setMembership(accounts.A.id,{role:'member',status:'disabled'});
@@ -230,6 +286,7 @@ try{
     }
   }
 }catch(error){
+  if(stack)summary.authFailureCategory=await stack.authFailureCategory();
   if(error.fixtureDiagnostic)summary.fixtureDiagnostic=error.fixtureDiagnostic;
   if(error.operation)summary.setupOperation={operation:error.operation,status:error.httpStatus??'transport',...(error.authCode?{code:error.authCode}:{})};
   console.error(`Setup stage: ${setupStage}`);

@@ -94,7 +94,7 @@ is active-admin-only. Member invitations are future work, with issuer permission
 kept separate from the recipient's member role.
 
 The planned `/auth/confirm` GET/HEAD does not verify or consume the invitation.
-An explicit origin/CSRF-checked acceptance POST verifies `type=invite`, persists
+An explicit origin/CSRF-checked acceptance POST verifies the recorded provider type, persists
 session cookies and creates server-owned setup authorization bound to the user,
 session and invitation version. Token transport stays in short-lived secret
 server state behind an opaque cookie; it must not appear in rendered HTML/RSC or
@@ -105,8 +105,9 @@ The server-observed password step precedes a single database transaction that
 activates member membership and redeems the invitation. Existing or disabled
 memberships are not reset or re-enabled by acceptance. Provider operations and
 cookie delivery are outside that transaction; ambiguity leaves access denied
-and follows the documented reconciliation/retry path. The recovery branch stays
-separate and cannot redeem invitations. These are implementation requirements for
+and follows the documented reconciliation/retry path. Ordinary recovery stays separate. An invitation resend for a confirmed bound
+subject may use `type=recovery` only with the current invitation-specific proof
+described below. These are implementation requirements for
 VOLO-122/124/27/28/29/30, not evidence that those flows currently exist.
 
 Invitation and recovery emails must land at the approved origin's
@@ -194,3 +195,31 @@ invitations have no age-based expiry, while provider tokens remain finite.
 Hosted enablement still requires separate approval for the matching email template,
 exact callback allowlist, server secret and migrations. This change does not install
 those settings or make the hosted invitation/confirmation UI available.
+
+## VOLO-149 resend amendment
+
+Initial issuance remains `type=invite`. Resending renews the same bound Auth
+subject and increments the invitation version. Unconfirmed subjects receive an
+invite; confirmed subjects receive recovery transport without changing their
+password, confirmation, ban, membership or role. Both resend links carry a random
+32-byte `resume` secret; only its SHA-256 digest and recorded transport persist.
+The server’s fixed callback includes `?flow=invitation`, then adds `resume` on
+renewal. Local templates append `&token_hash=...&type=...` uniformly; they never
+compare origins with the project Site URL. `flow` is a non-authorizing marker and
+must never substitute for provider verification or proof. Future ordinary recovery
+must supply its fixed callback with a non-secret query marker too, such as
+`?flow=recovery`; ordinary recovery still requires no invitation proof.
+
+VOLO-122 must verify the actual provider token and exact subject/email, then
+consume the matching current-generation proof **in the same SQL transaction**
+that creates setup authorization. This ticket supplies the consumption primitive,
+not a public callback or setup route. An ordinary recovery session, client-selected
+type, absent/reused proof or an old version cannot grant invitation authority.
+GET/HEAD must not consume either token or proof. All query secrets require ingress
+redaction and short-lived protected transport state before hosted activation.
+
+Inspection never treats account existence, confirmation or timestamps as a send
+receipt. Explicit reconciliation requires the exact attempt/version and original
+trusted provider response. Losing every trustworthy response leaves the operation
+pending and blocks another send; there is no timeout takeover or blind retry.
+No hosted templates, allowlists or accounts are changed by this implementation.
