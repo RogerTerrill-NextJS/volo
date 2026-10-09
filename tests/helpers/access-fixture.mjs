@@ -3,10 +3,12 @@ import {once} from "node:events";
 import {createServerClient} from "@supabase/ssr";
 
 export const accessKey="sb_publishable_access_fixture";
-export const accessCanaries=["private-access-error-canary","private-access-metadata-canary","access-fixture-signature","access-fixture-refresh"];
+export const invitationQueryKey='sb_secret_invitation_query_fixture';
+export const accessCanaries=["private-access-error-canary","private-access-metadata-canary","access-fixture-signature","access-fixture-refresh",invitationQueryKey,'private-invitation-authority-canary'];
 export async function startAccessFixture() {
   const cases=new Map(),tokens=new Map(),calls=[],unexpected=[];
   let sequence=0;
+  const invitations={rows:[{id:'30000000-0000-4000-8000-000000000001',version:2,recipient_email:'person+tag@example.invalid',status:'revoked',created_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-02T00:00:00Z',auth_user_id:'private-invitation-authority-canary',invitation_send_attempts:[{invitation_version:2,outcome:'unknown',reconciled_outcome:null}]}],failure:null};
   const encode=value=>Buffer.from(JSON.stringify(value)).toString("base64url");
   const user=id=>({id,aud:"authenticated",role:"authenticated",email:"fictional@example.invalid",
     app_metadata:{},user_metadata:{role:"admin",canary:accessCanaries[1]},created_at:"2026-01-01T00:00:00Z"});
@@ -49,6 +51,12 @@ export async function startAccessFixture() {
       if(failure(entry.auth,req,res))return;
       res.end(JSON.stringify(entry.auth==="invalid"?{}:user(entry.verifiedId??entry.id)));return;
     }
+    if(url.pathname==='/rest/v1/invitations'){
+      calls.push({service:'invitations',method:req.method,select:url.searchParams.get('select')});
+      if(token!==invitationQueryKey){failure('denied',req,res);return;}
+      if(failure(invitations.failure,req,res))return;
+      res.end(JSON.stringify(invitations.rows));return;
+    }
     if(url.pathname==="/rest/v1/memberships") {
       calls.push({service:"membership",subject:entry?.id,method:req.method,
         filter:url.searchParams.get("user_id"),select:url.searchParams.get("select")});
@@ -66,7 +74,7 @@ export async function startAccessFixture() {
   });
   server.listen(0,"127.0.0.1");await once(server,"listening");
   const origin=`http://127.0.0.1:${server.address().port}`;
-  return {origin,calls,unexpected,cases,async seed(label,options={}) {
+  return {origin,calls,unexpected,cases,invitations,async seed(label,options={}) {
     const id=`aaaaaaaa-aaaa-4aaa-8aaa-${String(++sequence).padStart(12,"0")}`;
     const entry={label,id,role:"member",status:"active",...options};cases.set(label,entry);
     const jar=new Map();

@@ -21,7 +21,7 @@ function confirmUrl():string {
  const callback=new URL('/auth/confirm',url);callback.searchParams.set('flow','invitation');return callback.href;
 }
 
-function client(){
+export function createInvitationServiceClient(){
   const {url,secretKey}=getSupabasePrivilegedConfig();
   return createClient<Database>(url,secretKey,{
    auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},
@@ -36,6 +36,8 @@ function client(){
    }},
   });
 }
+const client=createInvitationServiceClient;
+
 async function currentAdmin(requesterId:string){
  const {getAccess}=await import('./access.ts');const access=await getAccess();
  if(access.status==='unavailable')throw unavailable();

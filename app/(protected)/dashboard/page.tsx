@@ -13,7 +13,7 @@ export default async function DashboardPage() {
   if (access.status !== "authorized") return <AccessState status={access.status} />;
 
   return (
-    <AppShell>
+    <AppShell isAdmin={access.member.role==='admin'}>
       <header className="space-y-3">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
           Volo dashboard

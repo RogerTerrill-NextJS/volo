@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
+export default function AppShell({ children,isAdmin=false }: { children: React.ReactNode;isAdmin?:boolean }) {
   return (
     <>
       <header className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
@@ -9,6 +9,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/dashboard" prefetch={false} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
             Dashboard
           </Link>
+          {isAdmin && <Link href="/admin/invitations" prefetch={false} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
+            Invitations
+          </Link>}
           <Link href="/" className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
             Back to home
           </Link>

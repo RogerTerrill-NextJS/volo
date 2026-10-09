@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export default function AccessState({ status }: { status: "forbidden" | "unavailable" }) {
+export default function AccessState({ status,retryHref='/dashboard' }: { status: "forbidden" | "unavailable";retryHref?:string }) {
   const unavailable = status === "unavailable";
   return (
     <main className="space-y-6">
@@ -14,7 +14,7 @@ export default function AccessState({ status }: { status: "forbidden" | "unavail
       </p>
       <nav aria-label="Access options" className="flex gap-6 text-sm font-medium">
         {unavailable && (
-          <a href="/dashboard" className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
+          <a href={retryHref} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
             Try again
           </a>
         )}

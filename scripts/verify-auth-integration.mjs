@@ -64,10 +64,9 @@ try{
       check(response.status===200,'successful mutation status');check(app.effects().length===before+1,'exactly one effect');check(app.effects().at(-1).userId===session.userId,'effect subject');
       const body=await response.text();if(transport!=='native')check(body.includes('"saved":true'),'successful effect payload');return response;
     };
-    const page=async(session,headers={})=>{
-      let route='/dashboard';for(let i=0;i<3;i++){
+    const page=async(session,headers={},route='/dashboard')=>{for(let i=0;i<3;i++){
         const response=await read(route,{session,headers}),body=await response.text();
-        if(response.status===307){const target=new URL(response.headers.get('location'),app.origin);check(target.origin===app.origin,'canonical origin');if(target.pathname==='/dashboard'&&target.searchParams.has('_rsc')){route=target.pathname+target.search;continue;}}
+        if(response.status===307){const target=new URL(response.headers.get('location'),app.origin);check(target.origin===app.origin,'canonical origin');if(target.pathname===new URL(route,app.origin).pathname&&target.searchParams.has('_rsc')){route=target.pathname+target.search;continue;}}
         return {response,body};
       }throw new Error('RSC negotiation failed');
     };
@@ -95,6 +94,7 @@ try{
       return 'Real self-edited Auth metadata and fresh sessions preserve missing/disabled denial and member role.';
     });
     const ownedEmail=label=>stack.ownInvitationEmail(`${label}-${randomUUID()}@example.invalid`);
+    let adminQueryEmail='';
     const issue=async(email,session=users.admin,origin=app.origin,route='/api/invitations')=>{
       const response=await read(route,{session,method:'POST',headers:{'content-type':'application/json',Origin:origin},body:JSON.stringify({email})});
       privatePolicy(response);return {status:response.status,body:await response.json()};
@@ -119,7 +119,7 @@ try{
       return 'Real guarded requests deny signed-out/member/disabled/stale-admin and foreign-origin issuance.';
     });
     await scenario('invitation_issuance_mail',async()=>{
-      diagnosticStage='issue';const email=ownedEmail('New+tag');const result=await issue(` ${email.toUpperCase()} `);
+      diagnosticStage='issue';const email=ownedEmail('New+tag');adminQueryEmail=email.toUpperCase();const result=await issue(` ${adminQueryEmail} `);
       check(result.status===200&&result.body.data?.code==='accepted','provider accepted send');
       diagnosticStage='read-invitation';const invitation=await stack.readInvitationForEmail(email);check(invitation?.status==='issued'&&invitation.version===1,'durable issued generation');
       diagnosticStage='read-attempts';const attempts=await stack.readSendAttempts(invitation.id);check(attempts.length===1&&attempts[0].outcome==='accepted','one accepted attempt');
@@ -134,6 +134,22 @@ try{
         stack.ownInvitationEmail(variant);check((await issue(variant)).body.data?.code==='accepted','dot/plus variants remain distinct');
       }
       return 'Real create/bind/invite sequence, captured direct app link, normalization, no membership and no confirmation; link was not fetched.';
+    });
+    await scenario('invitation_admin_queries',async()=>{
+      const email=adminQueryEmail;check(Boolean(email),'owned initial invitation available');
+      for(const headers of [{},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){
+        const allowed=await page(users.admin,headers,'/admin/invitations');privatePolicy(allowed.response);
+        if(!headers['Next-Router-Prefetch']){check(allowed.body.includes(email),'admin receives owned recipient');check(allowed.body.includes('Accepted for sending'),'current actual relation outcome');}
+        for(const session of [undefined,users.A]){
+          const denied=await page(session,headers,'/admin/invitations');privatePolicy(denied.response);check(!denied.body.includes(email),'recipient absent for unauthorized reader');
+          if(!headers['Next-Router-Prefetch'])check(session?denied.body.includes('Access denied'):denied.response.status===307?new URL(denied.response.headers.get('location'),app.origin).href===app.origin+'/login?reason=authentication-required':denied.body.includes('/login?reason=authentication-required'),'explicit denial or fixed login');
+        }
+      }
+      try{
+        await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});
+        for(const headers of [{},{RSC:'1'}]){const denied=await page(users.admin,headers,'/admin/invitations');privatePolicy(denied.response);check(denied.body.includes('Access denied')&&!denied.body.includes(email),'disabled admin has no invitation data');}
+      }finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
+      return 'Actual minimal PostgREST relation snapshot with admin/member/anonymous/disabled boundaries and private HTML/RSC responses; no extra email sends.';
     });
     await scenario('invitation_existing_accounts',async()=>{
       const unconfirmed=await stack.createAccount({label:'unconfirmed',role:null,emailConfirmed:false});

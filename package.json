@@ -29,7 +29,7 @@
     "db:test": "supabase test db --local",
     "db:types": "node scripts/database-types.mjs",
     "db:types:check": "node scripts/database-types.mjs --check",
-    "test:invitations:unit": "node --conditions=react-server --test tests/invitation-send.unit.mts tests/invitation-resend.unit.mts"
+    "test:invitations:unit": "node --conditions=react-server --test tests/invitation-send.unit.mts tests/invitation-resend.unit.mts tests/invitation-admin-query.unit.mts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

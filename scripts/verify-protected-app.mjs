@@ -6,7 +6,7 @@ import {tmpdir} from "node:os";
 import path from "node:path";
 import {setTimeout as delay} from "node:timers/promises";
 import {promisify} from "node:util";
-import {startAccessFixture, accessKey, accessCanaries} from "../tests/helpers/access-fixture.mjs";
+import {startAccessFixture, accessKey, accessCanaries,invitationQueryKey} from "../tests/helpers/access-fixture.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const directory = await mkdtemp(path.join(tmpdir(), "volo-protected-"));
@@ -33,7 +33,7 @@ const membershipCount = () => backend.calls.filter(call => call.service === "mem
 try {
   const env = {PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
     NEXT_TELEMETRY_DISABLED: "1", NEXT_PUBLIC_SUPABASE_URL: backend.origin,
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: accessKey};
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: accessKey,SUPABASE_SECRET_KEY:invitationQueryKey};
   await symlink(path.join(root, "node_modules"), path.join(directory, "node_modules"), "dir");
   for (const name of ["lib", "app", "tsconfig.json", "proxy.ts"]) {
     await cp(path.join(root, name), path.join(directory, name), {recursive: true});
@@ -116,6 +116,26 @@ try {
     return account;
   };
   const member = await seed("member"), admin = await seed("admin", {role: "admin"});
+  loginRedirect(await request('/admin/invitations'));
+  for(const headers of [{},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){
+    const count=backend.calls.filter(call=>call.service==='invitations').length;
+    const denied=await request('/admin/invitations',member.jar,headers);
+    if(!headers['Next-Router-Prefetch'])assert.match(denied.body,/Access denied/);assert.ok(!denied.body.includes('person+tag@example.invalid'));privateHeaders(denied.response);
+    assert.equal(backend.calls.filter(call=>call.service==='invitations').length,count);
+    const listed=await request('/admin/invitations',admin.jar,headers);
+    if(!headers['Next-Router-Prefetch']){assert.match(listed.body,/person\+tag@example\.invalid/);assert.match(listed.body,/Revoked/);assert.match(listed.body,/Needs review/);}privateHeaders(listed.response);
+  }
+  assert.match((await request('/dashboard',admin.jar)).body,/href="\/admin\/invitations"/);
+  assert.doesNotMatch((await request('/dashboard',member.jar)).body,/href="\/admin\/invitations"/);
+  admin.entry.status='disabled';const disabledAdmin=await request('/admin/invitations',admin.jar);assert.match(disabledAdmin.body,/Access denied/);privateHeaders(disabledAdmin.response);admin.entry.status='active';
+  const rows=backend.invitations.rows;backend.invitations.rows=[];
+  assert.match((await request('/admin/invitations',admin.jar)).body,/No invitations yet/);
+  backend.invitations.rows=rows;backend.invitations.failure='down';
+  const unavailable=await request('/admin/invitations',admin.jar);assert.match(unavailable.body,/Unable to verify access/);assert.doesNotMatch(unavailable.body,/No invitations yet/);assert.match(unavailable.body,/href="\/admin\/invitations"/);privateHeaders(unavailable.response);backend.invitations.failure=null;
+  backend.invitations.rows=[{...rows[0],recipient_email:'<script>alert(1)</script>@example.invalid'}];
+  const escaped=await request('/admin/invitations',admin.jar);assert.ok(escaped.body.includes('&lt;script&gt;'));assert.ok(!escaped.body.includes('<script>alert(1)</script>'));
+  backend.invitations.rows=rows;
+  console.log('PASS: private invitation list, admin-only queries/navigation, HTML/RSC/prefetch denials and safe empty/error states');
   for (const account of [member, admin]) {
     const before = membershipCount();
     const page = await request("/dashboard", account.jar);
