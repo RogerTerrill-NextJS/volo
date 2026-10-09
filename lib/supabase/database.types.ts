@@ -24,6 +24,25 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"invitation_send_proofs": {
+                  Row: {
+                    "attempt_id": string,"consumed_at": string | null,"secret_digest": string,"transport": string
+                  }
+                  Insert: {
+                    "attempt_id": string,"consumed_at"?: string | null,"secret_digest": string,"transport": string
+                  }
+                  Update: {
+                    "attempt_id"?: string,"consumed_at"?: string | null,"secret_digest"?: string,"transport"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "invitation_send_proofs_attempt_id_fkey"
+      columns: ["attempt_id"]
+isOneToOne: true
+      referencedRelation: "invitation_send_attempts"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"invitations": {
                   Row: {
                     "auth_user_id": string | null,"created_at": string,"id": string,"invited_by_user_id": string,"password_established_at": string | null,"recipient_email": string,"recipient_email_key": string,"redeemed_at": string | null,"revocation_reason": string | null,"revoked_at": string | null,"revoked_by_user_id": string | null,"setup_authorization_id": string | null,"status": Database["public"]['Enums']["invitation_status"],"superseded_at": string | null,"superseded_by_id": string | null,"updated_at": string,"verified_at": string | null,"verified_user_id": string | null,"version": number
@@ -65,8 +84,20 @@ isOneToOne: false
             "bind_invitation_send_subject":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_subject_id": string }; Returns: Json
                            },
+"consume_invitation_send_proof":
+{ Args: { "p_attempt_id": string,"p_expected_version": number,"p_secret_digest": string,"p_transport": string,"p_verified_subject": string }; Returns: Json
+                           },
+"prepare_invitation_send_proof":
+{ Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_secret_digest": string,"p_subject_id": string,"p_transport": string }; Returns: Json
+                           },
+"reconcile_invitation_send":
+{ Args: { "p_attempt_id": string,"p_expected_version": number,"p_outcome": string,"p_requester_id": string,"p_subject_id": string }; Returns: Json
+                           },
 "record_invitation_send_outcome":
 { Args: { "p_attempt_id": string,"p_error_code": string,"p_expected_version": number,"p_outcome": string,"p_subject_id": string }; Returns: Json
+                           },
+"reserve_invitation_resend":
+{ Args: { "p_expected_version": number,"p_invitation_id": string,"p_operation_id": string,"p_requester_id": string }; Returns: Json
                            },
 "reserve_invitation_send":
 { Args: { "p_operation_id": string,"p_recipient_email": string,"p_requester_id": string }; Returns: Json
