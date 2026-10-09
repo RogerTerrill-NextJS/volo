@@ -107,7 +107,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
       if(!stateOwned||state.projectId!==projectId||state.workdir!==workdir||!config.includes(`project_id = "${projectId}"`))throw new Error('Database ownership mismatch');
       cleanupStage='database-rows';await cleanupCli(['db','query','--local','--workdir',workdir,
         `do $cleanup$ begin create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
-         delete from public.invitation_send_proofs; delete from public.invitation_send_attempts; delete from public.invitations;
+         delete from public.invitation_confirmation_transports; delete from public.invitation_setup_authorizations; delete from public.invitation_send_proofs; delete from public.invitation_send_attempts; delete from public.invitations;
          drop table if exists public.volo_test_auth_snapshot;
          delete from public.memberships where user_id in (select id from owned_subjects);
          delete from auth.users where id in (select id from owned_subjects); end $cleanup$;`],30000);
