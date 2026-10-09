@@ -66,14 +66,21 @@ select is(pg_temp.prepare(1,2,'raw-secret')->>'code','conflict','Only digest acc
 select is(pg_temp.prepare(1,2)->>'code','prepared','Proof committed before send');
 select is(pg_temp.prepare(1,2)->>'code','prepared','Identical preparation harmless');
 select is(pg_temp.prepare(1,2,repeat('b',64))->>'code','conflict','Proof cannot be replaced');
+select is(pg_temp.prepare(1,2,null)->>'code','conflict','Null digest denied');
+select is(pg_temp.prepare(1,2,repeat('a',64),null)->>'code','conflict','Null transport denied');
 select is(pg_temp.consume(1,2)->>'code','stale','Pending generation cannot authorize setup');
 select is(pg_temp.record(1,2,'accepted')->>'code','recorded','Resend accepts retained subject');
 select is(pg_temp.consume(1,2,repeat('b',64))->>'code','conflict','Wrong proof denied');
 select is(pg_temp.consume(1,2,repeat('a',64),'recovery')->>'code','conflict','Wrong transport denied');
+select is(public.consume_invitation_send_proof('40000000-0000-4000-8000-000000000001',2,null,repeat('a',64),'invite')->>'code','conflict','Null subject denied');
+update auth.users set banned_until=now()+interval '1 day' where id='20000000-0000-4000-8000-000000000001';
+select is(pg_temp.consume(1,2)->>'code','conflict','Banned subject cannot consume proof');
+update auth.users set banned_until=null where id='20000000-0000-4000-8000-000000000001';
 select is(pg_temp.consume(1,2)->>'code','consumed','Current proof consumed once');
 select is(pg_temp.consume(1,2)->>'code','conflict','Proof replay denied');
 select is(pg_temp.reserve(2,2)->>'code','reserved','Next resend permitted after acceptance');
 select is(pg_temp.consume(1,2)->>'code','stale','Old proof fenced after resend');
+update auth.users set email_confirmed_at=now() where id='20000000-0000-4000-8000-000000000001';
 select is(pg_temp.prepare(2,3,repeat('b',64),'recovery')->>'code','prepared','Confirmed transport can prepare');
 select is(pg_temp.record(2,3,'unknown','timeout')->>'code','recorded','Ambiguity retained');
 select is(pg_temp.reserve(3,3)->>'code','pending_reconciliation','Unknown generation blocks resend');
@@ -86,12 +93,17 @@ select is(pg_temp.record(2,3,'rejected','provider_rejected')->>'code','conflict'
 select ok((select outcome='unknown' and reconciled_outcome='accepted' and reconciled_at is not null
  from public.invitation_send_attempts where id='40000000-0000-4000-8000-000000000002'),'Original outcome preserved with resolution');
 select is(pg_temp.reserve(3,3)->>'code','reserved','Resolved generation permits one resend');
-select is(pg_temp.prepare(3,4)->>'code','prepared','Prepare terminal race');
+select is(pg_temp.prepare(3,4,repeat('a',64),'recovery')->>'code','prepared','Prepare terminal race');
 update public.invitations set status='revoked',revoked_at=now(),revoked_by_user_id='10000000-0000-4000-8000-000000000001',revocation_reason='Test' where id='30000000-0000-4000-8000-000000000001';
 select is(pg_temp.reconcile(3,4,'accepted')->>'code','stale','Terminal acceptance records history only');
 select is(pg_temp.consume(3,4)->>'code','stale','Terminal proof denied');
 select is(pg_temp.reserve(4,4)->>'code','stale','Terminal resend denied');
 select is((select status::text from public.invitations where id='30000000-0000-4000-8000-000000000001'),'revoked','Late outcome cannot restore eligibility');
+select is(public.reserve_invitation_send('20000000-0000-4000-8000-000000000002','reconcile-owned@example.invalid','10000000-0000-4000-8000-000000000001')->>'code','reserved','Reserve initial creation with lost response');
+insert into auth.users(id,email) values ('20000000-0000-4000-8000-000000000002','RECONCILE-OWNED@example.invalid');
+select is(public.record_invitation_send_outcome('20000000-0000-4000-8000-000000000002',1,'unknown',null,'timeout')->>'code','recorded','Initial unknown durable before binding');
+select is(public.reconcile_invitation_send('20000000-0000-4000-8000-000000000002',1,'10000000-0000-4000-8000-000000000002','accepted','20000000-0000-4000-8000-000000000001')->>'code','conflict','Initial reconciliation cannot adopt another subject');
+select is(public.reconcile_invitation_send('20000000-0000-4000-8000-000000000002',1,'10000000-0000-4000-8000-000000000002','accepted','20000000-0000-4000-8000-000000000002')->>'code','reconciled','Trusted initial response binds only reserved UUID');
 select results_eq('select * from public.memberships order by user_id','select * from memberships_before order by user_id','No membership mutation');
 select ok(not has_table_privilege(role,'public.invitation_send_proofs',privilege),role||' proof access denied')
  from (values ('anon'),('authenticated')) r(role) cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE')) p(privilege);
@@ -101,5 +113,14 @@ select ok(not has_function_privilege(role,signature,'EXECUTE'),role||' cannot ex
  ('public.prepare_invitation_send_proof(uuid,bigint,uuid,uuid,text,text)'),
  ('public.consume_invitation_send_proof(uuid,bigint,uuid,text,text)'),
  ('public.reconcile_invitation_send(uuid,bigint,uuid,text,uuid)')) f(signature);
+select ok(has_function_privilege('service_role',signature,'EXECUTE'),'Service role can execute '||signature)
+ from (values ('public.reserve_invitation_resend(uuid,uuid,bigint,uuid)'),
+ ('public.prepare_invitation_send_proof(uuid,bigint,uuid,uuid,text,text)'),
+ ('public.consume_invitation_send_proof(uuid,bigint,uuid,text,text)'),
+ ('public.reconcile_invitation_send(uuid,bigint,uuid,text,uuid)')) f(signature);
+select ok(not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace,
+ lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+ where n.nspname='public' and p.proname in ('reserve_invitation_resend','prepare_invitation_send_proof','consume_invitation_send_proof','reconcile_invitation_send')
+ and acl.grantee=0 and acl.privilege_type='EXECUTE'),'PUBLIC execution revoked');
 select * from finish();
 rollback;
