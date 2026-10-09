@@ -1,6 +1,6 @@
 # VOLO-122: invitation confirmation and setup authority
 
-Status: concrete design awaiting Roger's review. The invitation flow and scope
+Status: written design approved by Roger. The invitation flow and scope
 were approved in chat. This document specifies their implementation; it does not
 claim that routes, migrations, provider behavior or hosted configuration are ready.
 
