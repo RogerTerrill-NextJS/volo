@@ -51,25 +51,25 @@ $$;
 
 create function public.create_invitation_confirmation_transport(p_lookup_digest text,p_csrf_digest text,p_origin text,p_expires_at timestamptz,p_key_id text,p_nonce text,p_ciphertext text,p_tag text,p_previous_digest text default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
-declare current_time timestamptz := clock_timestamp();
+declare confirmation_time timestamptz := clock_timestamp();
 begin
  if p_lookup_digest is null or p_lookup_digest collate "C" !~ '^[a-f0-9]{64}$'
   or p_csrf_digest is null or p_csrf_digest collate "C" !~ '^[a-f0-9]{64}$'
   or p_origin is null or length(p_origin) not between 1 and 512
-  or p_expires_at is null or p_expires_at<=current_time or p_expires_at>current_time+interval '10 minutes'
+  or p_expires_at is null or p_expires_at<=confirmation_time or p_expires_at>confirmation_time+interval '10 minutes'
   or p_key_id is null or p_key_id collate "C" !~ '^[A-Za-z0-9_-]{1,32}$'
   or p_nonce is null or p_nonce collate "C" !~ '^[A-Za-z0-9_-]{16}$'
   or p_ciphertext is null or p_ciphertext collate "C" !~ '^[A-Za-z0-9_-]{1,2048}$'
   or p_tag is null or p_tag collate "C" !~ '^[A-Za-z0-9_-]{22}$' then return jsonb_build_object('code','denied'); end if;
  perform pg_advisory_xact_lock(hashtextextended('volo-confirmation-transports',0));
- delete from public.invitation_confirmation_transports where expires_at<=current_time;
+ delete from public.invitation_confirmation_transports where expires_at<=confirmation_time;
  if (select count(*) from public.invitation_confirmation_transports)>=1024
-  or (select count(*) from public.invitation_confirmation_transports where origin=p_origin and created_at>current_time-interval '1 minute')>=60
+  or (select count(*) from public.invitation_confirmation_transports where origin=p_origin and created_at>confirmation_time-interval '1 minute')>=60
   then return jsonb_build_object('code','limited'); end if;
- update public.invitation_confirmation_transports set claimed_at=current_time,nonce=null,ciphertext=null,tag=null
+ update public.invitation_confirmation_transports set claimed_at=confirmation_time,nonce=null,ciphertext=null,tag=null
   where lookup_digest=p_previous_digest and origin=p_origin and claimed_at is null;
  insert into public.invitation_confirmation_transports(lookup_digest,csrf_digest,origin,created_at,expires_at,key_id,nonce,ciphertext,tag)
-  values(p_lookup_digest,p_csrf_digest,p_origin,current_time,p_expires_at,p_key_id,p_nonce,p_ciphertext,p_tag);
+  values(p_lookup_digest,p_csrf_digest,p_origin,confirmation_time,p_expires_at,p_key_id,p_nonce,p_ciphertext,p_tag);
  return jsonb_build_object('code','created');
 exception when unique_violation then return jsonb_build_object('code','denied');
 end;
@@ -96,7 +96,7 @@ $$;
 create function public.record_verified_invitation_setup(p_subject uuid,p_email text,p_session_id uuid,p_origin text,p_setup_digest text,p_invitation_id uuid,p_expected_version bigint,p_attempt_id uuid,p_resume_digest text,p_transport text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare invitation public.invitations; attempt public.invitation_send_attempts; proof public.invitation_send_proofs;
- authorization_id uuid:=gen_random_uuid(); current_time timestamptz;
+ authorization_id uuid:=gen_random_uuid(); confirmation_time timestamptz;
 begin
  if p_subject is null or p_session_id is null or p_email is null or p_origin is null or length(p_origin) not between 1 and 512
   or p_setup_digest is null or p_setup_digest collate "C" !~ '^[a-f0-9]{64}$' then return jsonb_build_object('code','denied'); end if;
@@ -119,13 +119,13 @@ begin
    or proof.secret_digest is distinct from p_resume_digest or proof.consumed_at is not null then return jsonb_build_object('code','denied'); end if;
   update public.invitation_send_proofs set consumed_at=clock_timestamp() where attempt_id=attempt.id;
  end if;
- current_time:=clock_timestamp();
+ confirmation_time:=clock_timestamp();
  delete from public.invitation_setup_authorizations where invitation_id=invitation.id;
  insert into public.invitation_setup_authorizations(id,lookup_digest,invitation_id,invitation_version,verified_user_id,session_id,origin,created_at,expires_at)
-  values(authorization_id,p_setup_digest,invitation.id,invitation.version,p_subject,p_session_id,p_origin,current_time,current_time+interval '30 minutes');
- update public.invitations set status='setup_verified',verified_user_id=p_subject,verified_at=current_time,
-  setup_authorization_id=authorization_id,password_established_at=null,updated_at=current_time where id=invitation.id;
- return jsonb_build_object('code','recorded','authorizationId',authorization_id,'expiresAt',current_time+interval '30 minutes');
+  values(authorization_id,p_setup_digest,invitation.id,invitation.version,p_subject,p_session_id,p_origin,confirmation_time,confirmation_time+interval '30 minutes');
+ update public.invitations set status='setup_verified',verified_user_id=p_subject,verified_at=confirmation_time,
+  setup_authorization_id=authorization_id,password_established_at=null,updated_at=confirmation_time where id=invitation.id;
+ return jsonb_build_object('code','recorded','authorizationId',authorization_id,'expiresAt',confirmation_time+interval '30 minutes');
 exception when unique_violation then return jsonb_build_object('code','conflict');
 end;
 $$;
