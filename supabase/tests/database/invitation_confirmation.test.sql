@@ -50,7 +50,7 @@ select ok((select expires_at=created_at+interval '30 minutes' from public.invita
 select is(public.read_verified_invitation_setup(repeat('d',64),'22000000-0000-4000-8000-000000000001','Confirm+tag@example.invalid','55000000-0000-4000-8000-000000000001','https://confirm.example.invalid')->>'code','authorized','matching verified session reads setup');
 select is(public.read_verified_invitation_setup(repeat('d',64),'22000000-0000-4000-8000-000000000001','Confirm+tag@example.invalid','55000000-0000-4000-8000-000000000002','https://confirm.example.invalid')->>'code','denied','another login never inherits setup');
 select is(pg_temp.setup()->>'code','stale','same provider evidence cannot recreate setup');
-update public.invitation_setup_authorizations set created_at=clock_timestamp()-interval '31 minutes',expires_at=clock_timestamp()-interval '1 minute';
+update public.invitation_setup_authorizations set created_at=now()-interval '31 minutes',expires_at=now()-interval '1 minute';
 select public.cleanup_invitation_confirmation();
 select is((select status::text from public.invitations where id='33000000-0000-4000-8000-000000000001'),'issued','expiry clears matching live snapshot without ending invitation eligibility');
 select is((select count(*) from public.invitation_setup_authorizations),0::bigint,'expired setup authority physically removed');
