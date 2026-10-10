@@ -5,20 +5,20 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {setTimeout as delay} from 'node:timers/promises';
 import {startLocalAuthStack,cleanupOwnedStack,evidenceDirectory,reservePort} from '../tests/helpers/local-auth-stack.mjs';
-import {signInSession,invalidSession,emptySession} from '../tests/helpers/real-auth-session.mjs';
+import {signInSession,signInOwnedInvitationSession,invalidSession,emptySession} from '../tests/helpers/real-auth-session.mjs';
 import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
-const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.']};
+const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.','Provider/setup expiry and invitation age use backdated owned timestamps, not a 30-minute wall-clock wait.']};
 const cancellation=new AbortController();const interrupt=()=>{process.exitCode=130;cancellation.abort();};process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
-let stack,app,setupStage='stack',diagnosticStage='scenario';const sessions=[];
+let stack,app,setupStage='stack',diagnosticStage='scenario';const sessions=[],invitationPasswords=new Set();
 const check=(condition,message)=>assert.ok(condition,message);
 async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){summary.scenarios.push({name,status:'failed',evidence:error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:`Service/transport failure (${diagnosticStage}; ${error.operation??'unknown'}; ${Number.isInteger(error.httpStatus)?error.httpStatus:'no-status'})`});throw new Error(`Integration scenario failed: ${name}`);}}
 function privatePolicy(response){
   check(/no-store/.test(response.headers.get('cache-control')??''),'browser no-store');
   for(const field of ['cdn-cache-control','netlify-cdn-cache-control'])check(response.headers.get(field)==='no-store','CDN no-store');
 }
-function assertClean(text){stack.assertNoCredentialLeaks(text);for(const session of sessions)session.assertNoCredentialLeaks(text);}
+function assertClean(text){stack.assertNoCredentialLeaks(text);for(const session of sessions)session.assertNoCredentialLeaks(text);for(const password of invitationPasswords)check(!text.includes(password),'invitation password must not leak');}
 try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
     const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
@@ -149,6 +149,7 @@ try{
       diagnosticStage='read-attempts';const attempts=await stack.readSendAttempts(invitation.id);check(attempts.length===1&&attempts[0].outcome==='accepted','one accepted attempt');
       check(attempts[0].id===invitation.auth_user_id,'reserved UUID owns provider subject');
       diagnosticStage='track-subject';await stack.trackIssuedSubject(invitation.auth_user_id);diagnosticStage='read-subject';const user=await stack.readAuthUser(invitation.auth_user_id);
+      check(user.email===email.toLowerCase(),'real provider stores case/whitespace normalized recipient');
       check(!user.email_confirmed_at,'issuance does not confirm email');diagnosticStage='read-membership';check(await stack.readMembership(invitation.auth_user_id)===null,'issuance grants no membership');
       diagnosticStage='captured-mail';const [html]=await captured(email,1);const href=html.match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&');check(Boolean(href),'mail has application link');
       const link=new URL(href);check(link.origin===app.origin&&link.pathname==='/auth/confirm','exact direct application callback');
@@ -156,10 +157,15 @@ try{
       check((await issue(email)).body.data?.code==='conflict','normalized duplicate cannot resend');await captured(email,1);
       for(const variant of [email.replace('+tag','+other'),email.replace('+tag','.tag')]){
         stack.ownInvitationEmail(variant);check((await issue(variant)).body.data?.code==='accepted','dot/plus variants remain distinct');
+        const row=await stack.readInvitationForEmail(variant);await stack.trackIssuedSubject(row.auth_user_id);
+        check(row.auth_user_id!==invitation.auth_user_id&&(await stack.readAuthUser(row.auth_user_id)).email===variant.toLowerCase(),'real provider preserves dot/plus identity');
       }
       diagnosticStage='confirm-initial';const session=emptySession(stack);sessions.push(session);
       for(const options of [{method:'HEAD'},{headers:{'Next-Router-Prefetch':'1'}},{headers:{Purpose:'prefetch'}}]){const noop=await app.request(link.pathname+link.search,{session,...options});privatePolicy(noop);check(noop.status===200&&noop.headers.getSetCookie().length===0,'scanner cannot create cookies or verify Auth');}
       check(!(await stack.readAuthUser(invitation.auth_user_id)).email_confirmed_at,'HEAD/prefetch leaves provider token unused');
+      const wrongType=new URL(link);wrongType.searchParams.set('type','signup');
+      const rejectedType=await app.request(wrongType.pathname+wrongType.search);privatePolicy(rejectedType);await audit(rejectedType);
+      check(rejectedType.status===400&&!(await stack.readAuthUser(invitation.auth_user_id)).email_confirmed_at,'wrong provider type cannot consume acceptance');
       const oldCsrf=await prepareConfirmation(link,session),csrf=await prepareConfirmation(link,session);
       check(!(await stack.readAuthUser(invitation.auth_user_id)).email_confirmed_at,'GET leaves provider token unused');
       check((await postConfirmation(session,csrf,'https://foreign.invalid')).status===403,'foreign origin cannot accept');
@@ -224,15 +230,19 @@ try{
       const email=ownedEmail(label);check((await issue(email)).body.data?.code==='accepted','initial accepted');
       const invitation=await stack.readInvitationForEmail(email);await stack.trackIssuedSubject(invitation.auth_user_id);return {email,invitation};
     };
-    const completionFixture=async label=>{
-      const {email,invitation}=await setupRenewal(label),session=emptySession(stack);sessions.push(session);
-      const csrf=await prepareConfirmation(linkFrom((await captured(email,1))[0]),session);check((await postConfirmation(session,csrf)).status===303,'owned completion setup verified');
+    const acceptCompletionLink=async({email,invitation},link)=>{
+      const session=emptySession(stack);sessions.push(session);
+      const csrf=await prepareConfirmation(link,session);check((await postConfirmation(session,csrf)).status===303,'owned completion setup verified');
       const form=await app.request('/api/completion-form',{session});privatePolicy(form);const token=(await form.json()).csrf;check(/^[a-f0-9]{64}$/.test(token),'domain separated completion CSRF');
       return {email,invitation,session,csrf:token,password:'OwnedCompletion124!'};
+    };
+    const completionFixture=async label=>{
+      const fixture=await setupRenewal(label);return acceptCompletionLink(fixture,linkFrom((await captured(fixture.email,1))[0]));
     };
     const completionCounts=async()=>await (await app.request('/api/completion-control')).json();
     const completionMode=mode=>app.request('/api/completion-control',{method:'POST',body:mode});
     const postCompletion=async(f,options={})=>{
+      invitationPasswords.add(f.password);
       const response=await app.request(options.route??'/account/complete',{session:options.session??f.session,method:options.method??'POST',headers:{Origin:options.origin??app.origin,'content-type':'application/x-www-form-urlencoded'},body:(options.method&&options.method!=='POST')?undefined:options.body??new URLSearchParams({password:f.password,passwordConfirmation:f.password,csrf:options.csrf??f.csrf}).toString()});
       privatePolicy(response);await audit(response);check(response.headers.get('referrer-policy')==='no-referrer','completion referrer suppressed');return response;
     };
@@ -302,6 +312,76 @@ try{
         }else check(response.headers.get('location')===app.origin+'/dashboard','lost record response reconciles committed evidence');
       }
       return 'Real owned password PUT response loss denies without replay; committed evidence reconciles; failed recording safely releases; same_password classified; lost redemption response resumes without another password PUT.';
+    });
+    await scenario('invitation_setup_binding_denials',async()=>{
+      const f=await completionFixture('binding'),count=(await completionCounts()).writes;
+      const foreign=users.absent.withSetupFrom(f.session);sessions.push(foreign);
+      const alternate=(await signInOwnedInvitationSession(stack,f.invitation.auth_user_id)).withSetupFrom(f.session);sessions.push(alternate);
+      for(const session of [foreign,alternate]){
+        const response=await app.request('/api/confirmation-session',{session});privatePolicy(response);await audit(response,session.userId);
+        const data=await response.json();check(data.session.code==='verified'&&data.setup.status==='denied','real verified identity/session cannot borrow setup');
+        completionResult(await postCompletion(f,{session}),'access_denied');
+      }
+      check((await completionCounts()).writes===count&&await stack.readMembership(f.invitation.auth_user_id)===null,'borrowed setup never changes password or admits');
+      await confirmedSetup(f.session,f.invitation);
+      const cases=['revoked','superseded','renewed','plus-email','dot-email'];
+      for(const mode of cases){
+        const invalid=await completionFixture('binding-'+mode),before=(await completionCounts()).writes;
+        if(mode==='revoked')await stack.revokeInvitation(invalid.invitation.id,accounts.admin.id);
+        else if(mode==='superseded'){
+          const replacement=await setupRenewal('replacement');await stack.setInvitationTestState(invalid.invitation.id,mode,replacement.invitation.id);
+        }else if(mode==='renewed'){
+          check((await renew(invalid.invitation)).body.data?.code==='accepted','renewal creates new generation');
+          check((await stack.readInvitationForEmail(invalid.email)).version===2,'old setup version fenced');
+        }else{
+          const email=mode==='plus-email'?invalid.email.replace('@','+tag@'):invalid.email.replace('-','.');
+          stack.ownInvitationEmail(email);await stack.setOwnedAuthEmail(invalid.invitation.auth_user_id,email);
+          check((await stack.readAuthUser(invalid.invitation.auth_user_id)).email===email,'real provider changed owned email');
+        }
+        const denied=await app.request('/api/confirmation-session',{session:invalid.session});privatePolicy(denied);await audit(denied,invalid.invitation.auth_user_id);
+        const verified=await denied.json();
+        check(verified.session.code==='verified'&&verified.session.subject===invalid.invitation.auth_user_id&&verified.setup.status==='denied','valid provider session cannot bypass invitation/email/version denial');
+        completionResult(await postCompletion(invalid),'access_denied');
+        check((await completionCounts()).writes===before&&await stack.readMembership(invalid.invitation.auth_user_id)===null,'denial precedes password and membership writes');
+      }
+      return 'Real verified wrong-subject and new same-subject session with copied setup cookies denied; revoked/superseded/renewed grants and changed dot/plus recipient emails denied before password writes.';
+    });
+    await scenario('invitation_age_and_independent_expiry',async()=>{
+      const fixture=await setupRenewal('old-expiry');await stack.setInvitationTestState(fixture.invitation.id,'old');
+      const original=linkFrom((await captured(fixture.email,1))[0]);await stack.setInvitationTestState(fixture.invitation.id,'expired-provider');
+      const expired=emptySession(stack);sessions.push(expired);const csrf=await prepareConfirmation(original,expired);
+      check((await postConfirmation(expired,csrf)).status===400,'real provider rejects expired invitation link');
+      check(await stack.readMembership(fixture.invitation.auth_user_id)===null&&(await stack.readInvitationForEmail(fixture.email)).status==='issued','provider expiry leaves old invitation eligible');
+      check((await renew(fixture.invitation)).body.data?.code==='accepted','old invitation can renew expired provider link');
+      let row=await stack.readInvitationForEmail(fixture.email);check(row.auth_user_id===fixture.invitation.auth_user_id&&row.created_at.startsWith('2000-01-01'),'renewal preserves old invitation and subject');
+      let f=await acceptCompletionLink({email:fixture.email,invitation:row},linkFrom((await captured(fixture.email,2)).find(html=>linkFrom(html).searchParams.has('resume'))));
+      await confirmedSetup(f.session,row);await stack.assertSetupLifetime(row.id);
+      const before=(await completionCounts()).writes;await stack.setInvitationTestState(row.id,'expired-setup');
+      const denied=await app.request('/api/confirmation-session',{session:f.session});privatePolicy(denied);await audit(denied,row.auth_user_id);
+      const verified=await denied.json();check(verified.session.code==='verified'&&verified.setup.status==='denied','setup expires independently of valid provider session');completionResult(await postCompletion(f),'access_denied');
+      check((await completionCounts()).writes===before&&await stack.readMembership(row.auth_user_id)===null,'expired setup never changes password or admits');
+      await delay(1100);check((await renew(row)).body.data?.code==='accepted','expired setup can renew verification without expiring invitation');
+      row=await stack.readInvitationForEmail(fixture.email);
+      f=await acceptCompletionLink({email:fixture.email,invitation:row},linkFrom((await captured(fixture.email,3)).find(html=>linkFrom(html).searchParams.get('type')==='recovery')));
+      check((await postCompletion(f)).headers.get('location')===app.origin+'/dashboard','renewed old invitation completes');
+      const admitted=await read('/api/subject',{session:f.session});privatePolicy(admitted);const member=await admitted.json();
+      check(admitted.status===200&&member.userId===row.auth_user_id&&member.role==='member','fresh protected request admits same old invitation subject');
+      return 'Backdated real provider token rejected; year-2000 invitation stays eligible through invite/recovery renewal; separate 30-minute setup expires before password writes and fresh verification completes same member.';
+    });
+    await scenario('invitation_completion_concurrency',async()=>{
+      const f=await completionFixture('completion-race'),before=(await completionCounts()).writes;
+      const requests=[f.session.clone(),f.session.clone()];sessions.push(...requests);
+      const results=await Promise.all(requests.map(session=>postCompletion(f,{session})));
+      check(results.some(response=>response.headers.get('location')===app.origin+'/dashboard'),'one concurrent completion succeeds');
+      for(const response of results)check([app.origin+'/dashboard',app.origin+'/account/setup?result=retry_later'].includes(response.headers.get('location')),'other completion resumes safely or reports busy');
+      check((await completionCounts()).writes===before+1,'concurrent completion makes one real provider password PUT');
+      const row=await stack.readInvitationForEmail(f.email),member=await stack.readMembership(row.auth_user_id);
+      check(row.status==='redeemed'&&member.role==='member'&&member.status==='active','one atomic member redemption');
+      for(const session of requests){
+        const response=await read('/api/subject',{session});privatePolicy(response);check(response.status===200&&(await response.json()).userId===row.auth_user_id,'fresh concurrent session sees same member');
+      }
+      check((await postCompletion(f)).headers.get('location')===app.origin+'/dashboard'&&(await completionCounts()).writes===before+1,'historical duplicate skips another password change');
+      return 'Two independent native requests produce one password PUT, one redeemed invitation/member and fresh same-subject access; duplicate completion is idempotent.';
     });
     await scenario('invitation_renewal_real_transports',async()=>{
       diagnosticStage='renew-unconfirmed';const {email,invitation}=await setupRenewal('renewal');

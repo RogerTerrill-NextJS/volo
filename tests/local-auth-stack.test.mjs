@@ -25,12 +25,17 @@ test('does_not_inherit_hosted_settings',async()=>{
 async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicResponse,mailResponse}={}) {
   const {createLocalAuthStack}=await load();
   const directory=await mkdtemp(path.join(tmpdir(),'volo-auth-test-'));
-  const calls=[],requests=[];let nextPort=40000;
+  const calls=[],requests=[],runningProjects=new Set();let nextPort=40000;
   const stateFile=path.join(directory,'state.json');
   const adapters={
     reservePort:async()=>++nextPort,
     run:async(command,args,options)=>{
       calls.push({command,args,options});
+      if(args[1]==='start'){
+        const config=await readFile(path.join(args[args.indexOf('--workdir')+1],'supabase/config.toml'),'utf8');
+        runningProjects.add(config.match(/^project_id = "([^"]+)"/m)[1].slice(0,40));
+      }
+      if(args[1]==='stop')runningProjects.delete(args[args.indexOf('--project-id')+1]);
       if(args[1]==='start'&&onStart)await onStart(options);
       if(args[1]===failAt)throw new Error('service_role=unknown-private-canary');
       if(args[1]==='status')return {stdout:JSON.stringify({API_URL:'http://127.0.0.1:40001',MAILPIT_URL:'http://127.0.0.1:40006',SECRET_KEY:'sb_secret_local_fixture',ANON_KEY:'legacy-canary',PUBLISHABLE_KEY:'sb_publishable_local_fixture',SERVICE_ROLE_KEY:'admin-canary'}),stderr:''};
@@ -46,8 +51,24 @@ async function harness({failAt,redirect=false,onStart,wrappedUser=false,publicRe
       return Response.json([]);
     },
   };
-  return {calls,requests,stateFile,start:(options={})=>createLocalAuthStack({repositoryRoot:root,stateFile,...options},adapters),dispose:()=>rm(directory,{recursive:true,force:true})};
+  return {calls,requests,runningProjects,stateFile,start:(options={})=>createLocalAuthStack({repositoryRoot:root,stateFile,...options},adapters),dispose:()=>rm(directory,{recursive:true,force:true})};
 }
+
+test('owned_cleanup_stops_the_project_after_CLI_id_truncation',async()=>{
+ const h=await harness();let stack;
+ try{stack=await h.start();assert.equal(h.runningProjects.size,1);await stack.close();assert.equal(h.runningProjects.size,0,'owned containers must not outlive cleanup');}
+ finally{await h.dispose();}
+});
+
+test('invitation_fixture_changes_refuse_unowned_rows_before_transport',async()=>{
+ const h=await harness();let stack;
+ try{
+  stack=await h.start();const before=h.requests.length,calls=h.calls.length;
+  await assert.rejects(stack.setInvitationTestState('00000000-0000-4000-8000-000000000001','old'),/Invitation not owned/);
+  await assert.rejects(stack.createOwnedSessionLink('00000000-0000-4000-8000-000000000001'),/Account is not owned/);
+  assert.equal(h.requests.length,before);assert.equal(h.calls.length,calls);
+ }finally{await stack?.close();await h.dispose();}
+});
 
 test('cleanup_after_partial_start',async()=>{
   for(const failAt of ['start','status']) {
@@ -56,7 +77,7 @@ test('cleanup_after_partial_start',async()=>{
       await assert.rejects(h.start(),/local Auth stack/i);
       const stops=h.calls.filter(x=>x.args[1]==='stop');assert.equal(stops.length,1);
       const args=stops[0].args;assert.ok(args.includes('--no-backup'));assert.ok(args.includes('--project-id'));assert.ok(!args.includes('--all'));
-      assert.match(args[args.indexOf('--project-id')+1],/^volo-auth-[a-f0-9-]{36}$/);
+      assert.match(args[args.indexOf('--project-id')+1],/^volo-auth-[a-f0-9]{24}$/);
       assert.notEqual(args[args.indexOf('--workdir')+1],root);
     } finally {await h.dispose();}
   }
