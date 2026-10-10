@@ -37,6 +37,10 @@ memberships, grants or personalized DTOs in shared module state, `use cache`,
 assets retain public caching. VOLO-154 makes the login form dynamic/private even
 without a session and keeps every login POST outcome private/no-store. The cache
 classification grants no access; login does not create active membership.
+VOLO-155 applies the same private policy to every logout outcome and follows its
+native POST with a fresh document navigation. Protected AppShell content is hidden
+on pagehide and reloaded on persisted pageshow, so a restored historical document
+reauthorizes with current cookies before displaying protected content.
 
 ## Verification and limits
 
@@ -76,8 +80,9 @@ Chrome browser evidence on October 7, 2026, against an owned loopback fixture:
 Screenshots captured the refreshed denial and B's page; owned fixture and browser
 tabs were closed. Previously delivered DOM/RSC cannot be retracted by HTTP policy.
 Do not promise instant remote revocation or add polling to imitate it. Future
-login/logout flows own supported Router Cache invalidation and fresh session-change
-navigation. Every new protected server request must reauthorize.
+cross-feature work remains VOLO-25. VOLO-155 supplies fresh login/logout document
+navigation and protected document restoration; every new protected server request
+must reauthorize.
 
 For an exact reviewed Deploy Preview, run:
 
@@ -107,3 +112,13 @@ Sources: installed Next.js 16.3.8 CDN caching, caching without Cache Components,
 cookies, headers, prefetching and staleTimes guides; installed Supabase SSR cookie
 metadata behavior; [Netlify cache precedence](https://docs.netlify.com/build/caching/caching-overview/)
 and [Next.js runtime](https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/).
+
+## Logout navigation evidence (VOLO-155)
+
+Chrome verification on October 10, 2026 used the existing owned cache fixture
+with the production AppShell. Its fictional Auth service does not implement
+logout, so the native Sign out control followed the safe uncertain-provider path
+and cleared browser authority. Back returned to `/login?reason=authentication-required`
+without the previous subject; reload stayed at login. Real provider sign-out and
+independent-session retention are verified separately in the real Auth suite.
+This local evidence does not establish hosted browser or Netlify CDN behavior.

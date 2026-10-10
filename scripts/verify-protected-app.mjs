@@ -155,7 +155,7 @@ try {
   backend.invitations.rows=[{...rows[0],status:'issued',invitation_send_attempts:[{invitation_version:2,outcome:'accepted',reconciled_outcome:null}]}];
   const controlHtml=(await request('/admin/invitations',admin.jar)).body;
   const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
-  const forms=[...controlHtml.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].map(match=>[...match[1].matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="([^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];}));
+  const forms=[...controlHtml.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].filter(match=>match[1].includes('$ACTION_')).map(match=>[...match[1].matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="([^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];}));
   assert.equal(forms.length,2);
   const invoke=async(account,index,fields={},headers={})=>{
     const body=new FormData();for(const [key,value] of forms[index])body.append(key,value);for(const [key,value] of Object.entries(fields))body.set(key,value);
@@ -184,6 +184,8 @@ try {
     const page = await request("/dashboard", account.jar);
     assert.equal(page.response.status, 200); assert.match(page.body, /Workspace overview/);
     assert.match(page.body, /aria-label="App navigation"/); privateHeaders(page.response);
+    assert.match(page.body, /<form[^>]*action="\/auth\/logout"[^>]*method="post"/);
+    assert.match(page.body, /<button[^>]*>Sign out<\/button>/);
     assert.equal(membershipCount(), before + 1);
   }
   for (const options of [{status: "disabled"}, {membership: "absent"}]) {

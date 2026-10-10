@@ -280,8 +280,12 @@ does not grant authorization. Dashboard HTML/RSC and redirects are private,
 no-store; the helper itself neither caches a decision nor persists cookies.
 VOLO-154 supplies the public `/login` email/password form and native
 `POST /auth/login`. Configure `VOLO_MUTATION_ORIGIN` to the exact local app origin
-for manual login; hosted builds pin it through the existing Netlify context.
-Both login page and POST outcomes are private/no-store. No arbitrary return URL
+for manual login/logout; hosted builds pin it through the existing Netlify context.
+Both login page and POST outcomes are private/no-store. VOLO-155 adds native
+`POST /auth/logout` with the same exact-origin policy and fixed login destination.
+It clears current-browser auth/setup cookies, uses SDK local-session sign-out, and
+refreshes authorization on restored protected documents. See the
+[logout contract](auth-callbacks.md#login-destination-agreed-for-volo-116--volo-22). No arbitrary return URL
 or query is forwarded to login. Next.js can serialize the incoming URL in its
 router payload, so never put credentials in ordinary navigation queries.
 Page denial UI can have HTTP 200 under streaming; redirects can use the RSC
