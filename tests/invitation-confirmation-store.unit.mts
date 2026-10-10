@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createConfirmationStore} from '../lib/auth/invitation-confirmation-store.ts';
+test('password store validates reservation context and never exposes unexpected RPC results',async()=>{
+ process.env.NEXT_PUBLIC_SUPABASE_URL='https://example.supabase.co';process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='sb_publishable_fixture';process.env.SUPABASE_SECRET_KEY='sb_secret_fixture';
+ const original=globalThis.fetch;let response:unknown,body:unknown,path='',calls=0;
+ const identity={subject:'22000000-0000-4000-8000-000000000124',email:'member@example.invalid',sessionId:'55000000-0000-4000-8000-000000000124'},input={identity,setupDigest:'c'.repeat(64),origin:'https://preview.invalid',operationId:'77000000-0000-4000-8000-000000000124'};
+ const context={...input,invitationId:'33000000-0000-4000-8000-000000000124',version:1,authorizationId:'66000000-0000-4000-8000-000000000124'};
+ globalThis.fetch=async(url,init)=>{calls++;path=new URL(String(url)).pathname;body=JSON.parse(String(init?.body));assert.equal(init?.cache,'no-store');assert.equal(init?.redirect,'error');return Response.json(response);};
+ try{
+  const store=createConfirmationStore();response={code:'reserved',invitationId:context.invitationId,version:1,authorizationId:context.authorizationId,private:'canary'};
+  assert.deepEqual(await store.beginCompletion(input),{code:'reserved',invitationId:context.invitationId,version:1,authorizationId:context.authorizationId});
+  assert.equal(path,'/rest/v1/rpc/begin_invitation_completion');
+  assert.deepEqual(body,{p_operation_id:input.operationId,p_setup_digest:input.setupDigest,p_subject:identity.subject,p_email:identity.email,p_session_id:identity.sessionId,p_origin:input.origin});
+  response={code:'reserved',version:1,authorizationId:context.authorizationId};assert.deepEqual(await store.beginCompletion(input),{code:'unavailable'});
+  for(const code of ['busy','renew_required','denied'] as const){response={code};assert.deepEqual(await store.beginCompletion(input),{code});}
+  response={code:'recorded',private:'canary'};assert.deepEqual(await store.recordPassword(context),{code:'recorded'});assert.equal(path,'/rest/v1/rpc/record_invitation_password');
+  assert.deepEqual(body,{p_operation_id:input.operationId,p_invitation_id:context.invitationId,p_expected_version:1,p_setup_authorization_id:context.authorizationId,p_setup_digest:input.setupDigest,p_subject:identity.subject,p_email:identity.email,p_session_id:identity.sessionId,p_origin:input.origin});
+  response={code:'released',private:'canary'};assert.deepEqual(await store.releasePassword(context),{code:'released'});assert.equal(path,'/rest/v1/rpc/release_invitation_password');
+  response={code:'unexpected'};assert.deepEqual(await store.recordPassword(context),{code:'unavailable'});assert.deepEqual(await store.releasePassword(context),{code:'unavailable'});assert.equal(calls,9);
+ }finally{globalThis.fetch=original;delete process.env.SUPABASE_SECRET_KEY;}
+});
 test('redemption binds verified authority and exposes only recognized outcomes without transport retries',async()=>{
  process.env.NEXT_PUBLIC_SUPABASE_URL='https://example.supabase.co';process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='sb_publishable_fixture';process.env.SUPABASE_SECRET_KEY='sb_secret_fixture';
  const original=globalThis.fetch;let response:unknown={code:'redeemed'},calls=0,fail=false;
