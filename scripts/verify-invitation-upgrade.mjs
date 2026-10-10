@@ -36,7 +36,7 @@ function ownership() {
   assert.equal(run('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],{quiet:true}),'volo','Unexpected database owner');
   assert.equal(sql('show server_version_num;').slice(0,2),'17','PostgreSQL 17 required');
   const versions=JSON.parse(sql('select coalesce(json_agg(version order by version),\'[]\'::json) from supabase_migrations.schema_migrations;'));
-  assert.ok(versions.length>0 && versions.every(v=>['20261006040000','20261008010000','20261008020000','20261009010000','20261009020000','20261009030000','20261009040000'].includes(v)),'Unexpected migration history');
+  assert.ok(versions.length>0 && versions.every(v=>['20261006040000','20261008010000','20261008020000','20261009010000','20261009020000','20261009030000','20261009040000','20261010010000'].includes(v)),'Unexpected migration history');
 }
 ownership();
 run(process.execPath,[cli,'db','reset','--local','--version','20261006040000','--yes']);
@@ -55,7 +55,7 @@ console.log('Owned PostgreSQL 17 prior schema and three fictional fixtures confi
 run(process.execPath,[cli,'db','push','--local','--skip-vault','--yes']);
 assert.equal(sql(snapshotQuery),before,'Upgrade changed existing memberships or Auth fixture fields');
 assert.equal(sql("select to_regclass('public.invitations') is not null and to_regclass('public.invitation_send_attempts') is not null;"),'t');
-assert.deepEqual(JSON.parse(sql('select json_agg(version order by version) from supabase_migrations.schema_migrations;')),['20261006040000','20261008010000','20261008020000','20261009010000','20261009020000','20261009030000','20261009040000']);
+assert.deepEqual(JSON.parse(sql('select json_agg(version order by version) from supabase_migrations.schema_migrations;')),['20261006040000','20261008010000','20261008020000','20261009010000','20261009020000','20261009030000','20261009040000','20261010010000']);
 run(process.execPath,[cli,'test','db','--local']);
 console.log('Prior-schema upgrade, fixture preservation and database regressions passed');
 
@@ -242,10 +242,45 @@ async function redemptionRace(kind) {
     sql(`delete from public.memberships where user_id='${subject}';delete from public.invitation_setup_authorizations where invitation_id='${invitation}';delete from public.invitation_send_attempts where invitation_id='${invitation}';delete from public.invitations where id='${invitation}';delete from auth.sessions where user_id='${subject}';delete from auth.users where id='${subject}';`);
   }
 }
+
+async function passwordReservationRace() {
+ const subject=randomUUID(),invitation=randomUUID(),authSession=randomUUID(),operation=randomUUID();
+ const email=`${subject}@example.invalid`,admin='11111111-1111-4111-8111-111111111111';
+ const firstName='volo124_reservation_first',secondName='volo124_reservation_second';
+ let first,second;
+ const begin=id=>`select public.begin_invitation_completion('${id}',repeat('c',64),'${subject}','${email}','${authSession}','https://complete.example.invalid')->>'code';`;
+ try {
+  ownership();
+  sql(`insert into auth.users(id,email,email_confirmed_at) values ('${subject}','${email}',now());
+   insert into auth.sessions(id,user_id) values ('${authSession}','${subject}');
+   insert into public.invitations(id,recipient_email,auth_user_id,invited_by_user_id,status) values ('${invitation}','${email}','${subject}','${admin}','issued');
+   insert into public.invitation_send_attempts(invitation_id,invitation_version,requested_by_user_id,kind,outcome,completed_at) values ('${invitation}',1,'${admin}','initial','accepted',now());`);
+  assert.equal(sql(`select public.record_verified_invitation_setup('${subject}','${email}','${authSession}','https://complete.example.invalid',repeat('c',64),'${invitation}',1,null,null,'invite')->>'code';`),'recorded');
+  const authority=sql(`select setup_authorization_id from public.invitations where id='${invitation}';`);
+  first=session(firstName,`begin;${begin(operation)}\n\\echo winner_ready`,{hold:true});
+  await until(()=>first.ready()||first.finished(),'Password reservation did not become ready');assert.ok(first.ready());
+  second=session(secondName,begin(randomUUID()));
+  await until(()=>sql(`select exists(select 1 from pg_stat_activity w join pg_stat_activity h on h.pid=any(pg_blocking_pids(w.pid)) where w.application_name='${secondName}' and h.application_name='${firstName}' and w.wait_event_type='Lock');`)==='t'||second.finished(),'Competing password reservation never blocked');
+  assert.equal(second.finished(),false);
+  first.child.stdin.end('commit;\n');const winner=await first.done,loser=await second.done;
+  assert.equal(winner.code,0);assert.equal(loser.code,0);assert.match(winner.stdout,/^reserved$/m);assert.equal(loser.stdout.trim(),'busy');
+  assert.equal(sql(`select count(*) from public.memberships where user_id='${subject}';`),'0');
+  assert.equal(sql(`select public.reserve_invitation_resend('${randomUUID()}','${invitation}',1,'${admin}')->>'code';`),'reserved');
+  assert.equal(sql(`select public.record_invitation_password('${operation}','${invitation}',1,'${authority}',repeat('c',64),'${subject}','${email}','${authSession}','https://complete.example.invalid')->>'code';`),'denied');
+  assert.equal(sql(`select count(*) from public.memberships where user_id='${subject}';`),'0');
+  console.log('Password reservation: observed overlap, competitor busy, renewal fences stale evidence, no membership');
+ } finally {
+  first?.child.stdin.end();second?.child.stdin.end();
+  sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
+  await Promise.all([first?.done,second?.done]);
+  sql(`delete from public.invitation_setup_authorizations where invitation_id='${invitation}';delete from public.invitation_send_attempts where invitation_id='${invitation}';delete from public.invitations where id='${invitation}';delete from auth.sessions where user_id='${subject}';delete from auth.users where id='${subject}';`);
+ }
+}
+
 const raceJob=Number(sql("select jobid from cron.job where jobname='volo-invitation-confirmation-cleanup';"));
 assert.ok(Number.isSafeInteger(raceJob));
 sql(`select cron.alter_job(${raceJob},active:=false);`);
-try{await confirmationRace('accept');await confirmationRace('renew');await confirmationRace('cleanup');
+try{await passwordReservationRace();await confirmationRace('accept');await confirmationRace('renew');await confirmationRace('cleanup');
  for(const kind of ['retry','rollback','redeem_renew','renew_first','cleanup_first','redeem_cleanup'])await redemptionRace(kind);}
 finally{sql(`select cron.alter_job(${raceJob},active:=true);`);}
 

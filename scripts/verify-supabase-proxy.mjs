@@ -62,6 +62,7 @@ try {
     export default async function Page(){const client=await createServerSupabaseClient({cookieMode:'read-only'});
     const {data}=await client.auth.getUser();return <p>{'fictional-user:'+(data.user?.id||'anonymous')}</p>;}`);
   await put("app/dashboard/report.csv/page.jsx",'export {default} from "../../page";');
+  await put("app/account/complete/page.jsx",'export default function Page(){return <p>completion handler fixture</p>;}');
   await put("app/auth/confirm/page.jsx",'export default function Page(){return <p>public auth fixture</p>;}');
   await put("app/api/health/route.js",'export function GET(){return Response.json({status:"ok"});}');
   await put("public/file.svg",'<svg xmlns="http://www.w3.org/2000/svg"/>');
@@ -139,6 +140,10 @@ try {
   }
   const malformed=new Map([[key,"bad-session-json"],[key+"-code-verifier","pending"]]);
   const denied=await request("/api/private",malformed);assert.equal(denied.status,401);absorb(denied,malformed);assert.ok(!malformed.has(key));
+  const completionJar=await seed("fresh-completion");
+  const completionCalls=auth.calls.length;
+  assert.equal((await request("/account/complete",completionJar)).status,200);
+  assert.equal(auth.calls.length,completionCalls,"completion owns Auth after Origin validation; Proxy must skip it");
   const anonymousBefore=auth.calls.length;
   for(const route of ["/auth/confirm","/api/health","/file.svg"])assert.equal((await request(route,malformed)).status,200);
   assert.equal(auth.calls.length,anonymousBefore);

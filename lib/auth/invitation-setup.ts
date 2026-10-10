@@ -4,6 +4,7 @@ import {createServerSupabaseClient} from '../supabase/server.ts';
 import {createConfirmationStore} from './invitation-confirmation-store.ts';
 import {confirmationDigest,isConfirmationSecret} from './invitation-confirmation-crypto.ts';
 import {createConfirmationAuthTransport,verifyConfirmationSession} from './invitation-confirmation-auth.ts';
+import {completionCsrf} from './invitation-completion-input.ts';
 import {parseMutationOrigin} from './mutation-origin.mjs';
 export function confirmationCookieNames(origin:string){
  const url=new URL(parseMutationOrigin(origin,true)),secure=url.protocol==='https:';
@@ -21,4 +22,11 @@ export async function getVerifiedInvitationSetup():Promise<{status:'authorized';
   if(result.code!=='authorized')return {status:result.code};
   return {status:'authorized',invitationId:result.invitationId,version:result.version,authorizationId:result.authorizationId,expiresAt:result.expiresAt};
  }catch{return {status:'unavailable'};}finally{transport.close();}
+}
+
+/** VOLO-123 renders only this domain-separated value, never setup authority. */
+export async function getInvitationCompletionCsrf():Promise<string|null>{
+ try{const origin=parseMutationOrigin(process.env.VOLO_MUTATION_ORIGIN??'',true),cookie=(await cookies()).get(confirmationCookieNames(origin).setup)?.value;
+  return isConfirmationSecret(cookie)?completionCsrf(cookie):null;
+ }catch{return null;}
 }
