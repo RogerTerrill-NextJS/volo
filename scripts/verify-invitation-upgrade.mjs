@@ -207,9 +207,13 @@ async function redemptionRace(kind) {
     const expire=`update public.invitation_setup_authorizations set created_at=now()-interval '31 minutes',expires_at=now()-interval '1 minute' where id='${authority}';`;
     const snapshot=`select json_build_object('invitation',(select to_jsonb(i) from public.invitations i where id='${invitation}'),'membership',(select to_jsonb(m) from public.memberships m where user_id='${subject}'));`;
     if(kind==='cleanup_first')sql(expire);
+    // Cleanup's initial scan must see a committed expiry. Redeem while valid,
+    // then hold its transaction across that expiry before starting cleanup.
+    if(kind==='redeem_cleanup')sql(`update public.invitation_setup_authorizations set created_at=now()-interval '30 minutes'+interval '5 seconds',expires_at=now()+interval '5 seconds' where id='${authority}';`);
     const firstQuery=kind==='renew_first'?renew:kind==='cleanup_first'?'select public.cleanup_invitation_confirmation();':redeem;
-    first=session(firstName,`begin;${firstQuery}${kind==='redeem_cleanup'?expire:''}${kind==='retry'?snapshot:''}\n\\echo winner_ready`,{hold:true});
+    first=session(firstName,`begin;${firstQuery}${kind==='retry'?snapshot:''}\n\\echo winner_ready`,{hold:true});
     await until(()=>first.ready()||first.finished(),'Redemption winner did not become ready');assert.ok(first.ready(),'First transaction failed before overlap');
+    if(kind==='redeem_cleanup')await until(()=>sql(`select expires_at<=clock_timestamp() from public.invitation_setup_authorizations where id='${authority}';`)==='t','Committed authority expiry did not pass');
     assert.equal(sql(`select count(*) from public.memberships where user_id='${subject}';`),'0','Uncommitted redemption granted access');
     const secondQuery=kind==='redeem_renew'?renew:kind==='redeem_cleanup'?'select public.cleanup_invitation_confirmation();':redeem;
     second=session(secondName,secondQuery);
