@@ -224,6 +224,54 @@ try{
       const email=ownedEmail(label);check((await issue(email)).body.data?.code==='accepted','initial accepted');
       const invitation=await stack.readInvitationForEmail(email);await stack.trackIssuedSubject(invitation.auth_user_id);return {email,invitation};
     };
+    const completionFixture=async label=>{
+      const {email,invitation}=await setupRenewal(label),session=emptySession(stack);sessions.push(session);
+      const csrf=await prepareConfirmation(linkFrom((await captured(email,1))[0]),session);check((await postConfirmation(session,csrf)).status===303,'owned completion setup verified');
+      const form=await app.request('/api/completion-form',{session});privatePolicy(form);const token=(await form.json()).csrf;check(/^[a-f0-9]{64}$/.test(token),'domain separated completion CSRF');
+      return {email,invitation,session,csrf:token,password:'OwnedCompletion124!'};
+    };
+    const completionCounts=async()=>await (await app.request('/api/completion-control')).json();
+    const completionMode=mode=>app.request('/api/completion-control',{method:'POST',body:mode});
+    const postCompletion=async(f,options={})=>{
+      const response=await app.request('/account/complete',{session:options.session??f.session,method:options.method??'POST',headers:{Origin:options.origin??app.origin,'content-type':'application/x-www-form-urlencoded'},body:(options.method&&options.method!=='POST')?undefined:new URLSearchParams({password:f.password,passwordConfirmation:f.password,csrf:options.csrf??f.csrf}).toString()});
+      privatePolicy(response);await audit(response);check(response.headers.get('referrer-policy')==='no-referrer','completion referrer suppressed');return response;
+    };
+    const completionResult=(response,result)=>check(response.status===303&&response.headers.get('location')===app.origin+'/account/setup?result='+result,'fixed completion failure destination '+result);
+    await scenario('invitation_completion_native',async()=>{
+      const f=await completionFixture('completion-success'),before=(await completionCounts()).writes;
+      const retained=f.session.clone();sessions.push(retained);
+      check((await postCompletion(f,{origin:'https://foreign.invalid'})).status===403,'foreign completion Origin denied');
+      completionResult(await postCompletion(f,{csrf:'d'.repeat(64)}),'invalid_input');
+      const missing=emptySession(stack);sessions.push(missing);completionResult(await postCompletion(f,{session:missing}),'invalid_input');
+      check((await postCompletion(f,{method:'GET'})).status===405,'GET completion cannot mutate');
+      check((await completionCounts()).writes===before,'invalid completion never changes password');
+      const policy=await app.request('/api/completion-policy',{session:f.session,method:'POST'});check((await policy.json()).code==='rejected','pinned Auth weak password definitely rejected');check((await completionCounts()).providerCode==='weak_password','real weak_password provider code characterized');
+      const count=(await completionCounts()).writes,done=await postCompletion(f);check(done.status===303&&done.headers.get('location')===app.origin+'/dashboard','successful completion redirects to dashboard');
+      check(!f.session.cookieHeader().includes('volo-setup='),'success clears only setup cookie');
+      check(f.session.cookieHeader().includes('auth-token'),'success retains Auth session');
+      check((await stack.readMembership(f.invitation.auth_user_id))?.role==='member','existing redemption creates member');
+      const login=await signInSession(stack,{id:f.invitation.auth_user_id,email:f.email,password:f.password});sessions.push(login);check(login.userId===f.invitation.auth_user_id,'new password logs in same subject');
+      const replay=await postCompletion(f,{session:retained});check(replay.status===303&&replay.headers.get('location')===app.origin+'/dashboard','historical retry completes through fresh access');
+      check((await completionCounts()).writes===count+1,'historical retry does not repeat password');
+      await stack.setMembership(f.invitation.auth_user_id,{role:'member',status:'disabled'});completionResult(await postCompletion(f,{session:retained}),'access_denied');check((await completionCounts()).writes===count+1,'disabled historical retry does not change password');check((await stack.readMembership(f.invitation.auth_user_id)).status==='disabled','retry preserves disabled membership');
+      return 'Production completion route: private native POST, Origin/CSRF/input/method denial, real weak_password rejection, same-subject password login, one member, history skips Auth and disabled membership stays denied.';
+    });
+    await scenario('invitation_completion_failure_recovery',async()=>{
+      for(const mode of ['password-lost','record-lost','record-failure','redeem-lost']){
+        const f=await completionFixture('completion-'+mode),count=(await completionCounts()).writes;
+        await completionMode(mode);let response;try{response=await postCompletion(f);}finally{await completionMode('off');}
+        check((await completionCounts()).writes===count+1,'failure mode makes exactly one real password PUT');
+        if(mode==='password-lost'){
+          completionResult(response,'renew_invitation');completionResult(await postCompletion(f),'retry_later');check((await completionCounts()).writes===count+1,'unknown password response keeps reservation');check(await stack.readMembership(f.invitation.auth_user_id)===null,'unknown password grants no membership');
+        }else if(mode==='record-failure'){
+          completionResult(response,'retry_later');completionResult(await postCompletion(f),'password_rejected');check((await completionCounts()).providerCode==='same_password','real same_password provider rejection characterized');check(await stack.readMembership(f.invitation.auth_user_id)===null,'rejected same password grants no membership');
+          f.password='OwnedCompletion124Changed!';check((await postCompletion(f)).headers.get('location')===app.origin+'/dashboard','safe release allows corrected password');
+        }else if(mode==='redeem-lost'){
+          completionResult(response,'retry_later');check((await postCompletion(f)).headers.get('location')===app.origin+'/dashboard','lost redemption response resumes history');check((await completionCounts()).writes===count+1,'lost redemption retry skips password');
+        }else check(response.headers.get('location')===app.origin+'/dashboard','lost record response reconciles committed evidence');
+      }
+      return 'Real owned password PUT response loss denies without replay; committed evidence reconciles; failed recording safely releases; same_password classified; lost redemption response resumes without another password PUT.';
+    });
     await scenario('invitation_renewal_real_transports',async()=>{
       diagnosticStage='renew-unconfirmed';const {email,invitation}=await setupRenewal('renewal');
       const form=(await app.invitationForms(users.admin)).find(form=>form.kind==='renew'&&form.fields.some(([key,value])=>key==='invitationId'&&value===invitation.id));check(Boolean(form),'actual renewal form exists');
@@ -344,9 +392,10 @@ try{
         return {...observations,application:application.status===200?'accepted':'rejected',contract:'Unexpired access-token acceptance is measured separately from refresh revocation.'};
       });
       await scenario('natural_expiry',async()=>{
+        const completion=await completionFixture('expired-completion'),completionCookies=completion.session.cookieHeader();
         const started=Date.now(),valid=await fresh('A'),independent=await fresh('B'),terminated=await fresh('B'),invalid=terminated.clone();sessions.push(invalid);await terminated.signOut();
         const concurrent=[valid,valid.clone(),valid.clone()];sessions.push(...concurrent.slice(1));
-        const before=valid.cookieHeader(),wait=Math.max(valid.expiresAt,independent.expiresAt,invalid.expiresAt)*1000+2000-Date.now();check(wait>0&&wait<=180000,'bounded real expiry');
+        const before=valid.cookieHeader(),wait=Math.max(valid.expiresAt,independent.expiresAt,invalid.expiresAt,completion.session.expiresAt)*1000+2000-Date.now();check(wait>0&&wait<=180000,'bounded real expiry');
         // Short waits allow a cancellation signal to reach owned cleanup promptly.
         let remaining=wait;while(remaining>0){const step=Math.min(remaining,1000);await delay(step,undefined,{signal:cancellation.signal});remaining-=step;}
         await Promise.all([...concurrent.map(session=>({session,id:accounts.A.id})),{session:independent,id:accounts.B.id}].map(async({session,id})=>{
@@ -354,6 +403,9 @@ try{
           check(response.headers.getSetCookie().length>0&&session.cookieHeader()!==before,'Proxy persisted rotated cookies');
           const next=await read('/api/subject',{session,expectedUserId:id});check(next.status===200&&(await next.json()).userId===id,'next request identity from returned cookies');
         }));
+        const completed=await postCompletion(completion);check(completed.headers.get('location')===app.origin+'/dashboard','expired completion session refreshes through writable handler');
+        check(completed.headers.getSetCookie().some(v=>v.includes('auth-token'))&&completion.session.cookieHeader()!==completionCookies,'completion persists refreshed Auth cookies');
+        const admitted=await app.request('/api/subject',{session:completion.session});check(admitted.status===200&&(await admitted.json()).userId===completion.invitation.auth_user_id,'next request admits same completion subject from returned cookies');
         const bad=await read('/api/subject',{session:invalid});privatePolicy(bad);if(bad.status!==401){const observed=await invalid.probeRetainedCredentials();check(false,`expired invalid refresh denied (HTTP ${bad.status}; real refresh ${observed.refreshStatus??0}/${observed.refreshCode??observed.refresh})`);}await deny('json',invalid);check(Date.now()-started<=240000,'expiry scenario deadline');
         return {accessLifetimeSeconds:120,waitBoundSeconds:180,scenarioBoundSeconds:240};
       });
