@@ -140,3 +140,55 @@ production publication remain separate activation/release gates. Setup UI,
 password/membership activation and ordinary recovery stay with downstream
 owners. The executor checked this documentation against observed evidence;
 functional review covered the immutable implementation range.
+
+## VOLO-126 account signup handoff
+
+On October 10, 2026, the reviewed [PR #37](https://github.com/RogerTerrill-NextJS/volo/pull/37)
+passed all three application/database/real-Auth CI jobs at
+`6a4296ea0d3fb5e2a8d932837c1239b7082262af` and merged into `main` as
+`f7b63e272c43a5aeb33c07efe659cd23890569fa`. The implemented signup interfaces,
+fixed destinations and failure/retry behavior are in
+[auth callbacks](auth-callbacks.md#implemented-account-setup-handoff-volo-123124125).
+The approved activation/persistence contracts remain authoritative.
+
+| Evidence | Exact result and limit |
+| --- | --- |
+| [Application CI](https://github.com/RogerTerrill-NextJS/volo/actions/runs/38072616412/job/114272990214) | Passed typecheck, lint, default build, tests and compiled boundaries. |
+| [Database CI](https://github.com/RogerTerrill-NextJS/volo/actions/runs/38072616412/job/114272990120) | Passed rebuild/access-policy job; local/disposable database evidence. |
+| [Real Auth CI](https://github.com/RogerTerrill-NextJS/volo/actions/runs/38072616412/job/114272990233) | Passed the existing disposable Auth integration job. Reuses VOLO-125's 30-scenario local evidence; no new handoff harness or full-suite rerun. |
+| [Netlify deploy](https://app.netlify.com/projects/voloapp/deploys/6aca7844a11c5500083829e2) | Ready for the exact implementation commit above; [numbered preview](https://deploy-preview-37--voloapp.netlify.app). |
+| Anonymous preview smoke | All eight existing HTTP tests passed once against that preview: public home/login, dashboard HTML/RSC denial, health methods and nested 404s. No Auth/app-data writes. |
+| Hosted signup/browser acceptance | Pending; anonymous smoke does not prove email, token confirmation, password setup, authenticated cookies or membership activation on hosted services. |
+| Production release | Pending explicit release request and separate production verification. Merge/preview success does not establish a production deployment. |
+
+The smoke used `SMOKE_BASE_URL=https://deploy-preview-37--voloapp.netlify.app node --test tests/smoke.test.mjs`
+from the merged implementation tree. It starts no server or deployment, uses no
+credentials and sends only the existing public-route checks (including the health
+endpoint's unsupported POST). The local VOLO-125 RSC check failed once before a
+strict unchanged rerun passed; its cause remains unconfirmed and is retained in
+the [verification note](volo-125-verification.md).
+
+### Hosted checklist handed to VOLO-110
+
+1. Select a current reviewed PR revision and verify its exact deploy/commit.
+   PR #37 supplies historical evidence; it is closed. VOLO-107 owns the exact
+   `/auth/confirm` entry and valid/invalid redirect evidence. No wildcard entries.
+2. Before enabling email links, verify hosted migrations/restricted RPC grants,
+   confirmation runtime keys, cleanup scheduling and successful executions,
+   server-pinned origin, Auth admission settings, templates/SMTP and ingress
+   exclusion of `token_hash`/`resume`. These prerequisites remain unverified by
+   this handoff; use the [existing configuration gate](environment-configuration.md#invitation-confirmation-keys-and-cleanup-volo-122).
+3. Obtain the separately approved hosted account, recipient, exact destination
+   and bounded writes. Then check invite → explicit acceptance → password setup
+   → fresh member access, safe expired/reused/invalid denial, renewal and cookie/
+   cache behavior. Record sanitized outcomes and deploy IDs, never credentials.
+4. Track login/logout/Router Cache under VOLO-22, ordinary recovery/mail under
+   VOLO-23, and deferred Netlify storage/Age investigation under VOLO-120. Keep
+   those tickets open until their own acceptance evidence exists.
+5. Keep production publishing locked. Publish only an explicitly requested batch,
+   verify the production callback/release separately, and retire preview allowlist
+   entries when review closes. Previews share production Supabase; there is no
+   staging environment or isolated hosted write-test backend.
+
+VOLO-126 changes documentation only. It does not modify hosted settings, send
+emails, write accounts/data, add a deployment or mark dependent tickets complete.

@@ -106,26 +106,28 @@ destructive refresh/logout probes from contaminating other cases. Bodies,
 non-cookie headers, browser assets and captured logs are scanned for credential
 canaries; intentional Set-Cookie transport stays in memory.
 
-Implementation-time local evidence: controller/cookie tests and the anonymous
-compiled fixture passed on this Mac. Real services require CI because Docker is
-unavailable here; only an exact-head successful integration job establishes the
-real matrix. Consult the PR checks and sanitized summary for current results.
+Historical VOLO-119 evidence used CI while Docker was unavailable on this Mac.
+For VOLO-125, Docker was available: all 30 real Auth scenarios passed locally,
+and exact-commit CI also passed. Consult the [VOLO-125 evidence](volo-125-verification.md)
+and [VOLO-126 readiness record](preview-verification.md#volo-126-account-signup-handoff)
+for commit/job links and the separate hosted evidence limits.
 
 ## Remaining feature work
 
-VOLO-125 will extend this same stack and compiled app for the full invitation
+VOLO-125 extended this same stack and compiled app for the invitation
 matrix, including successful invited activation, provider/setup expiry, wrong
 identity/version, resend/replay and atomic redemption. VOLO-147 proves admission
 configuration and identity/metadata isolation only; it does not prove those
-future flows or deploy settings to the shared hosted project.
+flows by itself or deploy settings to the shared hosted project.
 
 The approved [invitation activation contract](superpowers/specs/2026-10-07-volo-121-invitation-contract-design.md)
 coordinates VOLO-21's implementation subtasks with invitation persistence,
 admission, issuance and redemption under VOLO-27/28/29/30. Invitations are
 email-specific and have no application expiry; provider links/setup sessions
 remain time-limited. Issuance is admin-only for the MVP, with member invitations
-reserved for future work. Callback implementation and local schema/admission/
-redemption are still downstream; hosted callback activation remains VOLO-107.
+reserved for future work. Invitation confirmation, password setup and local
+schema/admission/redemption are implemented. Hosted callback activation remains
+VOLO-107; local implementation does not close its hosted verification gate.
 
 - [VOLO-21](https://outsidethecockpit.atlassian.net/browse/VOLO-21): invitation-gated session establishment and admission.
 - [VOLO-22](https://outsidethecockpit.atlassian.net/browse/VOLO-22): login/logout UI, supported Router Cache invalidation and fresh session-change navigation.
@@ -162,6 +164,21 @@ attempts. Tokens, sessions and raw resume secrets stay in memory and leak scans.
 
 Initial issuance uses invite transport. Confirmed invitation subjects use recovery
 transport only with a matching single-use resend proof; ordinary recovery remains
-separate. Future VOLO-122 must compose proof consumption and setup creation in
-one transaction. No public confirmation or setup route exists yet. Lost original
+separate. VOLO-122 composes proof consumption and setup creation in
+one transaction, and VOLO-123 supplies the public setup page. Lost original
 provider evidence cannot be reconstructed from account state or timestamps.
+
+## Signup lifecycle and bypass coverage (VOLO-125)
+
+The existing real-service job covers confirmation, native password completion,
+membership redemption and a fresh protected request. It rejects borrowed setup
+cookies across subjects/sessions, changed recipient emails, terminal/stale grants,
+ordinary recovery without proof and direct public signup. Concurrency proves one
+provider password update and one redeemed member; duplicates do not update the
+password again. Owned timestamp fixtures prove provider/setup expiry independently
+of invitation age. Existing SQL tests establish transaction and permission behavior.
+
+No second harness or handoff rerun is required. The implemented interfaces and
+safe retry outcomes are in [auth callbacks](auth-callbacks.md#implemented-account-setup-handoff-volo-123124125).
+Hosted browser/email/allowlist and authenticated CDN acceptance remain pending
+under VOLO-107/110; anonymous preview smoke cannot establish them.
