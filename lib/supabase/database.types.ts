@@ -58,13 +58,13 @@ isOneToOne: true
                   ]
                 },"invitation_setup_authorizations": {
                   Row: {
-                    "created_at": string,"expires_at": string,"id": string,"invitation_id": string,"invitation_version": number,"lookup_digest": string,"origin": string,"session_id": string,"verified_user_id": string
+                    "created_at": string,"expires_at": string,"id": string,"invitation_id": string,"invitation_version": number,"lookup_digest": string,"origin": string,"password_operation_id": string | null,"password_started_at": string | null,"session_id": string,"verified_user_id": string
                   }
                   Insert: {
-                    "created_at"?: string,"expires_at": string,"id"?: string,"invitation_id": string,"invitation_version": number,"lookup_digest": string,"origin": string,"session_id": string,"verified_user_id": string
+                    "created_at"?: string,"expires_at": string,"id"?: string,"invitation_id": string,"invitation_version": number,"lookup_digest": string,"origin": string,"password_operation_id"?: string | null,"password_started_at"?: string | null,"session_id": string,"verified_user_id": string
                   }
                   Update: {
-                    "created_at"?: string,"expires_at"?: string,"id"?: string,"invitation_id"?: string,"invitation_version"?: number,"lookup_digest"?: string,"origin"?: string,"session_id"?: string,"verified_user_id"?: string
+                    "created_at"?: string,"expires_at"?: string,"id"?: string,"invitation_id"?: string,"invitation_version"?: number,"lookup_digest"?: string,"origin"?: string,"password_operation_id"?: string | null,"password_started_at"?: string | null,"session_id"?: string,"verified_user_id"?: string
                   }
                   Relationships: [
                     {
@@ -113,7 +113,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "bind_invitation_send_subject":
+            "begin_invitation_completion":
+{ Args: { "p_email": string,"p_operation_id": string,"p_origin": string,"p_session_id": string,"p_setup_digest": string,"p_subject": string }; Returns: Json
+                           },
+"bind_invitation_send_subject":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_subject_id": string }; Returns: Json
                            },
 "claim_invitation_confirmation_transport":
@@ -140,6 +143,9 @@ isOneToOne: false
 "reconcile_invitation_send":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_outcome": string,"p_requester_id": string,"p_subject_id": string }; Returns: Json
                            },
+"record_invitation_password":
+{ Args: { "p_email": string,"p_expected_version": number,"p_invitation_id": string,"p_operation_id": string,"p_origin": string,"p_session_id": string,"p_setup_authorization_id": string,"p_setup_digest": string,"p_subject": string }; Returns: Json
+                           },
 "record_invitation_send_outcome":
 { Args: { "p_attempt_id": string,"p_error_code": string,"p_expected_version": number,"p_outcome": string,"p_subject_id": string }; Returns: Json
                            },
@@ -148,6 +154,9 @@ isOneToOne: false
                            },
 "redeem_invitation":
 { Args: { "p_email": string,"p_expected_version": number,"p_invitation_id": string,"p_origin": string,"p_session_id": string,"p_setup_authorization_id": string,"p_setup_digest": string,"p_subject": string }; Returns: Json
+                           },
+"release_invitation_password":
+{ Args: { "p_email": string,"p_expected_version": number,"p_invitation_id": string,"p_operation_id": string,"p_origin": string,"p_session_id": string,"p_setup_authorization_id": string,"p_setup_digest": string,"p_subject": string }; Returns: Json
                            },
 "reserve_invitation_resend":
 { Args: { "p_expected_version": number,"p_invitation_id": string,"p_operation_id": string,"p_requester_id": string }; Returns: Json

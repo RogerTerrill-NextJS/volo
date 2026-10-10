@@ -24,7 +24,7 @@ insert into public.invitations(id,recipient_email,auth_user_id,invited_by_user_i
 insert into public.invitation_send_attempts(invitation_id,invitation_version,requested_by_user_id,kind,outcome,completed_at) values
  ('33000000-0000-4000-8000-000000000124',1,'11000000-0000-4000-8000-000000000124','initial','accepted',now());
 select is(public.record_verified_invitation_setup('22000000-0000-4000-8000-000000000124','completion@example.invalid','55000000-0000-4000-8000-000000000124','https://complete.example.invalid',repeat('c',64),'33000000-0000-4000-8000-000000000124',1,null,null,'invite')->>'code','recorded','fixture establishes real setup');
-create function pg_temp.authority() returns uuid language sql as $$ select setup_authorization_id from public.invitations where id='33000000-0000-4000-8000-000000000124'; $$;
+create function pg_temp.authority() returns uuid language sql as $$ select id from public.invitation_setup_authorizations where invitation_id='33000000-0000-4000-8000-000000000124'; $$;
 create function pg_temp.snapshot() returns jsonb language sql as $$ select jsonb_build_object(
  'invitation',(select to_jsonb(i) from public.invitations i where id='33000000-0000-4000-8000-000000000124'),
  'authority',(select to_jsonb(a) from public.invitation_setup_authorizations a where invitation_id='33000000-0000-4000-8000-000000000124'),
@@ -70,6 +70,10 @@ rollback to denied_fixture;
 savepoint denied_fixture;
 insert into public.memberships(user_id,role,status,disabled_at,disabled_reason) values ('22000000-0000-4000-8000-000000000124','member','disabled',now(),'Owned fixture');
 select * from pg_temp.reject_begin('disabled membership');
+rollback to denied_fixture;
+savepoint denied_fixture;
+insert into public.memberships(user_id,role,status) values ('22000000-0000-4000-8000-000000000124','admin','active');
+select * from pg_temp.reject_begin('existing active admin membership');
 rollback to denied_fixture;
 set local role service_role;
 select is(public.begin_invitation_completion('77000000-0000-4000-8000-000000000124',repeat('c',64),'22000000-0000-4000-8000-000000000124','completion@example.invalid','55000000-0000-4000-8000-000000000124','https://complete.example.invalid')->>'code','reserved','server reserves an old eligible invitation');
