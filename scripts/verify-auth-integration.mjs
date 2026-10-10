@@ -233,17 +233,20 @@ try{
     const completionCounts=async()=>await (await app.request('/api/completion-control')).json();
     const completionMode=mode=>app.request('/api/completion-control',{method:'POST',body:mode});
     const postCompletion=async(f,options={})=>{
-      const response=await app.request('/account/complete',{session:options.session??f.session,method:options.method??'POST',headers:{Origin:options.origin??app.origin,'content-type':'application/x-www-form-urlencoded'},body:(options.method&&options.method!=='POST')?undefined:new URLSearchParams({password:f.password,passwordConfirmation:f.password,csrf:options.csrf??f.csrf}).toString()});
+      const response=await app.request(options.route??'/account/complete',{session:options.session??f.session,method:options.method??'POST',headers:{Origin:options.origin??app.origin,'content-type':'application/x-www-form-urlencoded'},body:(options.method&&options.method!=='POST')?undefined:options.body??new URLSearchParams({password:f.password,passwordConfirmation:f.password,csrf:options.csrf??f.csrf}).toString()});
       privatePolicy(response);await audit(response);check(response.headers.get('referrer-policy')==='no-referrer','completion referrer suppressed');return response;
     };
     const completionResult=(response,result)=>check(response.status===303&&response.headers.get('location')===app.origin+'/account/setup?result='+result,'fixed completion failure destination '+result);
     await scenario('invitation_completion_native',async()=>{
-      const f=await completionFixture('completion-success'),before=(await completionCounts()).writes;
+      const f=await completionFixture('completion-success'),initialCounts=await completionCounts(),before=initialCounts.writes;
       const retained=f.session.clone();sessions.push(retained);
       check((await postCompletion(f,{origin:'https://foreign.invalid'})).status===403,'foreign completion Origin denied');
       completionResult(await postCompletion(f,{csrf:'d'.repeat(64)}),'invalid_input');
       const missing=emptySession(stack);sessions.push(missing);completionResult(await postCompletion(f,{session:missing}),'invalid_input');
       check((await postCompletion(f,{method:'GET'})).status===405,'GET completion cannot mutate');
+      completionResult(await postCompletion(f,{route:'/account/complete?next=https://foreign.invalid'}),'invalid_input');
+      completionResult(await postCompletion(f,{body:new URLSearchParams({password:f.password,passwordConfirmation:'different-password',csrf:f.csrf}).toString()}),'invalid_input');
+      check((await completionCounts()).authReads===initialCounts.authReads,'Origin/CSRF/input/method checks run before any Auth reads or refresh');
       check((await completionCounts()).writes===before,'invalid completion never changes password');
       const policy=await app.request('/api/completion-policy',{session:f.session,method:'POST'});check((await policy.json()).code==='rejected','pinned Auth weak password definitely rejected');check((await completionCounts()).providerCode==='weak_password','real weak_password provider code characterized');
       const count=(await completionCounts()).writes,done=await postCompletion(f);check(done.status===303&&done.headers.get('location')===app.origin+'/dashboard','successful completion redirects to dashboard');
@@ -366,7 +369,7 @@ try{
       });
       await scenario('parallel_identity_isolation',async()=>{
         const exercise=async(label)=>{const session=label?users[label]:undefined;
-          for(const headers of [{Accept:'text/html'},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){const {response,body}=await page(session,headers);privatePolicy(response);if(session&&!headers['Next-Router-Prefetch'])check(body.includes(accounts[label].id),headers.RSC?'own navigation RSC subject':'own HTML subject');if(!session)check(!/subject:/.test(body),'anonymous private content');}
+          for(const headers of [{Accept:'text/html'},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){const {response,body}=await page(session,headers);privatePolicy(response);if(session&&!headers['Next-Router-Prefetch'])check(body.includes(accounts[label].id),`${headers.RSC?'own navigation RSC subject':'own HTML subject'} (HTTP ${response.status}; session ${session.expiresAt*1000>Date.now()?'unexpired':'expired'}; login ${body.includes('/login?reason=authentication-required')}; unavailable ${body.includes('unavailable')})`);if(!session)check(!/subject:/.test(body),'anonymous private content');}
           const response=await read('/api/subject',{session});privatePolicy(response);check(response.status===(session?200:401),'isolated JSON status');
         };
         for(const label of ['A','B',null,'B','A',null])await exercise(label);
