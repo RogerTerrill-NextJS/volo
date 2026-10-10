@@ -437,7 +437,12 @@ try{
         check((await stack.readInvitationForEmail(email)).version===1,'forged UI action cannot renew');await captured(email,1);
       }
       const foreign=await app.invitationAction(form,{session:users.admin,origin:'https://foreign.invalid'});await audit(foreign,accounts.admin.id);check((await stack.readInvitationForEmail(email)).version===1,'foreign origin cannot renew');await captured(email,1);
-      const sent=await app.invitationAction(form,{session:users.admin,transport:'fetched'});privatePolicy(sent);await audit(sent,accounts.admin.id);check((await sent.text()).includes('Accepted for sending'),'actual fetched UI renewal accepted');
+      const sent=await app.invitationAction(form,{session:users.admin,transport:'fetched'});privatePolicy(sent);await audit(sent,accounts.admin.id);const sentBody=await sent.text();
+      const renewalFeedback=['Authentication required.','Access denied.','Access service unavailable.','Invalid input.','Unable to complete request.','Send failed.','The invitation changed','Needs review.','Unable to complete the request.'].find(message=>sentBody.includes(message))??'unrecognized';
+      const renewalAttempt=(await stack.readSendAttempts(invitation.id)).find(attempt=>attempt.invitation_version===2);
+      const renewalOutcome=['started','accepted','rejected','unknown'].includes(renewalAttempt?.outcome)?renewalAttempt.outcome:'none';
+      const renewalError=['timeout','provider_rejected','rate_limited','provider_unavailable','identity_conflict','unknown'].includes(renewalAttempt?.error_code)?renewalAttempt.error_code:'none';
+      check(sentBody.includes('Accepted for sending'),`actual fetched UI renewal accepted (HTTP ${sent.status}; feedback ${renewalFeedback}; session ${users.admin.expiresAt*1000>Date.now()?'unexpired':'expired'}; attempt ${renewalOutcome}/${renewalError})`);
       const stale=await app.invitationAction(form,{session:users.admin});privatePolicy(stale);await audit(stale,accounts.admin.id);check((await stale.text()).includes('invitation changed'),'stale UI retry explains conflict');await captured(email,2);
       let row=await stack.readInvitationForEmail(email);check(row.version===2&&row.auth_user_id===invitation.auth_user_id&&row.invited_by_user_id===invitation.invited_by_user_id,'same subject and inviter, next version');
       const messages=await captured(email,2);const html=messages.find(m=>linkFrom(m).searchParams.has('resume'));check(Boolean(html),'resend proof retained');
