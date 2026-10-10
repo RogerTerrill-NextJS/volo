@@ -185,10 +185,64 @@ async function confirmationRace(kind) {
     sql(`delete from public.invitation_setup_authorizations where invitation_id='${invitation}';delete from public.invitation_send_proofs where attempt_id in ('${attempt}','${renewOperation}');delete from public.invitation_send_attempts where invitation_id='${invitation}';delete from public.invitations where id='${invitation}';delete from auth.sessions where user_id='${subject}';delete from auth.users where id='${subject}';`);
   }
 }
+// VOLO-153: only the missing real-overlap cases; sequential denial and rollback
+// coverage stays in invitation_redemption.test.sql.
+async function redemptionRace(kind) {
+  const subject=randomUUID(),invitation=randomUUID(),authSession=randomUUID(),operation=randomUUID();
+  const email=`${subject}@example.invalid`,origin='https://redeem.example.invalid';
+  const admin='11111111-1111-4111-8111-111111111111';
+  const firstName=`volo153_${kind}_first`,secondName=`volo153_${kind}_second`;
+  let first,second;
+  try {
+    ownership();
+    sql(`insert into auth.users(id,email,email_confirmed_at) values ('${subject}','${email}',now());
+      insert into auth.sessions(id,user_id) values ('${authSession}','${subject}');
+      insert into public.invitations(id,recipient_email,auth_user_id,invited_by_user_id,status) values ('${invitation}','${email}','${subject}','${admin}','issued');
+      insert into public.invitation_send_attempts(invitation_id,invitation_version,requested_by_user_id,kind,outcome,completed_at) values ('${invitation}',1,'${admin}','initial','accepted',now());`);
+    assert.equal(sql(`select public.record_verified_invitation_setup('${subject}','${email}','${authSession}','${origin}',repeat('d',64),'${invitation}',1,null,null,'invite')->>'code';`),'recorded');
+    sql(`update public.invitations set status='password_established',password_established_at=clock_timestamp(),updated_at=clock_timestamp() where id='${invitation}';`);
+    const authority=sql(`select setup_authorization_id from public.invitations where id='${invitation}';`);
+    const redeem=`select public.redeem_invitation('${invitation}',1,'${authority}',repeat('d',64),'${subject}','${email}','${authSession}','${origin}')->>'code';`;
+    const renew=`select public.reserve_invitation_resend('${operation}','${invitation}',1,'${admin}')->>'code';`;
+    const expire=`update public.invitation_setup_authorizations set created_at=now()-interval '31 minutes',expires_at=now()-interval '1 minute' where id='${authority}';`;
+    const snapshot=`select json_build_object('invitation',(select to_jsonb(i) from public.invitations i where id='${invitation}'),'membership',(select to_jsonb(m) from public.memberships m where user_id='${subject}'));`;
+    if(kind==='cleanup_first')sql(expire);
+    const firstQuery=kind==='renew_first'?renew:kind==='cleanup_first'?'select public.cleanup_invitation_confirmation();':redeem;
+    first=session(firstName,`begin;${firstQuery}${kind==='redeem_cleanup'?expire:''}${kind==='retry'?snapshot:''}\n\\echo winner_ready`,{hold:true});
+    await until(()=>first.ready()||first.finished(),'Redemption winner did not become ready');assert.ok(first.ready(),'First transaction failed before overlap');
+    assert.equal(sql(`select count(*) from public.memberships where user_id='${subject}';`),'0','Uncommitted redemption granted access');
+    const secondQuery=kind==='redeem_renew'?renew:kind==='redeem_cleanup'?'select public.cleanup_invitation_confirmation();':redeem;
+    second=session(secondName,secondQuery);
+    await until(()=>sql(`select exists(select 1 from pg_stat_activity w join pg_stat_activity h on h.pid=any(pg_blocking_pids(w.pid)) where w.application_name='${secondName}' and h.application_name='${firstName}' and w.wait_event_type='Lock');`)==='t'||second.finished(),'Redemption race did not overlap');
+    assert.equal(second.finished(),false,'Competing operation must wait on the first transaction');
+    first.child.stdin.end(kind==='rollback'?'rollback;\n':'commit;\n');
+    const winner=await first.done,loser=await second.done;
+    assert.equal(winner.code,0,'First transaction failed');assert.equal(loser.code,0,'Competing operation failed');
+    const expected={retry:'already_redeemed',rollback:'redeemed',redeem_renew:'stale',renew_first:'conflict',cleanup_first:'conflict',redeem_cleanup:''};
+    assert.equal(loser.stdout.trim(),expected[kind]);
+    if(kind==='renew_first'||kind==='cleanup_first'){
+      assert.equal(sql(`select count(*) from public.memberships where user_id='${subject}';`),'0');
+      assert.equal(sql(`select status::text||':'||version||':'||(redeemed_at is null)::text from public.invitations where id='${invitation}';`),kind==='renew_first'?'pending_issuance:2:true':'issued:1:true');
+    }else{
+      assert.equal(sql(`select count(*) from public.memberships where user_id='${subject}' and role='member' and status='active';`),'1');
+      assert.equal(sql(`select status='redeemed' and redeemed_at>=password_established_at from public.invitations where id='${invitation}';`),'t');
+      if(kind==='retry')assert.equal(sql(snapshot),winner.stdout.trim().split('\n')[1],'Concurrent identical retry changed completion records');
+      if(kind==='redeem_cleanup')assert.equal(sql(`select count(*) from public.invitation_setup_authorizations where id='${authority}';`),'0','Cleanup failed to remove expired completion context');
+    }
+    assert.equal(winner.stdout.trim().split('\n')[0],kind==='renew_first'?'reserved':kind==='cleanup_first'?'winner_ready':'redeemed');
+    console.log(`Redemption ${kind}: observed PostgreSQL lock overlap, no access before commit, final invariant preserved`);
+  }finally{
+    first?.child.stdin.end();second?.child.stdin.end();
+    sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
+    await Promise.all([first?.done,second?.done]);
+    sql(`delete from public.memberships where user_id='${subject}';delete from public.invitation_setup_authorizations where invitation_id='${invitation}';delete from public.invitation_send_attempts where invitation_id='${invitation}';delete from public.invitations where id='${invitation}';delete from auth.sessions where user_id='${subject}';delete from auth.users where id='${subject}';`);
+  }
+}
 const raceJob=Number(sql("select jobid from cron.job where jobname='volo-invitation-confirmation-cleanup';"));
 assert.ok(Number.isSafeInteger(raceJob));
 sql(`select cron.alter_job(${raceJob},active:=false);`);
-try{await confirmationRace('accept');await confirmationRace('renew');await confirmationRace('cleanup');}
+try{await confirmationRace('accept');await confirmationRace('renew');await confirmationRace('cleanup');
+ for(const kind of ['retry','rollback','redeem_renew','renew_first','cleanup_first','redeem_cleanup'])await redemptionRace(kind);}
 finally{sql(`select cron.alter_job(${raceJob},active:=true);`);}
 
 // Accelerate only this disposable database's existing named job, then restore
