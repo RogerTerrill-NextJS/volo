@@ -24,6 +24,13 @@ Expiry/age fixtures backdate owned local timestamps rather than waiting 30 minut
 
 One existing parallel-identity RSC check failed once, then passed unchanged on
 the diagnostic rerun. Its cause remains unconfirmed; the strict assertion is
-retained. CI must still pass on the PR. Hosted acceptance, browser usability,
+retained. All three jobs in [CI run 38072616412](https://github.com/RogerTerrill-NextJS/volo/actions/runs/38072616412)
+passed for commit `6a4296ea0d3fb5e2a8d932837c1239b7082262af`, merged by
+[PR #37](https://github.com/RogerTerrill-NextJS/volo/pull/37) as
+`f7b63e272c43a5aeb33c07efe659cd23890569fa`. A passing CI run does not explain
+the earlier isolated RSC failure. Hosted acceptance, browser usability,
 Netlify CDN behavior and production release verification remain separate work.
 No hosted writes, migrations or product behavior changes are included.
+
+See the [VOLO-126 handoff](preview-verification.md#volo-126-account-signup-handoff)
+for the exact preview smoke result and remaining hosted prerequisites.

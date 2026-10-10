@@ -2,7 +2,8 @@
 
 VOLO-107 uses exact callback URLs for local development, production, and
 individually reviewed Netlify Deploy Previews. There is no staging environment.
-This is the approved configuration plan, not evidence of working authentication.
+Hosted configuration remains a separately approved operation. Implemented local
+signup and exact-preview evidence are recorded below.
 
 ## Current state
 
@@ -12,26 +13,36 @@ The hosted Supabase URL Configuration was inspected on October 6, 2026:
 - Redirect URLs: empty.
 - No changes were made to hosted Auth settings.
 
-The app has typed Supabase SDK clients and Proxy session refresh. It has no
-invitation/reset callback or completed user-facing authentication flow.
-VOLO-21 supplies invitation-gated account establishment, VOLO-23 supplies reset
-flows and hosted mail delivery, and VOLO-24 supplies request-scoped session
-handling. Those tickets block VOLO-107's end-to-end verification. VOLO-107 stays
+The invitation confirmation, password setup and atomic membership redemption
+flow is implemented and tested with disposable real Auth. Public `/login` still
+shows a placeholder; VOLO-22 owns login/logout, and VOLO-23 owns ordinary recovery
+and configured mail delivery. Local signup evidence does not establish hosted
+enablement. VOLO-107 stays
 In Progress until configuration and valid/invalid redirect tests are complete;
 its documentation PR alone does not complete the ticket or VOLO-110.
 
 Local `supabase/config.toml` currently uses Site URL `http://127.0.0.1:3000`
 and additional redirect `http://localhost:3000`. It has not yet been changed to
-the callback contract below. Local configuration does not update hosted Auth.
+the callback contract below. The owned integration harness overrides its copied
+configuration with its exact loopback `/auth/confirm` callback; the checked-in
+developer config still needs the two entries below for manual callback testing.
+Local configuration does not update hosted Auth.
 
-## Exact destinations to configure when the route exists
+## Exact destinations handed to VOLO-107
 
 | Auth service | Application | Required callback entry | Status |
 | --- | --- | --- | --- |
-| Local Supabase | Local app on localhost | `http://localhost:3000/auth/confirm` | Pending implementation and local config update |
-| Local Supabase | Local app on loopback IP | `http://127.0.0.1:3000/auth/confirm` | Pending implementation and local config update |
+| Local Supabase | Local app on localhost | `http://localhost:3000/auth/confirm` | Route implemented; manual local config update pending |
+| Local Supabase | Local app on loopback IP | `http://127.0.0.1:3000/auth/confirm` | Route implemented; manual local config update pending |
 | Hosted Supabase | Production | `https://voloapp.netlify.app/auth/confirm` | Pending route release and hosted configuration |
 | Hosted Supabase | One approved PR preview | `https://deploy-preview-<PR-number>--voloapp.netlify.app/auth/confirm` | Pattern for an exact entry; replace with a reviewed PR number before adding |
+
+VOLO-126 verified anonymous routing on PR #37 at commit
+`6a4296ea0d3fb5e2a8d932837c1239b7082262af`. Its exact callback candidate is
+`https://deploy-preview-37--voloapp.netlify.app/auth/confirm`; this is a handoff,
+not approval or evidence that hosted Auth allows it. PR #37 is closed, so use a
+current reviewed PR for any later authenticated review and retire closed entries.
+See [exact-preview evidence and hosted checklist](preview-verification.md#volo-126-account-signup-handoff).
 
 The callback path is `/auth/confirm`, without a trailing slash. Preserve the
 production Site URL as the default; do not point it at a PR. Normally use local
@@ -93,7 +104,7 @@ an admin resend can renew the link for the same eligible invitation. MVP sending
 is active-admin-only. Member invitations are future work, with issuer permissions
 kept separate from the recipient's member role.
 
-The planned `/auth/confirm` GET/HEAD does not verify or consume the invitation.
+The implemented `/auth/confirm` GET/HEAD does not verify or consume the invitation.
 An explicit origin/CSRF-checked acceptance POST verifies the recorded provider type, persists
 session cookies and creates server-owned setup authorization bound to the user,
 session and invitation version. Token transport stays in short-lived secret
@@ -107,8 +118,8 @@ memberships are not reset or re-enabled by acceptance. Provider operations and
 cookie delivery are outside that transaction; ambiguity leaves access denied
 and follows the documented reconciliation/retry path. Ordinary recovery stays separate. An invitation resend for a confirmed bound
 subject may use `type=recovery` only with the current invitation-specific proof
-described below. These are implementation requirements for
-VOLO-122/124/27/28/29/30, not evidence that those flows currently exist.
+described below. The invitation branch is implemented; ordinary recovery and
+hosted acceptance remain separate work.
 
 Invitation and recovery emails must land at the approved origin's
 `/auth/confirm`. The auth implementation must coordinate its `redirectTo`,
@@ -187,9 +198,9 @@ acceptance, not delivery. Started/unknown attempts block another send until
 VOLO-149 reconciliation.
 
 The checked-in **local** invite template links directly to the exact application
-`/auth/confirm?token_hash=…&type=invite` using the server-pinned origin. The local
-harness captures mail without fetching the link. VOLO-122 will implement explicit
-acceptance; GET/HEAD must not consume the token or establish a session. Application
+`/auth/confirm?flow=invitation&token_hash=…&type=invite` using the server-pinned origin. The local
+harness captures mail and explicitly accepts the link in its owned local app;
+GET/HEAD do not consume the token or establish a session. Application
 invitations have no age-based expiry, while provider tokens remain finite.
 
 Hosted enablement still requires separate approval for the matching email template,
@@ -210,10 +221,9 @@ must never substitute for provider verification or proof. Future ordinary recove
 must supply its fixed callback with a non-secret query marker too, such as
 `?flow=recovery`; ordinary recovery still requires no invitation proof.
 
-VOLO-122 must verify the actual provider token and exact subject/email, then
-consume the matching current-generation proof **in the same SQL transaction**
-that creates setup authorization. This ticket supplies the consumption primitive,
-not a public callback or setup route. An ordinary recovery session, client-selected
+VOLO-122 verifies the actual provider token and exact subject/email, then
+consumes the matching current-generation proof **in the same SQL transaction**
+that creates setup authorization. An ordinary recovery session, client-selected
 type, absent/reused proof or an old version cannot grant invitation authority.
 GET/HEAD must not consume either token or proof. All query secrets require ingress
 redaction and short-lived protected transport state before hosted activation.
@@ -252,7 +262,7 @@ and binds the subject/email/session to the current invitation. Current resend
 proof consumption and setup authority creation share one locked transaction.
 Successful POST persists Auth cookies, sets a distinct opaque setup cookie and
 redirects only to `/account/setup`. It grants no membership or admin access.
-VOLO-123 owns the setup page; VOLO-124 owns password/activation behavior.
+VOLO-123 supplies the setup page; VOLO-124 supplies password/activation behavior.
 
 Downstream server code calls `getVerifiedInvitationSetup()` from
 `lib/auth/invitation-setup.ts`. Its minimal authorized result includes invitation
@@ -271,3 +281,41 @@ same form. Missing configuration/service outages produce safe temporary failure.
 Hosted activation stays gated on the key/cleanup/ingress-log prerequisites in
 [environment configuration](environment-configuration.md). Local disposable CI
 is the only environment used for provider/database writes in VOLO-122.
+
+### Implemented account setup handoff (VOLO-123/124/125)
+
+`GET /account/setup` calls `getVerifiedInvitationSetup()` and exposes the native
+password form only with fresh, matching setup authority. A signed-out visitor
+goes to `/login?reason=authentication-required`; an existing active member goes
+to `/dashboard?from=account-setup`. Other denied visitors see “Invitation required”;
+an unavailable check offers retry without granting access.
+
+The form posts `password`, `passwordConfirmation` and setup-bound `csrf` to
+`POST /account/complete`. Server validation requires matching passwords of at
+least eight characters and at most 256 UTF-8 bytes. Origin/CSRF and fresh Auth
+checks precede a database reservation. A verified provider password success is
+recorded before the transaction activates member membership and redeems the
+invitation. Auth and the database are separate operations; there is no claim of
+a distributed transaction. Success clears the setup cookie and redirects to
+`/dashboard` after a fresh member check. All completion outcomes are private/no-store.
+
+| Setup result | User action / server behavior |
+| --- | --- |
+| `invalid_input` | Correct the matching password fields; server validation remains authoritative. |
+| `password_rejected` | Choose a different password; retry is allowed after a safe reservation release. |
+| `retry_later` | Wait and retry; recorded password success resumes redemption without another password update. |
+| `renew_invitation` | Ask the inviter to renew; an uncertain provider outcome must not trigger a blind password retry. |
+| `access_denied` | Ask the inviter for help; no account activation is authorized. |
+
+Result query values are presentation only. Each retry rechecks current identity,
+session, invitation version, eligibility and setup expiry. Confirmation failures
+after transport consumption require a current email or admin renewal rather than
+repeated verification. Resend retains the same eligible invitation/subject;
+invitation age does not expire it. Provider links, ten-minute transport and
+30-minute setup authority have independent expiry.
+
+The approved [activation contract](superpowers/specs/2026-10-07-volo-121-invitation-contract-design.md)
+and [persistence contract](superpowers/specs/2026-10-07-volo-127-invitation-schema-design.md)
+remain authoritative. [VOLO-125 evidence](volo-125-verification.md) and the
+[VOLO-126 readiness record](preview-verification.md#volo-126-account-signup-handoff)
+separate local/CI acceptance from pending hosted checks.
