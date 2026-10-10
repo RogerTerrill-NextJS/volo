@@ -44,6 +44,11 @@ function wrap(stack,jar,canaries=new Set()) {
     cookieHeader:jar.cookieHeader,
     applyResponse(response){jar.applyResponse(response);remember();},
     clone(){return wrap(stack,jar.clone(),new Set(canaries));},
+    withSetupFrom(source){
+      const other=internals.get(source);if(!other||other.stack!==stack)throw new Error('Setup source not owned by stack');
+      const copy=jar.clone();copy.setAll(other.jar.getAll().filter(({name})=>/^(?:__Host-)?volo-setup$/.test(name)));
+      return wrap(stack,copy,new Set([...canaries,...other.canaries]));
+    },
     assertNoCredentialLeaks(text){remember();if([...canaries].some(value=>value&&text.includes(value)))throw new Error('Session credential leak detected');},
     async refresh(){const data=payload(jar);const result=await client(stack,jar).auth.refreshSession({refresh_token:data.refresh_token});if(result.error)throw new Error('Real session refresh rejected');remember();},
     async signOut(){const result=await client(stack,jar).auth.signOut({scope:'local'});if(result.error)throw new Error('Real signout rejected');remember();},
@@ -73,6 +78,13 @@ export async function signInSession(stack,account) {
   const jar=createCookieJar();const result=await client(stack,jar).auth.signInWithPassword({email:account.email,password:account.password});
   if(result.error||result.data.user?.id!==account.id||!result.data.session){const error=new Error('Real password sign-in failed');error.operation='password-signin';error.httpStatus=result.error?.status;const code=result.error?.code;error.authCode=typeof code==='string'&&/^[a-z_]{1,64}$/.test(code)?code:result.error?'transport':!result.data.session?'missing-session':'identity-mismatch';throw error;}
   return wrap(stack,jar,new Set([account.password]));
+}
+
+export async function signInOwnedInvitationSession(stack,id){
+  const token=await stack.createOwnedSessionLink(id),jar=createCookieJar();
+  const result=await client(stack,jar).auth.verifyOtp({token_hash:token,type:'magiclink'});
+  if(result.error||result.data.user?.id!==id||!result.data.session)throw new Error('Owned alternative session verification failed');
+  return wrap(stack,jar,new Set([token]));
 }
 
 export function invalidSession(session,mode) {

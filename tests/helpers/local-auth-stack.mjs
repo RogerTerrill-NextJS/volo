@@ -8,7 +8,7 @@ import path from 'node:path';
 import {promisify} from 'node:util';
 
 const exec=promisify(execFile);
-const idPattern=/^volo-auth-[a-f0-9-]{36}$/;
+const idPattern=/^volo-auth-(?:[a-f0-9]{24}|[a-f0-9-]{36})$/;
 const uuidPattern=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export const evidenceDirectory=root=>path.join(root,'.superpowers/sdd/2026-10-07-volo-119-auth-integration');
 
@@ -89,8 +89,15 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
   try{await (adapters.checkDocker??(()=>exec('docker',['info','--format','{{.ServerVersion}}'],{env:localProcessEnvironment(),timeout:15000})))();}
   catch{throw new Error('Real local Auth stack requires a running Docker engine; no simulated fallback');}
   signal?.throwIfAborted();
-  const projectId=`volo-auth-${randomUUID()}`,workdir=await mkdtemp(path.join(tmpdir(),`${projectId}-`));
+  // The CLI truncates project IDs at 40 characters; keep start/stop identities equal.
+  const projectId=`volo-auth-${randomBytes(12).toString('hex')}`,workdir=await mkdtemp(path.join(tmpdir(),`${projectId}-`));
   const accounts=[],secrets=[],ownedEmails=new Set(),ownedInvitations=new Set();let started=false,stateOwned=false,apiUrl,publicKey,adminKey,serverSecret,mailUrl,closePromise,stage='configuration';
+  async function ownedFixtureSql(sql){
+    const state=JSON.parse(await readFile(stateFile,'utf8')),config=await readFile(path.join(workdir,'supabase/config.toml'),'utf8');
+    if(!stateOwned||state.projectId!==projectId||state.workdir!==workdir||!config.includes(`project_id = "${projectId}"`))throw new Error('Database ownership mismatch');
+    try{await cli(['db','query','--local','--workdir',workdir,sql],30000);}
+    catch{const error=new Error('Owned fixture SQL rejected');error.operation='owned-fixture-sql';throw error;}
+  }
   async function api(route,{method='GET',body}={}) {
     validateLocalApiUrl(apiUrl,Number(new URL(apiUrl).port));
     try{
@@ -199,6 +206,32 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
       async revokeInvitation(id,adminId){
         if(!ownedInvitations.has(id))throw new Error('Invitation not owned');requireOwned(adminId);
         await api(`/rest/v1/invitations?id=eq.${id}`,{method:'PATCH',body:{status:'revoked',revoked_at:new Date().toISOString(),revoked_by_user_id:adminId,revocation_reason:'Owned test'}});
+      },
+      async setInvitationTestState(id,mode,replacementId){
+        if(!uuidPattern.test(id)||!ownedInvitations.has(id))throw new Error('Invitation not owned');
+        if(mode==='old')return api(`/rest/v1/invitations?id=eq.${id}`,{method:'PATCH',body:{created_at:'2000-01-01T00:00:00Z'}});
+        if(mode==='expired-setup')return ownedFixtureSql(`update public.invitation_setup_authorizations set created_at=statement_timestamp()-interval '31 minutes',expires_at=statement_timestamp()-interval '1 minute' where invitation_id='${id}';`);
+        if(mode==='superseded'){
+          if(!uuidPattern.test(replacementId)||!ownedInvitations.has(replacementId)||replacementId===id)throw new Error('Replacement not owned');
+          return api(`/rest/v1/invitations?id=eq.${id}`,{method:'PATCH',body:{status:'superseded',superseded_at:new Date().toISOString(),superseded_by_id:replacementId}});
+        }
+        if(mode!=='expired-provider')throw new Error('Invalid invitation fixture state');
+        // Backdate only the owned provider issuance timestamp; real Auth verifies expiry.
+        await ownedFixtureSql(`update auth.users set confirmation_sent_at='2000-01-01' where id=(select auth_user_id from public.invitations where id='${id}');`);
+      },
+      async assertSetupLifetime(id){
+        if(!uuidPattern.test(id)||!ownedInvitations.has(id))throw new Error('Invitation not owned');
+        await ownedFixtureSql(`do $check$ begin if not exists(select 1 from public.invitation_setup_authorizations where invitation_id='${id}' and expires_at=created_at+interval '30 minutes' and expires_at>clock_timestamp()) then raise exception 'Owned setup lifetime mismatch'; end if; end $check$;`);
+      },
+      async createOwnedSessionLink(id){
+        requireOwned(id);const user=await api(`/auth/v1/admin/users/${id}`);
+        const data=await api('/auth/v1/admin/generate_link',{method:'POST',body:{type:'magiclink',email:user.email}});
+        if(data.id!==id||typeof data.hashed_token!=='string'||!data.hashed_token)throw new Error('Owned session link rejected');
+        secrets.push(data.hashed_token);return data.hashed_token;
+      },
+      async setOwnedAuthEmail(id,email){
+        requireOwned(id);if(!ownedEmails.has(email.trim().toLowerCase()))throw new Error('Email not owned');
+        await api(`/auth/v1/admin/users/${id}`,{method:'PUT',body:{email,email_confirm:true}});
       },
       async checkpointAuth(id,verify=false){
         requireOwned(id);if(!uuidPattern.test(id))throw new Error('Invalid owned subject');
