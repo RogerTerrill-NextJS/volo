@@ -10,6 +10,7 @@ type Failure={code:'denied'|'unavailable'};
 type EnvelopeResult=Failure|{code:'found'|'claimed';envelope:ConfirmationEnvelope};
 export type SetupResult=Failure|{code:'recorded';authorizationId:string;expiresAt:string};
 export type SetupReadResult=Failure|{code:'authorized';invitationId:string;version:number;authorizationId:string;expiresAt:string};
+export type RedemptionResult=Failure|{code:'redeemed'|'already_redeemed'|'conflict'};
 type TransportInput={lookupDigest:string;origin:string};
 function object(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))throw new Error();return value as Record<string,unknown>;}
 function date(value:unknown):string{if(typeof value!=='string'||!Number.isFinite(Date.parse(value)))throw new Error();return new Date(value).toISOString();}
@@ -35,6 +36,12 @@ function envelopeResult(raw:Record<string,unknown>):EnvelopeResult{
  return {code:raw.code,envelope:{keyId:e.keyId,nonce:e.nonce,tag:e.tag,ciphertext:e.ciphertext,expiresAt:date(e.expiresAt)}};
 }
 export function createConfirmationStore(){return {
+ // VOLO-124 supplies server-verified identity/authority after password evidence
+ // is persisted. Completion reports history; current membership gates access.
+ async redeem(input:{invitationId:string;version:number;authorizationId:string;setupDigest:string;identity:VerifiedConfirmation;origin:string}):Promise<RedemptionResult>{try{
+  const i=input.identity,result=await rpc('redeem_invitation',{p_invitation_id:input.invitationId,p_expected_version:input.version,p_setup_authorization_id:input.authorizationId,p_setup_digest:input.setupDigest,p_subject:i.subject,p_email:i.email,p_session_id:i.sessionId,p_origin:input.origin});
+  if(result.code==='redeemed'||result.code==='already_redeemed'||result.code==='conflict'||result.code==='denied')return {code:result.code};throw new Error();
+ }catch{return {code:'unavailable'};}},
  async create(input:TransportInput&{csrfDigest:string;envelope:ConfirmationEnvelope;previousDigest:string|null}):Promise<{code:'created'|'limited'}|Failure>{try{
   const e=input.envelope,result=await rpc('create_invitation_confirmation_transport',{p_lookup_digest:input.lookupDigest,p_csrf_digest:input.csrfDigest,p_origin:input.origin,p_expires_at:e.expiresAt,p_key_id:e.keyId,p_nonce:e.nonce,p_ciphertext:e.ciphertext,p_tag:e.tag,p_previous_digest:input.previousDigest});
   if(result.code==='created'||result.code==='limited'||result.code==='denied')return {code:result.code};throw new Error();
