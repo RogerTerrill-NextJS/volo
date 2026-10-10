@@ -6,6 +6,9 @@ import {invitationEmail,invitationUuid} from './invitation-send.ts';
 import type {ConfirmationEnvelope} from './invitation-confirmation-crypto.ts';
 export type VerifiedConfirmation={subject:string;email:string;sessionId:string};
 export type ConfirmationResolution={code:'eligible';invitationId:string;version:number;attemptId:string|null};
+export type CompletionContext={invitationId:string;version:number;authorizationId:string;setupDigest:string;identity:VerifiedConfirmation;origin:string};
+export type CompletionStart={setupDigest:string;identity:VerifiedConfirmation;origin:string;operationId:string};
+export type CompletionBeginResult={code:'reserved'|'password_established'|'redeemed';invitationId:string;version:number;authorizationId:string}|{code:'busy'|'renew_required'|'denied'|'unavailable'};
 type Failure={code:'denied'|'unavailable'};
 type EnvelopeResult=Failure|{code:'found'|'claimed';envelope:ConfirmationEnvelope};
 export type SetupResult=Failure|{code:'recorded';authorizationId:string;expiresAt:string};
@@ -35,7 +38,22 @@ function envelopeResult(raw:Record<string,unknown>):EnvelopeResult{
   ||typeof e.tag!=='string'||!/^[A-Za-z0-9_-]{22}$/.test(e.tag)||typeof e.ciphertext!=='string'||!/^[A-Za-z0-9_-]{1,2048}$/.test(e.ciphertext))throw new Error();
  return {code:raw.code,envelope:{keyId:e.keyId,nonce:e.nonce,tag:e.tag,ciphertext:e.ciphertext,expiresAt:date(e.expiresAt)}};
 }
+function passwordArgs(input:CompletionContext&{operationId:string}){
+ const i=input.identity;return {p_operation_id:input.operationId,p_invitation_id:input.invitationId,p_expected_version:input.version,p_setup_authorization_id:input.authorizationId,p_setup_digest:input.setupDigest,p_subject:i.subject,p_email:i.email,p_session_id:i.sessionId,p_origin:input.origin};
+}
 export function createConfirmationStore(){return {
+ async beginCompletion(input:CompletionStart):Promise<CompletionBeginResult>{try{
+  const i=input.identity,result=await rpc('begin_invitation_completion',{p_operation_id:input.operationId,p_setup_digest:input.setupDigest,p_subject:i.subject,p_email:i.email,p_session_id:i.sessionId,p_origin:input.origin});
+  if(result.code==='busy'||result.code==='renew_required'||result.code==='denied')return {code:result.code};
+  if(!['reserved','password_established','redeemed'].includes(String(result.code))||typeof result.invitationId!=='string'||!invitationUuid.test(result.invitationId)||typeof result.authorizationId!=='string'||!invitationUuid.test(result.authorizationId)||!Number.isSafeInteger(result.version)||(result.version as number)<1)throw new Error();
+  return {code:result.code as 'reserved'|'password_established'|'redeemed',invitationId:result.invitationId,version:result.version as number,authorizationId:result.authorizationId};
+ }catch{return {code:'unavailable'};}},
+ async recordPassword(input:CompletionContext&{operationId:string}):Promise<Failure|{code:'recorded'}>{try{
+  const result=await rpc('record_invitation_password',passwordArgs(input));if(result.code==='recorded'||result.code==='denied')return {code:result.code};throw new Error();
+ }catch{return {code:'unavailable'};}},
+ async releasePassword(input:CompletionContext&{operationId:string}):Promise<Failure|{code:'released'|'recorded'}>{try{
+  const result=await rpc('release_invitation_password',passwordArgs(input));if(result.code==='released'||result.code==='recorded'||result.code==='denied')return {code:result.code};throw new Error();
+ }catch{return {code:'unavailable'};}},
  // VOLO-124 supplies server-verified identity/authority after password evidence
  // is persisted. Completion reports history; current membership gates access.
  async redeem(input:{invitationId:string;version:number;authorizationId:string;setupDigest:string;identity:VerifiedConfirmation;origin:string}):Promise<RedemptionResult>{try{
