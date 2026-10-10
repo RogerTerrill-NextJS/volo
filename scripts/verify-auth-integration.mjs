@@ -251,7 +251,7 @@ try{
       check(f.session.cookieHeader().includes('auth-token'),'success retains Auth session');
       check((await stack.readMembership(f.invitation.auth_user_id))?.role==='member','existing redemption creates member');
       const login=await signInSession(stack,{id:f.invitation.auth_user_id,email:f.email,password:f.password});sessions.push(login);check(login.userId===f.invitation.auth_user_id,'new password logs in same subject');
-      const replay=await postCompletion(f,{session:retained});check(replay.status===303&&replay.headers.get('location')===app.origin+'/dashboard','historical retry completes through fresh access');
+      const history=retained.clone();sessions.push(history);const replay=await postCompletion(f,{session:history});check(replay.status===303&&replay.headers.get('location')===app.origin+'/dashboard','historical retry completes through fresh access');
       check((await completionCounts()).writes===count+1,'historical retry does not repeat password');
       await stack.setMembership(f.invitation.auth_user_id,{role:'member',status:'disabled'});completionResult(await postCompletion(f,{session:retained}),'access_denied');check((await completionCounts()).writes===count+1,'disabled historical retry does not change password');check((await stack.readMembership(f.invitation.auth_user_id)).status==='disabled','retry preserves disabled membership');
       return 'Production completion route: private native POST, Origin/CSRF/input/method denial, real weak_password rejection, same-subject password login, one member, history skips Auth and disabled membership stays denied.';
