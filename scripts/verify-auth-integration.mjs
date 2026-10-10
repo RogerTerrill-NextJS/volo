@@ -237,6 +237,34 @@ try{
       privatePolicy(response);await audit(response);check(response.headers.get('referrer-policy')==='no-referrer','completion referrer suppressed');return response;
     };
     const completionResult=(response,result)=>check(response.status===303&&response.headers.get('location')===app.origin+'/account/setup?result='+result,'fixed completion failure destination '+result);
+    await scenario('invitation_setup_ui',async()=>{
+      const f=await completionFixture('setup-ui'),counts=await completionCounts();
+      const form=await page(f.session,{},'/account/setup'),html=form.body;privatePolicy(form.response);
+      check(form.response.status===200&&html.includes('action="/account/complete"'),'verified setup renders native completion form');
+      check(html.includes('method="POST"')||html.includes('method="post"'),'native POST');
+      check(html.includes('name="password"')&&html.includes('name="passwordConfirmation"')&&html.includes('name="csrf"'),'only completion input contract');
+      check(html.includes('autoComplete="new-password"')||html.includes('autocomplete="new-password"'),'password manager hints');
+      check(html.includes('value="'+f.csrf+'"'),'existing domain separated CSRF rendered');
+      check(!html.includes(f.invitation.id)&&!html.includes(f.invitation.auth_user_id)&&!html.includes(f.password),'no setup identifiers or password rendered');
+      check(form.response.headers.get('referrer-policy')==='no-referrer','setup referrer suppressed');
+      for(const result of ['invalid_input','password_rejected','retry_later','renew_invitation','access_denied']){
+        const error=await page(f.session,{},'/account/setup?result='+result);privatePolicy(error.response);check(error.body.includes('role="alert"'),'recognized failure accessible');
+      }
+      const ordinary=await page(users.absent,{},'/account/setup');check(!ordinary.body.includes('name="password"')&&ordinary.body.includes('Invitation required'),'ordinary Auth session does not authorize setup');
+      const anonymous=await page(undefined,{},'/account/setup');check(anonymous.response.status===307&&anonymous.response.headers.get('location')==='/login?reason=authentication-required','signed-out setup goes to fixed login');
+      for(const headers of [{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){const navigation=await page(f.session,headers,'/account/setup');privatePolicy(navigation.response);if(!headers['Next-Router-Prefetch'])check(navigation.response.status===200&&navigation.body.includes(f.csrf),'verified RSC passes only authorized form props');}
+      const forged=await page(users.absent,{},'/account/setup?result=completed&next=https://foreign.invalid&password=canary-query-password');privatePolicy(forged.response);
+      check(!forged.body.includes('name="password"'),'generic session/query never authorize form');check(!forged.body.includes('canary-query-password'),`query password must not echo (HTTP ${forged.response.status})`);check(!forged.body.includes('foreign.invalid'),'query destination must not echo');
+      const duplicate=await page(f.session,{},'/account/setup?result=retry_later&result=access_denied');check(!duplicate.body.includes('role="alert"'),'ambiguous result ignored');
+      completionResult(await postCompletion(f,{body:new URLSearchParams({password:f.password,passwordConfirmation:'different-password',csrf:f.csrf}).toString()}),'invalid_input');
+      const retried=await page(f.session,{},'/account/setup?result=invalid_input');check(retried.body.includes('name="password"')&&!retried.body.includes(f.password),'retry form keeps authority without password echo');
+      check((await completionCounts()).writes===counts.writes,'GET/query/invalid form perform no password mutation');
+      const done=await postCompletion(f);check(done.headers.get('location')===app.origin+'/dashboard','native setup contract completes');
+      const back=await page(f.session,{},'/account/setup');check(back.response.status===307&&back.response.headers.get('location')==='/dashboard?from=account-setup','refresh/back rechecks current membership and leaves setup without login loop');
+      const stale=await completionFixture('setup-ui-revoked');await stack.revokeInvitation(stale.invitation.id,accounts.admin.id);
+      const denied=await page(stale.session,{},'/account/setup');check(!denied.body.includes('name="password"'),'revoked authority does not render password form');
+      return 'Actual setup page checks bound authority, native form/CSRF contract, safe accessible errors, rejected mismatch, current-member back navigation and revoked authority denial.';
+    });
     await scenario('invitation_completion_native',async()=>{
       const f=await completionFixture('completion-success'),initialCounts=await completionCounts(),before=initialCounts.writes;
       const retained=f.session.clone();sessions.push(retained);

@@ -51,7 +51,7 @@ try {
   await put("next.config.mjs",`export default {outputFileTracingRoot:${JSON.stringify(fixture)}};`);
   const proxySource = await readFile(path.join(root,"proxy.ts"),"utf8");
   // Add a fixture-only replacement branch to the real entry; retain its exact matcher/helper.
-  await put("proxy.ts",'import {NextResponse} from "next/server";\n'+proxySource.replace(
+  await put("proxy.ts",proxySource.replace(
     "return (await refreshSupabaseSession(request)).response;",
     'const result = await refreshSupabaseSession(request); if(request.nextUrl.pathname === "/fixture-redirect") return result.finalizeResponse(NextResponse.redirect(new URL("/",request.url),303)); return result.response;'));
   await put("instrumentation.js",`export function register(){const original=globalThis.fetch;globalThis.fetch=(input,init)=>{

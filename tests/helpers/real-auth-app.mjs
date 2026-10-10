@@ -29,7 +29,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     const env={PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:process.env.TMPDIR,NEXT_TELEMETRY_DISABLED:'1',NEXT_PUBLIC_SUPABASE_URL:stack.apiUrl,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:stack.publicKey,VOLO_MUTATION_ORIGIN:origin,SUPABASE_SECRET_KEY:stack.serverSecret,VOLO_CONFIRMATION_KEYS:JSON.stringify({active:'fixture',keys:{fixture:randomBytes(32).toString('base64')}})};
     await symlink(path.join(root,'node_modules'),path.join(directory,'node_modules'),'dir');
     for(const name of ['lib','proxy.ts','tsconfig.json','next.config.ts'])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
-    await cp(path.join(root,'app/account/complete'),path.join(directory,'app/account/complete'),{recursive:true});
+    await cp(path.join(root,'app/account'),path.join(directory,'app/account'),{recursive:true});
     await cp(path.join(root,'app/auth'),path.join(directory,'app/auth'),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'protected-layout.tsx'));
     await cp(path.join(root,'app/(protected)/admin'),path.join(directory,'app/(protected)/admin'),{recursive:true});

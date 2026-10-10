@@ -174,3 +174,15 @@ test("Auth transport preserves success/rejection and bounds every outage includi
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
+
+test('setup query canonicalization redirects before rendering or Auth and keeps protocol queries',async()=>{
+ const previous=process.env.VOLO_MUTATION_ORIGIN;process.env.VOLO_MUTATION_ORIGIN='https://app.example.invalid';
+ try{
+  const {proxy}=await import('../proxy.ts');
+  for(const query of ['password=private-canary&next=https://foreign.invalid','result=completed','result=retry_later&result=access_denied']){
+   const response=await proxy(new NextRequest('https://untrusted.invalid/account/setup?'+query));
+   assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://app.example.invalid/account/setup?result=invalid_input');
+   assert.equal(await response.text(),'');assert.match(response.headers.get('cache-control')??'',/private.*no-store/);assert.equal(response.headers.get('referrer-policy'),'no-referrer');
+  }
+ }finally{if(previous===undefined)delete process.env.VOLO_MUTATION_ORIGIN;else process.env.VOLO_MUTATION_ORIGIN=previous;}
+});

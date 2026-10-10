@@ -1,7 +1,20 @@
+import {NextResponse} from "next/server.js";
+import {setupResultMessage} from "./lib/auth/invitation-setup-feedback.ts";
+import {parseMutationOrigin} from "./lib/auth/mutation-origin.mjs";
+import {applyPrivateResponseHeaders} from "./lib/http/private-response.ts";
 import type { NextRequest } from "next/server.js";
 import { refreshSupabaseSession } from "./lib/supabase/proxy.ts";
 
 export async function proxy(request: NextRequest) {
+  if (["/account/setup","/account/setup/"].includes(request.nextUrl.pathname)) {
+    const query=request.nextUrl.searchParams,results=query.getAll("result");
+    if ([...query.keys()].some(key=>!["result","_rsc"].includes(key)) || results.length>1 || (results.length===1&&!setupResultMessage(results[0]))) {
+      const headers=new Headers();applyPrivateResponseHeaders(headers);headers.set("Referrer-Policy","no-referrer");
+      try {headers.set("Location",new URL("/account/setup?result=invalid_input",parseMutationOrigin(process.env.VOLO_MUTATION_ORIGIN??"",true)).href);}
+      catch {return new NextResponse(null,{status:503,headers});}
+      return new NextResponse(null,{status:303,headers});
+    }
+  }
   return (await refreshSupabaseSession(request)).response;
 }
 
