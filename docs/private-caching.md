@@ -33,9 +33,10 @@ Value-returning Action helpers cannot set arbitrary HTTP response headers.
 Protected rendering stays dynamic. Identity and membership reads stay no-store
 and independently verify current access. Never put tokens, identities,
 memberships, grants or personalized DTOs in shared module state, `use cache`,
-`unstable_cache`, static generation or public ISR. Anonymous home/login and hashed
-assets retain their existing public caching. No global cache disable, schema,
-product endpoint, callback, auth form or experimental staleTimes change ships here.
+`unstable_cache`, static generation or public ISR. Anonymous home and hashed
+assets retain public caching. VOLO-154 makes the login form dynamic/private even
+without a session and keeps every login POST outcome private/no-store. The cache
+classification grants no access; login does not create active membership.
 
 ## Verification and limits
 

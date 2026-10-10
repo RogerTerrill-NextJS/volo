@@ -5,7 +5,7 @@ export const AUTH_CREDENTIAL_CODES = new Set(["bad_jwt", "session_not_found", "r
   "refresh_token_already_used", "user_not_found", "user_banned"]);
 
 /** Local terminal response prevents SDK retries; the caller owns the 503 policy. */
-export function createProxyAuthTransport() {
+export function createProxyAuthTransport(credentialCodes:ReadonlySet<string> = AUTH_CREDENTIAL_CODES) {
   const controller = new AbortController();
   let unavailable = false;
   let closed = false;
@@ -36,7 +36,7 @@ export function createProxyAuthTransport() {
         if (!response.ok) {
           // Older Auth responses use a numeric HTTP code beside error_code.
           const upstreamCode = typeof data?.code === "string" ? data.code : data?.error_code;
-          if (!AUTH_CREDENTIAL_CODES.has(upstreamCode)) return terminal();
+          if (!credentialCodes.has(upstreamCode)) return terminal();
           const code = upstreamCode;
           return Response.json({code, error_code:code, message:"Authentication rejected."}, {status:response.status, headers:response.headers});
         }

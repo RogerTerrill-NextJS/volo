@@ -16,7 +16,7 @@ test("Proxy matcher covers application requests and excludes exact public assets
     for(const headers of [{},{rsc:"1"},{"next-router-prefetch":"1"}])
       assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url,headers}),true,url);
   }
-  for (const url of ["/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
+  for (const url of ["/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
     assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url}),false,url);
 });
 
@@ -182,6 +182,18 @@ test('setup query canonicalization redirects before rendering or Auth and keeps 
   for(const query of ['password=private-canary&next=https://foreign.invalid','result=completed','result=retry_later&result=access_denied']){
    const response=await proxy(new NextRequest('https://untrusted.invalid/account/setup?'+query));
    assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://app.example.invalid/account/setup?result=invalid_input');
+   assert.equal(await response.text(),'');assert.match(response.headers.get('cache-control')??'',/private.*no-store/);assert.equal(response.headers.get('referrer-policy'),'no-referrer');
+  }
+ }finally{if(previous===undefined)delete process.env.VOLO_MUTATION_ORIGIN;else process.env.VOLO_MUTATION_ORIGIN=previous;}
+});
+
+test('login query canonicalization removes credentials and untrusted destinations before rendering',async()=>{
+ const previous=process.env.VOLO_MUTATION_ORIGIN;process.env.VOLO_MUTATION_ORIGIN='https://app.example.invalid';
+ try{
+  const {proxy}=await import('../proxy.ts');
+  for(const query of ['password=private-canary&next=https://foreign.invalid','result=completed','result=invalid_credentials&result=unavailable','reason=private-canary']){
+   const response=await proxy(new NextRequest('https://untrusted.invalid/login?'+query));
+   assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://app.example.invalid/login?result=invalid_input');
    assert.equal(await response.text(),'');assert.match(response.headers.get('cache-control')??'',/private.*no-store/);assert.equal(response.headers.get('referrer-policy'),'no-referrer');
   }
  }finally{if(previous===undefined)delete process.env.VOLO_MUTATION_ORIGIN;else process.env.VOLO_MUTATION_ORIGIN=previous;}

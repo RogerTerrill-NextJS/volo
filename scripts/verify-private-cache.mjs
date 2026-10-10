@@ -66,8 +66,9 @@ try {
   await unsafe.request("same",()=>weaken(A));const replay=await unsafe.request("same",()=>weaken(B));
   assert.equal(replay.hit,true);assert.throws(()=>assert.ok(replay.reply.body.includes(B.entry.id)),assert.AssertionError);
   const manifest=JSON.parse(await readFile(path.join(fixture.directory,".next/prerender-manifest.json"),"utf8"));
-  for(const route of Object.keys(manifest.routes))assert.ok(!route.startsWith("/dashboard"));
-  for(const route of ["/","/login"]){const reply=await fixture.request(route);assert.doesNotMatch(reply.headers.get("cache-control")??"",/private|no-store/);assert.equal(reply.headers.get("cdn-cache-control"),null);}
+  for(const route of Object.keys(manifest.routes))assert.ok(!route.startsWith("/dashboard")&&route!=='/login');
+  const login=await fixture.request('/login');policy(login);assert.equal(login.headers.getSetCookie().length,0);
+  for(const route of ["/"]){const reply=await fixture.request(route);assert.doesNotMatch(reply.headers.get("cache-control")??"",/private|no-store/);assert.equal(reply.headers.get("cdn-cache-control"),null);}
   const home=await fixture.request("/");const asset=home.body.match(/(?:src|href)="([^"?]*\/_next\/static\/[^"?]+\.js)/)?.[1];assert.ok(asset);
   const before=fixture.backend.calls.length;const staticReply=await fixture.request(asset,A.jar);assert.match(staticReply.headers.get("cache-control"),/public.*immutable/);assert.equal(fixture.backend.calls.length,before);assert.equal(staticReply.headers.getSetCookie().length,0);
   async function scan(directory){for(const entry of await readdir(directory,{withFileTypes:true})){const file=path.join(directory,entry.name);if(entry.isDirectory())await scan(file);else fixture.clean(await readFile(file,"utf8"));}}

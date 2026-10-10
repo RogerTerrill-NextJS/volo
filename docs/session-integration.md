@@ -130,7 +130,7 @@ schema/admission/redemption are implemented. Hosted callback activation remains
 VOLO-107; local implementation does not close its hosted verification gate.
 
 - [VOLO-21](https://outsidethecockpit.atlassian.net/browse/VOLO-21): invitation-gated session establishment and admission.
-- [VOLO-22](https://outsidethecockpit.atlassian.net/browse/VOLO-22): login/logout UI, supported Router Cache invalidation and fresh session-change navigation.
+- [VOLO-22](https://outsidethecockpit.atlassian.net/browse/VOLO-22): VOLO-154 supplies native login; logout and broader session-change navigation remain VOLO-155.
 - [VOLO-23](https://outsidethecockpit.atlassian.net/browse/VOLO-23): recovery and configured mail delivery.
 - [VOLO-107](https://outsidethecockpit.atlassian.net/browse/VOLO-107): exact `/auth/confirm` activation and redirect evidence when consumers exist; see [callback contract](auth-callbacks.md).
 - [VOLO-110](https://outsidethecockpit.atlassian.net/browse/VOLO-110): hosted authenticated verification and explicit release evidence.
@@ -182,3 +182,22 @@ No second harness or handoff rerun is required. The implemented interfaces and
 safe retry outcomes are in [auth callbacks](auth-callbacks.md#implemented-account-setup-handoff-volo-123124125).
 Hosted browser/email/allowlist and authenticated CDN acceptance remain pending
 under VOLO-107/110; anonymous preview smoke cannot establish them.
+
+## Native login coverage (VOLO-154)
+
+The same real Auth job now exercises the production login page and POST handler:
+real password sign-in cookies, fresh member/admin admission, missing/disabled
+membership denial, generic invalid credentials, origin/input rejection before Auth,
+and safe malformed/outage responses without automatic password retries. Login
+does not create membership or invitation setup authority. Native 303 navigation
+performs a fresh dashboard request; hosted browser acceptance and logout remain
+with their existing owners. Membership/role cookie-stability scenarios acquire
+fresh sessions immediately before their assertions so the separate two-minute
+expiry fixture cannot introduce refresh into a membership-only comparison.
+
+Local validation passed all 31 real Auth scenarios, 46 core/smoke tests, focused
+login/input/Proxy tests, protected-app and private-cache fixtures, server/browser
+boundary checks, type checking, lint and a production webpack build. Chrome
+verification confirmed error focus and empty password fields. Independent review
+reported no actionable findings. CI, Deploy Preview acceptance and production
+release verification remain pending; logout is VOLO-155.

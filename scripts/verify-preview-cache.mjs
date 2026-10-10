@@ -71,7 +71,8 @@ const asset=home.body.match(/(?:src|href)="([^"?]*\/_next\/static\/[^"?]+\.js)/)
 for(let repeat=0;repeat<3;repeat++){
   for(const headers of [{},{RSC:"1"},{RSC:"1","Next-Router-Prefetch":"1"}])await request("/dashboard",headers,"GET",true);
   await request("/dashboard",{},"HEAD",true);
-  for(const route of ["/","/login",asset]){
+  const login=await request('/login');assert.match(login.response.headers.get('cache-control')??'',/private.*no-store/);assert.equal(login.response.headers.getSetCookie().length,0);
+  for(const route of ["/",asset]){
     const {response}=await request(route);
     assert.doesNotMatch(response.headers.get("cache-control")??"",/private|no-store/);
     if(route===asset)assert.match(response.headers.get("cache-control")??"",/public.*immutable/);
