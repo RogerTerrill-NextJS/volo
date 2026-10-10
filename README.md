@@ -17,8 +17,9 @@ npm run dev
 ```
 
 Open http://localhost:3000. `/dashboard` requires verified identity and active
-membership; signed-out visitors go to the public `/login` placeholder, which
-VOLO-22 will replace with the login form. `GET /api/health`
+membership; signed-out visitors go to the public `/login` email/password form.
+For local sign-in, set `VOLO_MUTATION_ORIGIN` to your exact app origin, such as
+`http://localhost:3000`. `GET /api/health`
 returns `{ "status": "ok" }` and checks application availability only.
 See [environment configuration](docs/environment-configuration.md) for required
 values, local/disposable setup, deployment contexts, and safe error handling.

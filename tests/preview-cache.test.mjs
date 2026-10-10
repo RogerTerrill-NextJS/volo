@@ -6,7 +6,7 @@ import test from "node:test";
 async function report(status){
   const source=`globalThis.fetch=async input=>{
     const route=new URL(input).pathname,privatePath=route==='/dashboard';
-    const headers={'Cache-Control':privatePath?'private, no-store':'public, max-age=600, immutable'};
+    const headers={'Cache-Control':privatePath||route==='/login'?'private, no-store':'public, max-age=600, immutable'};
     if(privatePath && ${JSON.stringify(status)}!==null)headers['Cache-Status']=${JSON.stringify(status)};
     return new Response(route==='/'?'<script src="/_next/static/control.js"></script>':'safe',{headers});
   };`;

@@ -14,8 +14,8 @@ The hosted Supabase URL Configuration was inspected on October 6, 2026:
 - No changes were made to hosted Auth settings.
 
 The invitation confirmation, password setup and atomic membership redemption
-flow is implemented and tested with disposable real Auth. Public `/login` still
-shows a placeholder; VOLO-22 owns login/logout, and VOLO-23 owns ordinary recovery
+flow is implemented and tested with disposable real Auth. VOLO-154 supplies
+public `/login` email/password sign-in; VOLO-155 owns logout, and VOLO-23 owns ordinary recovery
 and configured mail delivery. Local signup evidence does not establish hosted
 enablement. VOLO-107 stays
 In Progress until configuration and valid/invalid redirect tests are complete;
@@ -88,11 +88,26 @@ Signed-out protected-page visitors go to the fixed same-origin `/login` path,
 with fixed `?reason=authentication-required`, without a `next` parameter or
 forwarded query/token. The fixed query suppresses Netlify's automatic incoming
 query propagation and must remain when VOLO-22 replaces the placeholder.
-VOLO-116 provides a public
-“Sign-in is not available yet” placeholder with a home link. VOLO-22 replaces
-that body with login/logout behavior; it must preserve the public destination.
+VOLO-154 replaces VOLO-116's placeholder with an accessible email/password form
+and home link while preserving this public destination.
 Missing/disabled membership shows an access-denied state on the protected page,
 not a login loop. No hosted callback setting is activated by this route contract.
+
+`POST /auth/login` accepts only a bounded native email/password form, rejects
+missing/foreign Origin and cross-site fetch evidence before Auth, and uses the
+existing writable Supabase SSR client. Email whitespace is trimmed; passwords
+are never normalized. Invalid credentials, unconfirmed/blocked accounts and
+provider failures produce fixed safe feedback without echoing provider details
+or form values. An Auth outage never automatically retries the password request.
+Cookies and all responses use private/no-store policy. Login query input is
+canonicalized before rendering, with no arbitrary `next` destination.
+
+Successful login returns a native 303 to `/dashboard`, making a fresh document
+request rather than retaining a client navigation decision. The dashboard still
+verifies current active membership; login creates no membership or setup authority.
+Missing/disabled membership remains denied. The form clears retained fields on
+page restoration. Logout and broader Back/Forward/session-change behavior remain
+VOLO-155/25; hosted account tests and release evidence remain VOLO-110.
 
 ### Invitation and recovery callback
 
@@ -243,9 +258,10 @@ provider-link renewal for issued/setup invitations and status checks for uncerta
 live sends. Terminal invitations offer no send action. Each form rechecks current
 admin membership and origin; generation actions require the displayed version.
 An uncertain result never automatically retries or offers another send. These
-controls do not provide login, recipient setup or a browser-selected reconciliation
-receipt. Until VOLO-22 supplies login, authenticated UI evidence uses disposable
-fixtures; previews share production and must not be used for test email writes.
+controls do not provide a browser-selected reconciliation receipt. VOLO-154
+supplies login and VOLO-123 supplies recipient setup; authenticated write evidence
+uses disposable fixtures. Previews share production and must not be used for
+test email writes.
 
 ### Implemented invitation acceptance boundary (VOLO-122)
 

@@ -73,7 +73,11 @@ test("public login provides the agreed destination and navigation home", async (
   assert.match(response.headers.get("content-type"), /text\/html/);
   const html = await response.text();
   assert.match(html, /<h1[^>]*>Sign in<\/h1>/);
-  assert.match(html, /Sign-in is not available yet/);
+  assert.match(html, /<form[^>]*action="\/auth\/login"[^>]*method="post"/);
+  assert.match(html, /name="email"/);
+  assert.match(html, /type="password"[^>]*name="password"|name="password"[^>]*type="password"/);
+  assert.doesNotMatch(html, /Sign-in is not available yet/);
+  protectedPolicy(response);
   assert.match(html, /href="\/"/);
 });
 

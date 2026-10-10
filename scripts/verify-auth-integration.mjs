@@ -73,6 +73,52 @@ try{
     for(const [label,role,status] of [['A','member','active'],['B','member','active'],['admin','admin','active'],['disabled','member','disabled'],['absent',null,'active']]){
       accounts[label]=await stack.createAccount({label,role,status});users[label]=await fresh(label);
     }
+    await scenario('native_password_login',async()=>{
+      const loginPage=await read('/login');privatePolicy(loginPage);const html=await loginPage.text();
+      check(/<form[^>]*action="\/auth\/login"[^>]*method="post"/.test(html),'native login form');
+      check(/name="email"/.test(html)&&/name="password"/.test(html),'login fields');
+      const calls=async()=>Number((await (await read('/api/login-control')).json()).calls);
+      const post=async(session,body,headers={Origin:app.origin},route='/auth/login')=>read(route,{session,method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',...headers},body});
+      const payload=label=>new URLSearchParams({email:accounts[label].email,password:accounts[label].password}).toString();
+      const before=await calls();
+      for(const [body,headers,route,status] of [
+        [payload('A'),{},'/auth/login',403],
+        [payload('A'),{Origin:'https://foreign.example.invalid'},'/auth/login',403],
+        [payload('A'),{Origin:app.origin,'Sec-Fetch-Site':'cross-site'},'/auth/login',403],
+        [payload('A')+'&email=other@example.invalid',{Origin:app.origin},'/auth/login',303],
+        ['email=bad&password=x',{Origin:app.origin},'/auth/login',303],
+        [payload('A'),{Origin:app.origin},'/auth/login?next=https://foreign.example.invalid',303],
+        ['x'.repeat(4097),{Origin:app.origin},'/auth/login',303],
+        [JSON.stringify({email:accounts.A.email,password:accounts.A.password}),{Origin:app.origin,'content-type':'application/json'},'/auth/login',303],
+      ]){
+        const session=emptySession(stack),response=await post(session,body,headers,route);sessions.push(session);
+        privatePolicy(response);check(response.status===status,'login origin/input rejection');check(response.headers.getSetCookie().length===0&&session.cookieHeader()==='','rejected login has no session');
+        if(status===303)check(response.headers.get('location')===app.origin+'/login?result=invalid_input','fixed safe input destination');
+      }
+      check(await calls()===before,'login policy rejects before provider');
+      for(const method of ['GET','HEAD','OPTIONS']){const response=await read('/auth/login',{method});privatePolicy(response);check(response.status===405&&response.headers.get('allow')==='POST','login only supports POST');}
+      invitationPasswords.add('wrong-password-canary');
+      for(const input of [{email:accounts.A.email,password:'wrong-password-canary'},{email:`missing-${randomUUID()}@example.invalid`,password:'wrong-password-canary'}]){
+        const session=emptySession(stack);sessions.push(session);const response=await post(session,new URLSearchParams(input).toString());privatePolicy(response);
+        check(response.headers.get('location')===app.origin+'/login?result=invalid_credentials','generic invalid credentials destination');check(session.cookieHeader()==='','failed login creates no session');
+      }
+      for(const mode of ['outage','malformed']){
+        await read('/api/login-control',{method:'POST',body:mode});const start=await calls(),session=emptySession(stack);sessions.push(session);
+        try{const response=await post(session,payload('A'));privatePolicy(response);check(response.headers.get('location')===app.origin+'/login?result=unavailable','safe provider failure');check(session.cookieHeader()==='','outage/malformed login issues no session');check(await calls()===start+1,'no automatic password retry');}
+        finally{await read('/api/login-control',{method:'POST',body:'off'});}
+      }
+      for(const label of ['A','admin','disabled','absent']){
+        const session=emptySession(stack);sessions.push(session);const response=await post(session,payload(label));privatePolicy(response);
+        check(response.status===303&&response.headers.get('location')===app.origin+'/dashboard','fixed full-document login destination');
+        check(response.headers.getSetCookie().some(v=>v.includes('auth-token'))&&session.userId===accounts[label].id,'real login cookie belongs to caller');
+        const member=await read('/api/subject',{session});check(member.status===(['disabled','absent'].includes(label)?403:200),'fresh current membership guard');
+        const dashboard=await page(session);privatePolicy(dashboard.response);check(dashboard.body.includes(['disabled','absent'].includes(label)?'Access denied':accounts[label].id),'fresh dashboard authorizes current member');
+      }
+      const querySecret='login-query-secret-canary';
+      for(const headers of [{},{RSC:'1'}]){const response=await read('/login?password='+querySecret+'&next=https://foreign.example.invalid',{headers});privatePolicy(response);const target=response.headers.get('location');check(response.status===303&&target&&new URL(target,app.origin).href===app.origin+'/login?result=invalid_input','canonicalize untrusted login query before HTML/RSC');check(!(await response.text()).includes(querySecret),'no query credential reflection');}
+      assertClean(app.diagnostics());
+      return 'Native same-origin form, real sign-in cookies and fresh member/admin access; missing/disabled memberships denied, origin/input rejects precede Auth, generic failures and no automatic outage retry.';
+    });
     await scenario('admission',async()=>{
       for(const label of ['A','B','admin']){const response=await read('/api/subject',{session:users[label]});privatePolicy(response);check(response.status===200,'admission status');const data=await response.json();check(data.userId===accounts[label].id,'admission subject');check(data.role===(label==='admin'?'admin':'member'),'admission role');}
       for(const label of ['disabled','absent']){const response=await read('/api/subject',{session:users[label]});check(response.status===403,'membership denial');const result=await page(users[label]);check(result.body.includes('Access denied'),'denied HTML');for(const transport of ['json','native','fetched'])await deny(transport,users[label]);}
@@ -448,11 +494,13 @@ try{
     });
     if(!process.argv.includes('--scenario')){
       await scenario('current_membership',async()=>{
+        users.A=await fresh('A');
         const retained=users.A.cookieHeader();await stack.setMembership(accounts.A.id,{role:'member',status:'disabled'});
         check((await read('/api/subject',{session:users.A})).status===403,'disabled current row');check(users.A.cookieHeader()===retained,'unchanged credentials');for(const transport of ['json','native','fetched'])await deny(transport,users.A);
         await stack.setMembership(accounts.A.id,{role:'member',status:'active'});check((await read('/api/subject',{session:users.A})).status===200,'reactivated membership');await success('json',users.A);
       });
       await scenario('role_downgrade',async()=>{
+        users.admin=await fresh('admin');
         const retained=users.admin.cookieHeader();await stack.setMembership(accounts.admin.id,{role:'member',status:'active'});
         for(const transport of ['json','native','fetched'])await deny(transport,users.admin,{admin:true});check(users.admin.cookieHeader()===retained,'unchanged admin credentials');
         await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});await success('json',users.admin,{admin:true});

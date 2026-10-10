@@ -114,7 +114,7 @@ try {
   };
   loginRedirect(await request("/dashboard"));
   const login = await request("/login");
-  assert.equal(login.response.status, 200); assert.match(login.body, /Sign-in is not available yet/);
+  assert.equal(login.response.status, 200); assert.match(login.body, /action="\/auth\/login"/);privateHeaders(login.response);
   console.log("PASS: anonymous dashboard redirects safely and public login exists");
   const seed = async (label, options) => {
     const account = await backend.seed(label, options);

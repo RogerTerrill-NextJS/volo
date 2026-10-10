@@ -31,6 +31,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     for(const name of ['lib','proxy.ts','tsconfig.json','next.config.ts'])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
     await cp(path.join(root,'app/account'),path.join(directory,'app/account'),{recursive:true});
     await cp(path.join(root,'app/auth'),path.join(directory,'app/auth'),{recursive:true});
+    await cp(path.join(root,'app/login'),path.join(directory,'app/login'),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'protected-layout.tsx'));
     await cp(path.join(root,'app/(protected)/admin'),path.join(directory,'app/(protected)/admin'),{recursive:true});
     await cp(path.join(root,'app/(protected)/_components'),path.join(directory,'app/(protected)/_components'),{recursive:true});
@@ -39,6 +40,11 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await put('instrumentation.js',`export function register(){const original=globalThis.fetch;globalThis.fetch=async(input,init)=>{
       const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);
       if(!${JSON.stringify([stack.apiUrl,recordOrigin])}.includes(url.origin)||url.username||url.password)throw new Error('Fixture forbids outbound requests');
+      if(url.pathname==='/auth/v1/token'&&url.searchParams.get('grant_type')==='password'){
+        globalThis.__voloLoginCalls=(globalThis.__voloLoginCalls??0)+1;
+        if(globalThis.__voloLoginMode==='outage')return Response.json({code:'fixture_unavailable'},{status:503});
+        if(globalThis.__voloLoginMode==='malformed')return Response.json({user:{id:'invalid'}},{status:200});
+      }
       if(globalThis.__voloFailSetup&&url.pathname==='/rest/v1/rpc/record_verified_invitation_setup')return Response.json({code:'fixture_store_unavailable'},{status:503});
       if((url.pathname==='/auth/v1/user'&&init?.method!=='PUT')||url.pathname==='/auth/v1/token')globalThis.__voloCompletionAuthReads=(globalThis.__voloCompletionAuthReads??0)+1;
       const password=url.pathname==='/auth/v1/user'&&init?.method==='PUT';
@@ -52,7 +58,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     };}`);
     await put('app/layout.tsx','export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}');
     await put('app/page.tsx','export default function Page(){return <p>Public fixture</p>}');
-    await put('app/login/page.tsx','export default function Page(){return <p>Sign in</p>}');
+    await put('app/api/login-control/route.ts',`type State=typeof globalThis & {__voloLoginMode?:string;__voloLoginCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloLoginCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloLoginMode=mode;return Response.json({fixture:true});}`);
     await put('app/dashboard/layout.tsx',"export {default,dynamic} from '../../protected-layout';");
     await put('app/dashboard/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';import {getPageAccess} from '../../lib/auth/page-access';export default async function Page(){const access=await getPageAccess();if(access.status!=='authorized')return <p>Access denied</p>;return <main><p>subject:{access.member.userId} role:{access.member.role}</p><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>;}`);
     await put('app/api/confirmation-session/route.ts',`import {getVerifiedInvitationSetup} from '../../../lib/auth/invitation-setup';import {verifyConfirmationSession,createConfirmationAuthTransport} from '../../../lib/auth/invitation-confirmation-auth';import {createServerSupabaseClient} from '../../../lib/supabase/server';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const headers=new Headers();applyPrivateResponseHeaders(headers);const transport=createConfirmationAuthTransport();try{const client=await createServerSupabaseClient({cookieMode:'read-write',fetch:transport.fetch,setResponseHeaders(){}});const session=await verifyConfirmationSession(client);return Response.json({session:session.code==='verified'?{code:session.code,subject:session.identity.subject}:session,setup:await getVerifiedInvitationSetup()},{headers});}finally{transport.close();}}`);

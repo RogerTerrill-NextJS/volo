@@ -55,7 +55,7 @@ export async function refreshSupabaseSession(request: NextRequest) {
     for (const {name, value, options} of updates.values()) response.cookies.set(name, value, options);
     // Incoming request cookies are forwarded explicitly, never through a browser-visible header.
     response.headers.delete("x-middleware-set-cookie");
-    if (request.nextUrl.pathname === "/account/setup" || request.nextUrl.pathname === "/account/setup/") response.headers.set("Referrer-Policy", "no-referrer");
+    if (["/login","/login/","/account/setup","/account/setup/"].includes(request.nextUrl.pathname)) response.headers.set("Referrer-Policy", "no-referrer");
     for (const [key, value] of metadata) response.headers.set(key, value);
     if (original.length > 0 || updates.size > 0 || failed || isProtectedPagePath(request.nextUrl.pathname)) {
       applyPrivateResponseHeaders(response.headers);

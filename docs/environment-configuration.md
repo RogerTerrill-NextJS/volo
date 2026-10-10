@@ -278,7 +278,10 @@ page states. Every page independently checks before constructing protected
 content. The presentational `(protected)` layout forces dynamic rendering and
 does not grant authorization. Dashboard HTML/RSC and redirects are private,
 no-store; the helper itself neither caches a decision nor persists cookies.
-The public `/login` placeholder is replaced by VOLO-22. No arbitrary return URL
+VOLO-154 supplies the public `/login` email/password form and native
+`POST /auth/login`. Configure `VOLO_MUTATION_ORIGIN` to the exact local app origin
+for manual login; hosted builds pin it through the existing Netlify context.
+Both login page and POST outcomes are private/no-store. No arbitrary return URL
 or query is forwarded to login. Next.js can serialize the incoming URL in its
 router payload, so never put credentials in ordinary navigation queries.
 Page denial UI can have HTTP 200 under streaming; redirects can use the RSC
@@ -429,7 +432,9 @@ required. The dashboard now independently checks verified identity and active me
 Requests without this project's session cookie/chunks pass through without an
 Auth call. A PKCE verifier alone does not count as a session. The literal matcher
 covers application pages/APIs, including future auth routes and dotted paths;
-it excludes Next static/image assets, exact `/api/health` (with optional trailing
+it excludes exact `/auth/confirm`, `/auth/login` and `/account/complete`, whose
+handlers own session changes after origin/input checks, as well as Next
+static/image assets and exact `/api/health` (with optional trailing
 slash), favicon/robots/sitemap and the five existing public SVG files. Add new
 public asset paths to the matcher and its tests. Do not bypass all dotted paths.
 
