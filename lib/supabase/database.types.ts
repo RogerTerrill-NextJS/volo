@@ -120,6 +120,19 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"profiles": {
+                  Row: {
+                    "aircraft_access": string | null,"bio": string | null,"certificates": (string)[],"created_at": string,"display_name": string,"flying_interests": string | null,"home_airport": string,"photo_storage_path": string | null,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"updated_at": string,"user_id": string
+                  }
+                  Insert: {
+                    "aircraft_access"?: string | null,"bio"?: string | null,"certificates"?: (string)[],"created_at"?: string,"display_name": string,"flying_interests"?: string | null,"home_airport": string,"photo_storage_path"?: string | null,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings"?: (string)[],"updated_at"?: string,"user_id"?: string
+                  }
+                  Update: {
+                    "aircraft_access"?: string | null,"bio"?: string | null,"certificates"?: (string)[],"created_at"?: string,"display_name"?: string,"flying_interests"?: string | null,"home_airport"?: string,"photo_storage_path"?: string | null,"pilot_designation"?: Database["public"]['Enums']["pilot_designation"],"ratings"?: (string)[],"updated_at"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 }
           }
           Views: {
@@ -152,6 +165,9 @@ isOneToOne: false
                            },
 "prepare_invitation_send_proof":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_secret_digest": string,"p_subject_id": string,"p_transport": string }; Returns: Json
+                           },
+"profile_labels_valid":
+{ Args: { "labels": (string)[] }; Returns: boolean
                            },
 "read_invitation_confirmation_transport":
 { Args: { "p_lookup_digest": string,"p_origin": string }; Returns: Json
@@ -191,7 +207,7 @@ isOneToOne: false
                            }
           }
           Enums: {
-            "invitation_send_kind": "initial"|"resend","invitation_send_outcome": "started"|"accepted"|"rejected"|"unknown","invitation_send_resolution": "accepted"|"rejected","invitation_status": "pending_issuance"|"issued"|"setup_verified"|"password_established"|"redeemed"|"revoked"|"superseded","member_role": "member"|"admin","membership_status": "active"|"disabled"
+            "invitation_send_kind": "initial"|"resend","invitation_send_outcome": "started"|"accepted"|"rejected"|"unknown","invitation_send_resolution": "accepted"|"rejected","invitation_status": "pending_issuance"|"issued"|"setup_verified"|"password_established"|"redeemed"|"revoked"|"superseded","member_role": "member"|"admin","membership_status": "active"|"disabled","pilot_designation": "student"|"licensed"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -307,7 +323,7 @@ export type CompositeTypes<
 export const Constants = {
   "public": {
           Enums: {
-            "invitation_send_kind": ["initial", "resend"],"invitation_send_outcome": ["started", "accepted", "rejected", "unknown"],"invitation_send_resolution": ["accepted", "rejected"],"invitation_status": ["pending_issuance", "issued", "setup_verified", "password_established", "redeemed", "revoked", "superseded"],"member_role": ["member", "admin"],"membership_status": ["active", "disabled"]
+            "invitation_send_kind": ["initial", "resend"],"invitation_send_outcome": ["started", "accepted", "rejected", "unknown"],"invitation_send_resolution": ["accepted", "rejected"],"invitation_status": ["pending_issuance", "issued", "setup_verified", "password_established", "redeemed", "revoked", "superseded"],"member_role": ["member", "admin"],"membership_status": ["active", "disabled"],"pilot_designation": ["student", "licensed"]
           }
         }
 } as const
