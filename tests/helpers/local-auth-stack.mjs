@@ -114,7 +114,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
       if(!stateOwned||state.projectId!==projectId||state.workdir!==workdir||!config.includes(`project_id = "${projectId}"`))throw new Error('Database ownership mismatch');
       cleanupStage='database-rows';await cleanupCli(['db','query','--local','--workdir',workdir,
         `do $cleanup$ begin create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
-         delete from public.invitation_confirmation_transports; delete from public.invitation_setup_authorizations; delete from public.invitation_send_proofs; delete from public.invitation_send_attempts; delete from public.invitations;
+         if to_regclass('public.password_recovery_authorizations') is not null then delete from public.password_recovery_authorizations; end if; delete from public.invitation_confirmation_transports; delete from public.invitation_setup_authorizations; delete from public.invitation_send_proofs; delete from public.invitation_send_attempts; delete from public.invitations;
          drop table if exists public.volo_test_auth_snapshot;
          delete from public.memberships where user_id in (select id from owned_subjects);
          delete from auth.users where id in (select id from owned_subjects); end $cleanup$;`],30000);
@@ -218,6 +218,9 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         if(mode!=='expired-provider')throw new Error('Invalid invitation fixture state');
         // Backdate only the owned provider issuance timestamp; real Auth verifies expiry.
         await ownedFixtureSql(`update auth.users set confirmation_sent_at='2000-01-01' where id=(select auth_user_id from public.invitations where id='${id}');`);
+      },
+      async expireRecovery(id){
+        requireOwned(id);await ownedFixtureSql(`update public.password_recovery_authorizations set created_at=statement_timestamp()-interval '31 minutes',expires_at=statement_timestamp()-interval '1 minute' where subject='${id}';`);
       },
       async assertSetupLifetime(id){
         if(!uuidPattern.test(id)||!ownedInvitations.has(id))throw new Error('Invitation not owned');

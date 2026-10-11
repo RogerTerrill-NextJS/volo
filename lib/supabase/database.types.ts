@@ -107,6 +107,19 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"password_recovery_authorizations": {
+                  Row: {
+                    "consumed_at": string | null,"created_at": string,"email_key": string,"expires_at": string,"lookup_digest": string,"origin": string,"session_id": string,"subject": string
+                  }
+                  Insert: {
+                    "consumed_at"?: string | null,"created_at": string,"email_key": string,"expires_at": string,"lookup_digest": string,"origin": string,"session_id": string,"subject": string
+                  }
+                  Update: {
+                    "consumed_at"?: string | null,"created_at"?: string,"email_key"?: string,"expires_at"?: string,"lookup_digest"?: string,"origin"?: string,"session_id"?: string,"subject"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 }
           }
           Views: {
@@ -122,7 +135,13 @@ isOneToOne: false
 "claim_invitation_confirmation_transport":
 { Args: { "p_csrf_digest": string,"p_lookup_digest": string,"p_origin": string }; Returns: Json
                            },
+"claim_password_recovery":
+{ Args: { "p_digest": string,"p_email": string,"p_origin": string,"p_session_id": string,"p_subject": string }; Returns: Json
+                           },
 "cleanup_invitation_confirmation":
+{ Args: Record<PropertyKey, never>; Returns: undefined
+                           },
+"cleanup_password_recovery":
 { Args: Record<PropertyKey, never>; Returns: undefined
                            },
 "consume_invitation_send_proof":
@@ -137,6 +156,9 @@ isOneToOne: false
 "read_invitation_confirmation_transport":
 { Args: { "p_lookup_digest": string,"p_origin": string }; Returns: Json
                            },
+"read_password_recovery":
+{ Args: { "p_digest": string,"p_email": string,"p_origin": string,"p_session_id": string,"p_subject": string }; Returns: Json
+                           },
 "read_verified_invitation_setup":
 { Args: { "p_email": string,"p_origin": string,"p_session_id": string,"p_setup_digest": string,"p_subject": string }; Returns: Json
                            },
@@ -148,6 +170,9 @@ isOneToOne: false
                            },
 "record_invitation_send_outcome":
 { Args: { "p_attempt_id": string,"p_error_code": string,"p_expected_version": number,"p_outcome": string,"p_subject_id": string }; Returns: Json
+                           },
+"record_password_recovery":
+{ Args: { "p_digest": string,"p_email": string,"p_origin": string,"p_session_id": string,"p_subject": string }; Returns: Json
                            },
 "record_verified_invitation_setup":
 { Args: { "p_attempt_id": string,"p_email": string,"p_expected_version": number,"p_invitation_id": string,"p_origin": string,"p_resume_digest": string,"p_session_id": string,"p_setup_digest": string,"p_subject": string,"p_transport": string }; Returns: Json

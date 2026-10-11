@@ -17,7 +17,7 @@
     "test:clients": "node scripts/verify-supabase-clients.mjs",
     "test:proxy:unit": "node --conditions=react-server --test tests/supabase-proxy.unit.mts",
     "test:proxy": "npm run test:proxy:unit && node scripts/verify-supabase-proxy.mjs",
-    "test:access:unit": "node --conditions=react-server --test tests/auth-transport.unit.mts tests/invitation-eligibility.unit.mts tests/login-input.unit.mts tests/password-recovery-input.unit.mts",
+    "test:access:unit": "node --conditions=react-server --test tests/auth-transport.unit.mts tests/invitation-eligibility.unit.mts tests/login-input.unit.mts tests/password-recovery-input.unit.mts tests/password-reset.unit.mts",
     "test:access": "npm run test:access:unit && node scripts/verify-server-access.mjs",
     "test:protected-app": "node scripts/verify-protected-app.mjs",
     "test:mutations:unit": "node --conditions=react-server --test tests/mutation-policy.unit.mts",

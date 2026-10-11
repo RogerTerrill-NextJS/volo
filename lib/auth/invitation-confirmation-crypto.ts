@@ -1,6 +1,6 @@
 import 'server-only';
 import {createCipheriv,createDecipheriv,createHash,randomBytes} from 'node:crypto';
-export type ConfirmationPayload={tokenHash:string;type:'invite'|'recovery';resume:string|null;csrf:string};
+export type ConfirmationPayload={tokenHash:string;type:'invite'|'recovery';resume:string|null;csrf:string;flow?:'recovery'};
 export type ConfirmationPayloadWithoutCsrf=Omit<ConfirmationPayload,'csrf'>;
 export type Binding={lookupDigest:string;origin:string;expiresAt:string};
 export type ConfirmationEnvelope={keyId:string;nonce:string;ciphertext:string;tag:string;expiresAt:string};
@@ -38,9 +38,9 @@ function aad(binding:Binding):Buffer{
 }
 function validPayload(raw:unknown):raw is ConfirmationPayload{
  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;const p=raw as ConfirmationPayload;
- return Object.keys(p).sort().join(',')==='csrf,resume,tokenHash,type'&&typeof p.tokenHash==='string'
+ return ['csrf,resume,tokenHash,type','csrf,flow,resume,tokenHash,type'].includes(Object.keys(p).sort().join(','))&&typeof p.tokenHash==='string'
   &&/^[A-Za-z0-9_-]{1,256}$/.test(p.tokenHash)&&['invite','recovery'].includes(p.type)
-  &&(p.resume===null||isConfirmationSecret(p.resume))&&(p.type!=='recovery'||p.resume!==null)&&isConfirmationSecret(p.csrf);
+  &&(p.resume===null||isConfirmationSecret(p.resume))&&(p.flow==='recovery'?p.type==='recovery'&&p.resume===null:p.flow===undefined&&(p.type!=='recovery'||p.resume!==null))&&isConfirmationSecret(p.csrf);
 }
 export function sealConfirmation(payload:ConfirmationPayload,binding:Binding):ConfirmationEnvelope{
  try{

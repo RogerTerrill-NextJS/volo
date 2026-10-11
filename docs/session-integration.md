@@ -131,7 +131,7 @@ VOLO-107; local implementation does not close its hosted verification gate.
 
 - [VOLO-21](https://outsidethecockpit.atlassian.net/browse/VOLO-21): invitation-gated session establishment and admission.
 - [VOLO-22](https://outsidethecockpit.atlassian.net/browse/VOLO-22): VOLO-154/155 supply native login and current-browser logout; broader navigation remains VOLO-25.
-- [VOLO-23](https://outsidethecockpit.atlassian.net/browse/VOLO-23): VOLO-156 supplies recovery requests and local mail; confirmation/password change remain VOLO-157 and hosted mail verification remains VOLO-107/110.
+- [VOLO-23](https://outsidethecockpit.atlassian.net/browse/VOLO-23): VOLO-156/157 supply recovery requests, local mail, explicit confirmation and password reset; hosted mail verification remains VOLO-107/110.
 - [VOLO-107](https://outsidethecockpit.atlassian.net/browse/VOLO-107): exact `/auth/confirm` activation and redirect evidence when consumers exist; see [callback contract](auth-callbacks.md).
 - [VOLO-110](https://outsidethecockpit.atlassian.net/browse/VOLO-110): hosted authenticated verification and explicit release evidence.
 - [VOLO-120](https://outsidethecockpit.atlassian.net/browse/VOLO-120): deferred Netlify Age/non-storage reporting.
@@ -234,7 +234,7 @@ malformed responses have the same acknowledgment and exactly one provider call.
 Dedicated disposable recipients keep recovery mail separate from invitation
 assertions. Captured local mail has the exact owned callback, ordinary recovery
 marker and real provider token evidence, without invitation renewal proof.
-Ordinary application confirmation fails closed pending VOLO-157.
+VOLO-157 adds explicit ordinary confirmation and password reset, described below.
 
 Local validation on October 10, 2026 passed all 33 real Auth scenarios with owned
 stack cleanup, 46 core tests, 9 focused Proxy/recovery-input tests, and all 8
@@ -248,3 +248,37 @@ POST with `ERR_BLOCKED_BY_CLIENT`; browser submission is not established by that
 check. HTTP submission and actual local SMTP delivery are covered by the real
 Auth suite. Hosted email, Deploy Preview acceptance and production release
 verification remain separate.
+
+## VOLO-157 recovery confirmation and password reset
+
+Ordinary recovery uses the existing local mail and protected confirmation
+transport, with an explicit recovery purpose. Real provider verification creates
+only separate 30-minute recovery authority; no invitation setup or membership.
+The native reset form checks matching passwords. Its handler re-verifies identity
+and atomically consumes a user/email/session/origin-bound grant before one
+provider write. Concurrent and repeated submissions cannot update twice.
+Success clears browser authority and returns to fresh sign-in. A lost committed
+response requires a new reset email rather than an automatic write retry.
+
+Local validation on October 10, 2026 passed all 34 real Auth scenarios and cleaned
+up the owned stack. Recovery coverage includes explicit confirmation, provider
+and application replay, wrong type/destination/Origin/CSRF, a borrowed grant,
+concurrent submissions, expiry, actual new-password sign-in, and one committed
+password update whose response is discarded. Existing invitation confirmation,
+completion, renewal and natural session expiry remain covered. One earlier run
+failed the existing renewal serialization assertion; the full rerun passed with
+that assertion unchanged and bounded outcome diagnostics added. Its cause was
+not established.
+
+All 582 database assertions passed, including 18 recovery checks. Review caught
+an elapsed-ban denial: the new regression failed before both RPC predicates were
+corrected, then passed while active bans remained denied. All 46 core and 53
+focused access/confirmation/completion/Proxy/private-response unit tests passed,
+as did type checking, lint, the production webpack build, client/server boundary
+checks and private HTTP cache checks. Database types were generated from the
+owned migrated schema. The generated file retains the CLI's whitespace format.
+
+This evidence uses local HTTP submissions and real disposable Auth/SMTP, not a
+browser password submission or hosted account write. Deploy Preview acceptance,
+hosted migration/template/redirect checks and production release verification
+remain separate. Automatic production publishing stays locked.

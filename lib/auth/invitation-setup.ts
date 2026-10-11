@@ -8,7 +8,7 @@ import {completionCsrf} from './invitation-completion-input.ts';
 import {parseMutationOrigin} from './mutation-origin.mjs';
 export function confirmationCookieNames(origin:string){
  const url=new URL(parseMutationOrigin(origin,true)),secure=url.protocol==='https:';
- return {confirmation:secure?'__Host-volo-confirmation':'volo-confirmation',setup:secure?'__Host-volo-setup':'volo-setup',secure};
+ return {confirmation:secure?'__Host-volo-confirmation':'volo-confirmation',setup:secure?'__Host-volo-setup':'volo-setup',recovery:secure?'__Host-volo-recovery':'volo-recovery',secure};
 }
 export async function getVerifiedInvitationSetup():Promise<{status:'authorized';invitationId:string;version:number;authorizationId:string;expiresAt:string}|{status:'denied'|'unavailable'}>{
  const transport=createConfirmationAuthTransport();

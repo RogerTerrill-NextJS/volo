@@ -16,7 +16,7 @@ test("Proxy matcher covers application requests and excludes exact public assets
     for(const headers of [{},{rsc:"1"},{"next-router-prefetch":"1"}])
       assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url,headers}),true,url);
   }
-  for (const url of ["/auth/recovery", "/auth/recovery/", "/auth/logout", "/auth/logout/", "/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
+  for (const url of ["/auth/reset-password", "/auth/reset-password/", "/auth/recovery", "/auth/recovery/", "/auth/logout", "/auth/logout/", "/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
     assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url}),false,url);
 });
 
@@ -206,5 +206,14 @@ test('forgotten-password query input is removed before public form rendering or 
  try{for(const query of ['email=private-canary&next=https://foreign.invalid','result=sent&result=invalid_input','result=private-canary']){
   const response=await proxy(new NextRequest('https://untrusted.invalid/forgot-password?'+query));
   assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://app.example.invalid/forgot-password?result=invalid_input');assert.equal(await response.text(),'');assert.match(response.headers.get('cache-control')??'',/private.*no-store/);
+ }}finally{if(previous===undefined)delete process.env.VOLO_MUTATION_ORIGIN;else process.env.VOLO_MUTATION_ORIGIN=previous;}
+});
+
+
+test('reset query credentials and destinations are canonicalized before verification',async()=>{
+ const {proxy}=await import('../proxy.ts');const previous=process.env.VOLO_MUTATION_ORIGIN;process.env.VOLO_MUTATION_ORIGIN='https://app.example.invalid';
+ try{for(const query of ['password=private-canary&next=https://foreign.invalid','result=link_required&result=invalid_input','result=private-canary']){
+  const response=await proxy(new NextRequest('https://untrusted.invalid/reset-password?'+query));
+  assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://app.example.invalid/reset-password?result=invalid_input');assert.equal(await response.text(),'');assert.match(response.headers.get('cache-control')??'',/private.*no-store/);
  }}finally{if(previous===undefined)delete process.env.VOLO_MUTATION_ORIGIN;else process.env.VOLO_MUTATION_ORIGIN=previous;}
 });

@@ -32,7 +32,7 @@ export async function POST(request:NextRequest){
   finally{
    // The SDK may fail before cleanup (for example during refresh). Always remove
    // this browser's auth/setup authority, including old cookie chunks.
-   for(const name of new Set([...original,...store.getAll().filter(cookie=>owned(cookie.name)).map(cookie=>cookie.name),names.setup,names.confirmation])){
+   for(const name of new Set([...original,...store.getAll().filter(cookie=>owned(cookie.name)).map(cookie=>cookie.name),names.setup,names.confirmation,names.recovery])){
     store.set(name,'',{path:'/',secure:names.secure,sameSite:'lax',maxAge:0,httpOnly:true});
    }
   }

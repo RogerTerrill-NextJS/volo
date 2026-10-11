@@ -4,6 +4,7 @@ export function parseConfirmationLink(url:URL):ConfirmationPayloadWithoutCsrf|nu
  if(url.href.length>2048||url.hash)return null;const seen=new Set<string>();
  for(const [name] of url.searchParams){if(!['token_hash','type','flow','resume'].includes(name)||seen.has(name))return null;seen.add(name);}
  const tokenHash=url.searchParams.get('token_hash'),type=url.searchParams.get('type'),resume=url.searchParams.get('resume'),flow=url.searchParams.get('flow');
+ if(flow==='recovery')return tokenHash&&/^[A-Za-z0-9_-]{1,256}$/.test(tokenHash)&&type==='recovery'&&resume===null?{tokenHash,type,resume:null,flow:'recovery'}:null;
  if(!tokenHash||!/^[A-Za-z0-9_-]{1,256}$/.test(tokenHash)||(type!=='invite'&&type!=='recovery')
   ||(flow!==null&&flow!=='invitation')||(resume!==null&&!isConfirmationSecret(resume))||(type==='recovery'&&resume===null))return null;
  return {tokenHash,type,resume};
