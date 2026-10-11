@@ -9,6 +9,7 @@ export async function startAccessFixture() {
   const cases=new Map(),tokens=new Map(),calls=[],unexpected=[];
   let sequence=0;
   const invitations={rows:[{id:'30000000-0000-4000-8000-000000000001',version:2,recipient_email:'person+tag@example.invalid',status:'revoked',created_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-02T00:00:00Z',auth_user_id:'private-invitation-authority-canary',invitation_send_attempts:[{invitation_version:2,outcome:'unknown',reconciled_outcome:null}]}],failure:null};
+  const profiles={rows:new Map(),writes:[],failure:null};
   const encode=value=>Buffer.from(JSON.stringify(value)).toString("base64url");
   const user=id=>({id,aud:"authenticated",role:"authenticated",email:"fictional@example.invalid",
     app_metadata:{},user_metadata:{role:"admin",canary:accessCanaries[1]},created_at:"2026-01-01T00:00:00Z"});
@@ -71,11 +72,23 @@ export async function startAccessFixture() {
       res.end(JSON.stringify(data));return;
     }
     if(req.method==='POST'&&url.pathname==='/rest/v1/rpc/claim_invitation_confirmation_transport'){res.setHeader('content-type','application/json');res.end(JSON.stringify({code:'denied'}));return;}
+    if(url.pathname==='/rest/v1/profiles'){
+      const payload=JSON.parse(body);
+      calls.push({service:'profiles',subject:entry?.id,method:req.method,filter:url.searchParams.get('user_id'),select:url.searchParams.get('select'),payload});
+      if(!entry||entry.status!=='active'){failure('denied',req,res);return;}
+      if(failure(profiles.failure,req,res))return;
+      if(req.method==='POST'&&profiles.rows.has(entry.id)){res.writeHead(409).end(JSON.stringify({code:'23505',message:accessCanaries[0]}));return;}
+      if(req.method==='PATCH'&&(url.searchParams.get('user_id')!==`eq.${entry.id}`||!profiles.rows.has(entry.id))){res.end('[]');return;}
+      if(!['POST','PATCH'].includes(req.method)){unexpected.push({method:req.method,path:url.pathname});res.writeHead(418).end('{}');return;}
+      profiles.rows.set(entry.id,{...profiles.rows.get(entry.id),...payload,user_id:entry.id});
+      profiles.writes.push({subject:entry.id,method:req.method,payload});
+      res.end(JSON.stringify([{user_id:entry.id}]));return;
+    }
     unexpected.push({method:req.method,path:url.pathname});res.writeHead(418).end("{}");
   });
   server.listen(0,"127.0.0.1");await once(server,"listening");
   const origin=`http://127.0.0.1:${server.address().port}`;
-  return {origin,calls,unexpected,cases,invitations,async seed(label,options={}) {
+  return {origin,calls,unexpected,cases,invitations,profiles,async seed(label,options={}) {
     const id=`aaaaaaaa-aaaa-4aaa-8aaa-${String(++sequence).padStart(12,"0")}`;
     const entry={label,id,role:"member",status:"active",...options};cases.set(label,entry);
     const jar=new Map();

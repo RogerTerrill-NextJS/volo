@@ -34,13 +34,14 @@ export async function readMutationJson(request: Request, maxBytes = defaultLimit
 }
 
 /** Normalize application fields only; Next owns reserved action selection data. */
-export function readMutationForm(form: FormData): Record<string,string> {
+export function readMutationForm(form: FormData, maxBytes = defaultLimit): Record<string,string> {
+  if (!Number.isInteger(maxBytes) || maxBytes <= 0 || maxBytes > 65536) throw new Error("Invalid mutation input limit.");
   const result: Record<string,string>=Object.create(null);let size=0;
   const encoder=new TextEncoder();
   for(const [name,value] of form) {
     if(typeof value!=="string") throw new MutationInputError("invalid_input");
     size+=encoder.encode(name).byteLength+encoder.encode(value).byteLength;
-    if(size>defaultLimit) throw new MutationInputError("too_large");
+    if(size>maxBytes) throw new MutationInputError("too_large");
     if(name.startsWith("$ACTION_"))continue;
     if(Object.hasOwn(result,name))throw new MutationInputError("invalid_input");
     result[name]=value;

@@ -102,6 +102,49 @@ still creates three fictional profiles, and all 58 focused profile/membership
 assertions and three existing verifier safety-guard tests passed. The complete
 GitHub-hosted concurrency/cleanup verifier remains a CI check.
 
+## Profile validation and server saves — VOLO-160
+
+`lib/profiles/validation.ts` exports `validateProfile` for both client feedback and
+authoritative server validation. It returns normalized permitted fields or a safe
+summary and `fieldErrors` keyed by field name. Names, labels and optional text are
+trimmed; airport identifiers are uppercased. Limits count Unicode characters to
+match PostgreSQL rather than JavaScript UTF-16 length. Invalid Unicode and null
+characters are rejected before persistence.
+
+`lib/profiles/actions.ts` exports `createProfile(previousState, formData)` and
+`updateProfile(previousState, formData)` for onboarding and editing. Both enter
+the existing origin/current-member mutation guard. Form names match the database
+columns; certificates and ratings use one label per line (the shared validator
+also accepts arrays). Blank lists become `[]`; blank optional text becomes `null`.
+These are full profile submissions: required fields must be present, and omitted
+optional fields are cleared. Profile actions opt into a 32 KiB total form-input
+bound so all permitted fields fit together even with four-byte Unicode characters;
+other actions retain their existing 16 KiB default.
+Identity, role, membership, timestamps, photo paths and unexpected fields are
+rejected. Photo changes remain VOLO-36 work; normal edits preserve the stored path.
+
+Creates omit identity and timestamps. Updates use only the verified member's
+identity filter, including for admins; both use the session client and existing
+RLS/column grants. Explicit insert/update avoids the identity grant an upsert
+would require. Database operations have a five-second response-body deadline,
+disable retries and expose only a confirmed `saved`, field errors, safe conflict
+or unavailable result. A missing update row is not success. Uncertain save
+outcomes instruct the caller to reload before retrying. VOLO-161 and VOLO-35 own
+the accessible forms, navigation and success display.
+
+Local verification on October 11, 2026: four shared-validator tests and one real
+Next.js Server Action save regression passed using the existing disposable HTTP
+fixture. The save regression checks normalization, optional clearing, owner-derived
+inserts/updates, photo preservation, field feedback without writes, protected input,
+current membership/origin denial, duplicate/missing profiles and database failure
+or stalled bodies without retry, plus combined maximum fields and the total input
+bound. The existing protected-mutation verifier (both
+Action transports), six related mutation/form unit tests, typecheck and focused
+lint passed. Run the new tests with
+`node --test --test-reporter=dot tests/profile-validation.unit.mts tests/profile-save.test.mjs`.
+No database migration changed; existing profile RLS tests already cover those
+boundaries. The full suite, hosted database and Deploy Preview were not exercised.
+
 ## Invitation persistence handoff
 
 VOLO-128 delivered the PostgreSQL 17 invitation schema in

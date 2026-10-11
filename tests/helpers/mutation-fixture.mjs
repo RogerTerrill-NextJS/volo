@@ -9,7 +9,7 @@ import {promisify} from "node:util";
 import {setTimeout as delay} from "node:timers/promises";
 import {startAccessFixture,accessKey,accessCanaries} from "./access-fixture.mjs";
 
-export async function startMutationFixture({actions=false}={}) {
+export async function startMutationFixture({actions=false,profiles=false}={}) {
   const root=path.resolve(import.meta.dirname,"../..");
   const directory=await mkdtemp(path.join(tmpdir(),"volo-mutations-"));
   const backend=await startAccessFixture();const effects=[],bare=[];
@@ -71,6 +71,10 @@ export async function startMutationFixture({actions=false}={}) {
       export default function FixtureForm({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){
         const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     if(actions)await put("app/page.tsx",`import {mutate,adminMutate,bareAction} from './actions';import FixtureForm from './form';export default function Page(){return <main><FixtureForm action={mutate} label="Write"/><FixtureForm action={adminMutate} label="Admin"/><FixtureForm action={bareAction} label="Bare"/></main>}`);
+    if(profiles){
+      assert.ok(actions,'Profile fixture requires Server Action forms');
+      await put('app/page.tsx',`import {createProfile,updateProfile} from '../lib/profiles/actions';import FixtureForm from './form';export default function Page(){return <main><FixtureForm action={createProfile} label="Create profile"/><FixtureForm action={updateProfile} label="Update profile"/></main>}`);
+    }
     const build=await promisify(execFile)(process.execPath,[path.join(root,"node_modules/next/dist/bin/next"),"build",directory,"--webpack"],{cwd:directory,env,timeout:120000,maxBuffer:8*1024*1024});
     clean(build.stdout+build.stderr);
     const start=async(override={})=>{

@@ -55,3 +55,10 @@ test("FormData admits only bounded unique text fields",()=>{
   metadata.set("$ACTION_ID_test","x".repeat(16384));assert.throws(()=>readMutationForm(metadata),{code:"too_large"});
   const proto=new FormData();proto.set("__proto__","x");assert.equal(Object.hasOwn(readMutationForm(proto),"__proto__"),true);
 });
+test('larger form budgets are explicit and remain bounded without changing the default',()=>{
+  const form=new FormData();form.set('value','a'.repeat(20000));
+  assert.throws(()=>readMutationForm(form),{code:'too_large'});
+  assert.equal(readMutationForm(form,32768).value.length,20000);
+  form.set('value','a'.repeat(32764));assert.throws(()=>readMutationForm(form,32768),{code:'too_large'});
+  for(const limit of [0,-1,65537,NaN,1.5])assert.throws(()=>readMutationForm(form,limit));
+});
