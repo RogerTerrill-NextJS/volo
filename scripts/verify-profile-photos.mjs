@@ -109,6 +109,14 @@ try{
   await cleanup();assert.notEqual((await admin.storage.from('profile-photos').download(old)).error,null,'Old bytes removed after retry');
   assert.equal((await admin.storage.from('profile-photos').download(await pointer(owner))).error,null,'Current bytes retained');
  });
+ await scenario('pending cleanup includes another worker owner claims',async()=>{
+  const old=await pointer(owner);await mode('delete-failure');const saved=await save(A,a,png);await mode('off');assert.equal(saved.result.status,200);
+  const claims=await rpc('claim_profile_photo_cleanup',{batch_size:20,cleanup_owner:owner.id});assert.ok(claims.some(c=>c.final_path===old));
+  const removed=await call('/api/profile/photo',A,{method:'DELETE'});assert.equal(removed.status,200);assert.equal(removed.data.data.cleanupPending,true);
+  assert.equal((await admin.storage.from('profile-photos').download(old)).error,null,'Another worker still owns old-file cleanup');
+  await sql(`update public.profile_photo_objects set cleanup_until=clock_timestamp()-interval '1 second' where owner_id='${owner.id}';`);
+  await cleanup();assert.notEqual((await admin.storage.from('profile-photos').download(old)).error,null);
+ });
  await scenario('maximum bytes accepted, excess bytes rejected, MIME mismatch denied',async()=>{
   const maximum=Buffer.alloc(5000000);png.copy(maximum);
   const r=await reserve(A);assert.equal((await upload(a,r,maximum)).error,null);

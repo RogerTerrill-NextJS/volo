@@ -12,7 +12,7 @@ type RpcResult={code:string;id?:string;source_path?:string;final_path?:string};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 function rpcData(value:unknown):RpcResult {if(!value||typeof value!=='object'||!('code' in value)||typeof value.code!=='string')throw new Error('Photo result unavailable');return value as RpcResult;}
 function failure(code:string):PhotoResult{return {code:['conflict','limited','forbidden'].includes(code)?code as 'conflict'|'limited'|'forbidden':'unavailable'};}
-async function cleanupPending(){try{return (await cleanupProfilePhotos()).pending>0;}catch{return true;}}
+async function cleanupPending(ownerId:string){try{return (await cleanupProfilePhotos(4,{ownerId,budgetMs:2000})).pending>0;}catch{return true;}}
 export function profilePhotoPolicy(mode:'reserve'|'finalize'|'remove'):MutationPolicy<Input,PhotoResult>{return {
  allowedRoles:['member','admin'],requireCompleteProfile:true,
  parse(value){
@@ -36,7 +36,7 @@ export function profilePhotoPolicy(mode:'reserve'|'finalize'|'remove'):MutationP
    }
    if(mode==='remove'){
     const result=await client.rpc('remove_profile_photo').retry(false);if(result.error)return {code:'unavailable'};
-    const data=rpcData(result.data);return data.code==='removed'?{code:'removed',cleanupPending:await cleanupPending()}:failure(data.code);
+    const data=rpcData(result.data);return data.code==='removed'?{code:'removed',cleanupPending:await cleanupPending(member.userId)}:failure(data.code);
    }
    const begin=await client.rpc('begin_profile_photo_finalize',{reservation_id:input.reservation_id!}).retry(false);
    if(begin.error)return {code:'unavailable'};const data=rpcData(begin.data);if(data.code!=='processing')return failure(data.code);
@@ -48,14 +48,14 @@ export function profilePhotoPolicy(mode:'reserve'|'finalize'|'remove'):MutationP
    const service=photoServiceClient();const ready=await service.rpc('mark_profile_photo_ready',{reservation_id:reservation}).retry(false);
    if(ready.error||rpcData(ready.data).code!=='ready')throw new Error('Photo finalization unavailable');
    const attach=await client.rpc('attach_profile_photo',{reservation_id:reservation}).retry(false);
-   if(!attach.error){const result=rpcData(attach.data);if(result.code==='saved')return {code:'saved',cleanupPending:await cleanupPending()};}
+   if(!attach.error){const result=rpcData(attach.data);if(result.code==='saved')return {code:'saved',cleanupPending:await cleanupPending(member.userId)};}
    // Observe both pointer and row after an uncertain response; never delete current.
    const current=await service.from('profiles').select('photo_storage_path').eq('user_id',member.userId).retry(false).maybeSingle();
-   if(!current.error&&current.data?.photo_storage_path===data.final_path)return {code:'saved',cleanupPending:await cleanupPending()};
-   await service.rpc('abandon_profile_photo',{reservation_id:reservation}).retry(false);await cleanupPending();
+   if(!current.error&&current.data?.photo_storage_path===data.final_path)return {code:'saved',cleanupPending:await cleanupPending(member.userId)};
+   await service.rpc('abandon_profile_photo',{reservation_id:reservation}).retry(false);await cleanupPending(member.userId);
    return attach.error?{code:'unavailable'}:failure(rpcData(attach.data).code);
   }catch(error){
-   if(reservation){try{await photoServiceClient().rpc('abandon_profile_photo',{reservation_id:reservation}).retry(false);await cleanupPending();}catch{}}
+   if(reservation){try{await photoServiceClient().rpc('abandon_profile_photo',{reservation_id:reservation}).retry(false);await cleanupPending(member.userId);}catch{}}
    return {code:error instanceof InvalidProfilePhoto?'invalid_image':'unavailable'};
   }
  }

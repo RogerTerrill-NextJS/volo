@@ -555,6 +555,10 @@ that would outlive membership revocation. UI controls and fallback belong to
 VOLO-165.
 
 Cleanup claims are bounded to 20 records and use recoverable 60-second leases.
+Inline cleanup handles only the affected owner, with a two-second total budget
+and a separate one-second status read. Operator cleanup has a forty-second total
+budget and skips expired claims. Pending counts include leased and unselected
+work; unfinished cleanup remains durable for retry.
 Only exact recorded obsolete/expired paths are deleted through the Storage API.
 Storage v1.79.28 commits upload metadata as superuser after its initial RLS probe;
 a bucket-scoped trigger rechecks lifecycle state at that commit so an in-flight
@@ -587,3 +591,12 @@ stack and compiled app, checks physical Storage deletion and held upload races,
 and records a sanitized summary. Recovery uses
 `node scripts/verify-profile-photos.mjs --cleanup`, which stops only its recorded
 owned stack. It never targets developer or hosted data.
+
+
+Local VOLO-164 verification on 2026-10-11 passed 76 focused database assertions,
+five processing/cleanup unit tests and 12 real Storage/compiled endpoint
+scenarios, including physical held/aborted-upload deletion. The owned prior-schema
+upgrade preserved Auth/membership fixtures and matched generated types. Netlify
+Deploy Preview verification is pending a PR; production release is pending an
+explicit release request. The full application suite and invitation-specific
+GitHub-only concurrency upgrade checks remain for their CI/release workflow.

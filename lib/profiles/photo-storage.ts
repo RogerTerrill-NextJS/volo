@@ -21,8 +21,8 @@ export async function uploadNormalizedPhoto(finalPath:string,bytes:Uint8Array){
  const response=await fetch(url,{method:'POST',headers:{...headers,'content-type':'image/webp','x-upsert':'false'},body:Buffer.from(bytes),signal:AbortSignal.timeout(10000),cache:'no-store',redirect:'error'});
  await response.text();if(!response.ok)throw new Error('Photo upload unavailable');
 }
-export async function deletePhotoObject(bucket:'profile-photo-uploads'|'profile-photos',path:string):Promise<boolean>{
+export async function deletePhotoObject(bucket:'profile-photo-uploads'|'profile-photos',path:string,signal?:AbortSignal):Promise<boolean>{
  const {url,headers}=destination(bucket,path);
- const response=await fetch(url.substring(0,url.lastIndexOf('/storage/v1/object/'))+'/storage/v1/object/'+bucket,{method:'DELETE',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({prefixes:[path]}),signal:AbortSignal.timeout(10000),cache:'no-store',redirect:'error'});
+ const response=await fetch(url.substring(0,url.lastIndexOf('/storage/v1/object/'))+'/storage/v1/object/'+bucket,{method:'DELETE',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({prefixes:[path]}),signal:AbortSignal.any([AbortSignal.timeout(10000),...(signal?[signal]:[])]),cache:'no-store',redirect:'error'});
  await response.text();return response.ok;
 }

@@ -89,12 +89,12 @@ declare owner uuid; begin
  and not exists(select 1 from public.profiles where photo_storage_path=final_path);
  return jsonb_build_object('code',case when found then 'abandoned' else 'conflict' end);
 end $$;
-create function public.claim_profile_photo_cleanup(batch_size integer default 20)
- returns table(id uuid,source_path text,final_path text,claim_token uuid) language plpgsql security definer set search_path='' as $$
+create function public.claim_profile_photo_cleanup(batch_size integer default 20,cleanup_owner uuid default null)
+ returns table(id uuid,source_path text,final_path text,claim_token uuid,lease_until timestamptz) language plpgsql security definer set search_path='' as $$
 declare candidate record; r public.profile_photo_objects; p public.profiles; n integer:=0; token uuid; begin
  if batch_size is null or batch_size not between 1 and 20 then raise exception 'Invalid cleanup batch'; end if;
  for candidate in select o.id,o.owner_id from public.profile_photo_objects o
- where (o.cleanup_until is null or o.cleanup_until<clock_timestamp()) and
+ where (cleanup_owner is null or o.owner_id=cleanup_owner) and (o.cleanup_until is null or o.cleanup_until<clock_timestamp()) and
  (o.state in ('obsolete','cleaning') or (o.state='current' and not o.source_deleted) or
  (o.state in ('pending','processing','ready') and (o.expires_at<=clock_timestamp() or (o.processing_until is not null and o.processing_until<=clock_timestamp()))))
  order by o.owner_id,o.id loop
@@ -105,13 +105,20 @@ declare candidate record; r public.profile_photo_objects; p public.profiles; n i
  if r.state not in ('obsolete','cleaning','current') and r.expires_at>clock_timestamp() and (r.processing_until is null or r.processing_until>clock_timestamp()) then continue; end if;
  -- A reference always wins, even if lifecycle state was unexpectedly inconsistent.
  if p.photo_storage_path=r.final_path and r.source_deleted then continue; end if;
- token:=gen_random_uuid();
- update public.profile_photo_objects o set state=case when p.photo_storage_path=r.final_path then 'current' else 'cleaning' end,cleanup_token=token,cleanup_until=clock_timestamp()+interval '60 seconds' where o.id=r.id;
+ token:=gen_random_uuid();lease_until:=clock_timestamp()+interval '60 seconds';
+ update public.profile_photo_objects o set state=case when p.photo_storage_path=r.final_path then 'current' else 'cleaning' end,cleanup_token=token,cleanup_until=lease_until where o.id=r.id;
  id:=r.id; source_path:=case when r.source_deleted then null else r.source_path end;
  final_path:=case when p.photo_storage_path=r.final_path then null else r.final_path end;
  claim_token:=token; return next; n:=n+1; exit when n>=batch_size;
  end loop;
 end $$;
+-- Includes leased and unselected work so callers never claim premature deletion.
+create function public.count_profile_photo_cleanup(cleanup_owner uuid default null) returns integer language sql security definer set search_path='' as $$
+ select count(*)::integer from public.profile_photo_objects o where
+ (cleanup_owner is null or o.owner_id=cleanup_owner) and
+ (o.state in ('obsolete','cleaning') or (o.state='current' and not o.source_deleted) or
+ (o.state in ('pending','processing','ready') and (o.expires_at<=clock_timestamp() or (o.processing_until is not null and o.processing_until<=clock_timestamp()))));
+$$;
 create function public.ack_profile_photo_cleanup(reservation_id uuid,claim_token uuid,source_deleted boolean,final_deleted boolean) returns jsonb language plpgsql security definer set search_path='' as $$
 declare owner uuid; r public.profile_photo_objects; p public.profiles; begin
  select owner_id into owner from public.profile_photo_objects where id=reservation_id;
@@ -153,7 +160,7 @@ create policy profile_photo_current_read on storage.objects for select to authen
 
 revoke all on function public.reserve_profile_photo(),public.begin_profile_photo_finalize(uuid),public.attach_profile_photo(uuid),public.remove_profile_photo() from public,anon,authenticated,service_role;
 grant execute on function public.reserve_profile_photo(),public.begin_profile_photo_finalize(uuid),public.attach_profile_photo(uuid),public.remove_profile_photo() to authenticated;
-revoke all on function public.mark_profile_photo_ready(uuid),public.abandon_profile_photo(uuid),public.claim_profile_photo_cleanup(integer),public.ack_profile_photo_cleanup(uuid,uuid,boolean,boolean) from public,anon,authenticated,service_role;
-grant execute on function public.mark_profile_photo_ready(uuid),public.abandon_profile_photo(uuid),public.claim_profile_photo_cleanup(integer),public.ack_profile_photo_cleanup(uuid,uuid,boolean,boolean) to service_role;
+revoke all on function public.mark_profile_photo_ready(uuid),public.abandon_profile_photo(uuid),public.claim_profile_photo_cleanup(integer,uuid),public.count_profile_photo_cleanup(uuid),public.ack_profile_photo_cleanup(uuid,uuid,boolean,boolean) from public,anon,authenticated,service_role;
+grant execute on function public.mark_profile_photo_ready(uuid),public.abandon_profile_photo(uuid),public.claim_profile_photo_cleanup(integer,uuid),public.count_profile_photo_cleanup(uuid),public.ack_profile_photo_cleanup(uuid,uuid,boolean,boolean) to service_role;
 comment on table public.profile_photo_objects is 'Private immutable photo reservations and retryable Storage cleanup; never client-editable.';
 comment on column public.profiles.photo_storage_path is 'Private current profile-photos object, set only by owner-scoped photo RPCs.';

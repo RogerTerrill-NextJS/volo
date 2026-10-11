@@ -183,8 +183,8 @@ isOneToOne: false
 { Args: { "p_digest": string,"p_email": string,"p_origin": string,"p_session_id": string,"p_subject": string }; Returns: Json
                            },
 "claim_profile_photo_cleanup":
-{ Args: { "batch_size"?: number }; Returns: {
-              "claim_token": string,"final_path": string,"id": string,"source_path": string
+{ Args: { "batch_size"?: number,"cleanup_owner"?: string }; Returns: {
+              "claim_token": string,"final_path": string,"id": string,"lease_until": string,"source_path": string
             }[]
                            },
 "cleanup_invitation_confirmation":
@@ -195,6 +195,9 @@ isOneToOne: false
                            },
 "consume_invitation_send_proof":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_secret_digest": string,"p_transport": string,"p_verified_subject": string }; Returns: Json
+                           },
+"count_profile_photo_cleanup":
+{ Args: { "cleanup_owner"?: string }; Returns: number
                            },
 "create_invitation_confirmation_transport":
 { Args: { "p_ciphertext": string,"p_csrf_digest": string,"p_expires_at": string,"p_key_id": string,"p_lookup_digest": string,"p_nonce": string,"p_origin": string,"p_previous_digest"?: string,"p_tag": string }; Returns: Json

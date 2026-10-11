@@ -24,6 +24,7 @@ select lives_ok($$insert into storage.objects(bucket_id,name,owner_id) values('p
 select is((select count(*)::integer from storage.objects where bucket_id='profile-photo-uploads'),0,'Even owner cannot read raw source');
 select is(public.begin_profile_photo_finalize(current_setting('photo.test.id')::uuid)->>'code','processing','Owner claims finalization');
 select is(public.attach_profile_photo(current_setting('photo.test.id')::uuid)->>'code','conflict','Unprocessed object cannot attach');
+select throws_ok('select public.count_profile_photo_cleanup()','42501',null,'Cleanup status stays server-only');
 select throws_ok('select public.mark_profile_photo_ready(current_setting(''photo.test.id'')::uuid)','42501',null,'Client cannot mark validated image ready');
 select set_config('request.jwt.claims','{"sub":"55555555-5555-4555-8555-555555555555","role":"authenticated"}',true);
 select is(public.begin_profile_photo_finalize(current_setting('photo.test.id')::uuid)->>'code','conflict','Admin cannot finalize owner candidate');
@@ -50,7 +51,10 @@ set local role authenticated;
 select is(public.attach_profile_photo(current_setting('photo.test.second')::uuid)->>'code','conflict','Stale candidate cannot undo removal');
 reset role;
 update public.profile_photo_objects set expires_at=now()-interval '1 minute' where id=current_setting('photo.test.second')::uuid;
+select is(public.count_profile_photo_cleanup('44444444-4444-4444-8444-444444444444'),2,'Pending count includes owner cleanup work');
 select lives_ok('select * from public.claim_profile_photo_cleanup(20)','Cleanup claims expired and obsolete candidates');
+select is(public.count_profile_photo_cleanup('44444444-4444-4444-8444-444444444444'),2,'Leased cleanup remains pending');
+select is(public.count_profile_photo_cleanup('55555555-5555-4555-8555-555555555555'),0,'Pending count is owner scoped');
 select is(public.mark_profile_photo_ready(current_setting('photo.test.second')::uuid)->>'code','conflict','Cleanup claim cannot be revived');
 select throws_ok($$insert into storage.objects(bucket_id,name) values('profile-photo-uploads','44444444-4444-4444-8444-444444444444/'||current_setting('photo.test.second')||'/source')$$,'42501',null,'Late privileged Storage commit rechecks lifecycle');
 select set_config('photo.test.third',(public.reserve_profile_photo()->>'id'),true);
