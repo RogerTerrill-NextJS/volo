@@ -11,7 +11,7 @@ import {promisify} from 'node:util';
 import {reservePort,validateLocalApiUrl,sanitizeDiagnostics,evidenceDirectory} from './local-auth-stack.mjs';
 
 const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
-export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin}) {
+export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false}) {
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
   const directory=await mkdtemp(path.join(tmpdir(),'volo-real-auth-app-'));const effects=[];let server,recorder,output='',closePromise,fixtureStage='files';
   const put=async(name,value)=>{const file=path.join(directory,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,value);};
@@ -68,7 +68,11 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       if((mode==='password-lost'&&password)||(mode==='record-lost'&&url.pathname==='/rest/v1/rpc/record_invitation_password')||(mode==='redeem-lost'&&url.pathname==='/rest/v1/rpc/redeem_invitation')){await response.text();throw new Error('Owned fixture discarded committed response');}
       return response;
     };}`);
-    await put('app/layout.tsx','export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}');
+    if(browser){
+      await cp(path.join(root,'app/globals.css'),path.join(directory,'app/globals.css'));
+      await cp(path.join(root,'postcss.config.mjs'),path.join(directory,'postcss.config.mjs'));
+    }
+    await put('app/layout.tsx',browser?"import './globals.css';export default function Layout({children}:{children:React.ReactNode}){return <html lang=\"en\" className=\"h-full antialiased\"><body className=\"min-h-full flex flex-col\">{children}</body></html>}":'export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}' );
     await put('app/page.tsx','export default function Page(){return <p>Public fixture</p>}');
     await put('app/api/login-control/route.ts',`type State=typeof globalThis & {__voloLoginMode?:string;__voloLoginCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloLoginCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloLoginMode=mode;return Response.json({fixture:true});}`);
     await put('app/api/recovery-control/route.ts',`type State=typeof globalThis & {__voloRecoveryMode?:string;__voloRecoveryCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloRecoveryCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage','rate-limit','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloRecoveryMode=mode;return Response.json({fixture:true});}`);
@@ -93,6 +97,8 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/actions.ts',`'use server';import {handleActionMutation} from '../lib/auth/action-mutation';import {policy} from '../fixture-policy';export async function mutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy());}export async function adminMutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy(true));}`);
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
+    if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
+    if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));
     fixtureStage='build';const build=await promisify(execFile)(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'build',directory,'--webpack'],{cwd:directory,env,signal,timeout:180000,maxBuffer:8*1024*1024});output+=build.stdout+build.stderr;signal?.throwIfAborted();
     fixtureStage='start';server=spawn(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'start',directory,'--hostname','127.0.0.1','--port',String(port)],{cwd:directory,env,stdio:['ignore','pipe','pipe']});
     let startError;server.on('error',()=>{startError=true;});for(const stream of [server.stdout,server.stderr])stream.on('data',data=>{output=(output+data).slice(-4*1024*1024);});

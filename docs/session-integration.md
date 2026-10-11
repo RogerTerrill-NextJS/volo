@@ -282,3 +282,51 @@ This evidence uses local HTTP submissions and real disposable Auth/SMTP, not a
 browser password submission or hosted account write. Deploy Preview acceptance,
 hosted migration/template/redirect checks and production release verification
 remain separate. Automatic production publishing stays locked.
+
+
+## VOLO-158 local browser pass
+
+The October 10, 2026 Chrome pass reuses the disposable real Auth/SMTP fixture.
+Its optional `browser: true` mode copies the real app styles and dashboard; the
+HTTP integration fixture remains unchanged by default. The root uses the local
+font fallback rather than downloading the production Google fonts. Desktop
+1280 × 900 and mobile 390 × 844 checks cover the completed Auth pages.
+
+The pass found a native form failure: `no-referrer` makes navigation POSTs send
+`Origin: null`, so the existing Origin guard rejected clean invitation
+confirmation with HTTP 403. Native login also appeared as Chrome's
+`ERR_BLOCKED_BY_CLIENT`. Clean login, setup, recovery and reset pages, plus the
+scrubbed confirmation form, now use `same-origin`. Token-bearing confirmation
+redirects and unexpected-query redirects retain `no-referrer`. Origin and CSRF
+denials remain enforced. See [MDN's policy behavior](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy).
+
+The focused protected-app regression failed before this fix and passed afterward.
+All 30 selected Auth/Proxy/confirmation/private-response tests, type checking and
+lint passed. Chrome then verified native member login and logout, focused generic
+wrong-password feedback with cleared fields, recovery acknowledgment focus,
+required-email validation, refresh, Back after logout, signed-out dashboard
+redirects, and fresh navigation after logout. Login, recovery and the member
+dashboard fit the mobile viewport without horizontal overflow. Chrome also
+verified expired-provider invitation denial and valid explicit acceptance into
+the real setup form, including refresh, required-field focus, labeled password
+fields and `new-password` autocomplete at the mobile size.
+
+The user completed native invitation and recovery password submissions. Chrome
+verified the resulting signup dashboard, session persistence after refresh,
+redirect away from completed setup, and signed-out enforcement on a fresh
+request after logout. Reset success returned to focused sign-in feedback;
+fresh dashboard and reset-page requests required login or a new reset link.
+The real Auth suite separately verified login with the changed passwords.
+
+Review found that the browser dashboard needed the production protected layout.
+The fixture now copies that layout, and repeated desktop/mobile dashboard checks
+passed without horizontal overflow. Review has no remaining blockers. All 34
+real Auth scenarios, 46 core tests, 30 selected Auth/security tests, protected-app
+HTTP regression checks, production webpack build, type checking, lint, and
+client/server boundary checks passed. The initial full Auth run stopped on an
+obsolete setup `no-referrer` assertion; the new policy check had already passed.
+The contradictory assertion was removed and the full rerun passed. Disposable
+browser and integration stacks were cleaned up.
+
+This is local evidence only. Deploy Preview acceptance and production release
+verification remain separate; automatic production publishing stays locked.

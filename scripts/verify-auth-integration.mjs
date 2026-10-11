@@ -232,6 +232,7 @@ try{
       check(response.headers.get('referrer-policy')==='no-referrer','confirmation suppresses referrer');
       const clean=await app.request('/auth/confirm',{session});privatePolicy(clean);const body=await clean.text();assertClean(body);
       check(clean.status===200&&body.includes('Accept invitation'),'clean static acceptance form');
+      check(clean.headers.get('referrer-policy')==='same-origin','clean native acceptance preserves Origin without cross-origin referrers');
       const csrf=body.match(/name="csrf" value="([A-Za-z0-9_-]{43})"/)?.[1];check(Boolean(csrf),'form has CSRF only');return csrf;
     };
     const postConfirmation=async(session,csrf,requestOrigin=app.origin)=>{
@@ -250,13 +251,13 @@ try{
         const prefetch=await app.request(link.pathname+link.search,{session,headers:{purpose:'prefetch'}});check(prefetch.status===200&&session.cookieHeader()==='','prefetch does not consume recovery');
         const head=await app.request(link.pathname+link.search,{method:'HEAD',session});check(head.status===200&&session.cookieHeader()==='','HEAD leaves recovery unused');
         const landing=await app.request(link.pathname+link.search,{session});privatePolicy(landing);check(landing.status===303&&landing.headers.get('location')===app.origin+'/auth/confirm','recovery token moves to protected transport');
-        const confirmation=await read('/auth/confirm',{session}),html=await confirmation.text();check(html.includes('Confirm password reset')&&!html.includes(link.searchParams.get('token_hash')),'clean explicit recovery confirmation');const csrf=html.match(/name="csrf" value="([A-Za-z0-9_-]{43})"/)?.[1];check(Boolean(csrf),'recovery confirmation CSRF');
+        const confirmation=await read('/auth/confirm',{session}),html=await confirmation.text();check(confirmation.headers.get('referrer-policy')==='same-origin','native recovery confirmation preserves Origin');check(html.includes('Confirm password reset')&&!html.includes(link.searchParams.get('token_hash')),'clean explicit recovery confirmation');const csrf=html.match(/name="csrf" value="([A-Za-z0-9_-]{43})"/)?.[1];check(Boolean(csrf),'recovery confirmation CSRF');
         check((await postConfirmation(session,csrf,'https://foreign.invalid')).status===403,'foreign recovery confirmation rejected');
         check((await postConfirmation(session,'A'.repeat(43))).status===400,'wrong confirmation CSRF does not consume recovery');
         const accepted=await postConfirmation(session,csrf);check(accepted.status===303&&accepted.headers.get('location')===app.origin+'/reset-password','verified recovery destination');check(!session.cookieHeader().includes('volo-setup='),'recovery grants no invitation setup');
         check((await postConfirmation(session,csrf)).status===400,'recovery confirmation replay denied');
         const replay=emptySession(stack);sessions.push(replay);await app.request(link.pathname+link.search,{session:replay});const replayPage=await app.request('/auth/confirm',{session:replay}),replayCsrf=(await replayPage.text()).match(/name="csrf" value="([A-Za-z0-9_-]{43})"/)?.[1];check((await postConfirmation(replay,replayCsrf)).status===400&&!replay.cookieHeader().includes('auth-token'),'provider token replay establishes no session');
-        const page=await read('/reset-password',{session});privatePolicy(page);const body=await page.text();check(page.status===200&&body.includes('name="passwordConfirmation"')&&body.includes('action="/auth/reset-password"'),'authorized native reset form');const resetCsrf=body.match(/name="csrf" value="([a-f0-9]{64})"/)?.[1];check(Boolean(resetCsrf),'reset form CSRF only');
+        const page=await read('/reset-password',{session});privatePolicy(page);const body=await page.text();check(page.status===200&&body.includes('name="passwordConfirmation"')&&body.includes('action="/auth/reset-password"'),'authorized native reset form');check(page.headers.get('referrer-policy')==='same-origin'&&body.includes('<meta name="referrer" content="same-origin"'),'authorized native reset preserves Origin');const resetCsrf=body.match(/name="csrf" value="([a-f0-9]{64})"/)?.[1];check(Boolean(resetCsrf),'reset form CSRF only');
         return {account,session,csrf:resetCsrf,link};
       };
       const f=await authority('success'),password='Reset-'+randomUUID()+'!',body=formData(f.csrf,password);invitationPasswords.add(password);const start=await writes();
@@ -395,13 +396,13 @@ try{
     await scenario('invitation_setup_ui',async()=>{
       const f=await completionFixture('setup-ui'),counts=await completionCounts();
       const form=await page(f.session,{},'/account/setup'),html=form.body;privatePolicy(form.response);
+      check(form.response.headers.get('referrer-policy')==='same-origin'&&html.includes('<meta name="referrer" content="same-origin"'),'authorized native setup preserves Origin');
       check(form.response.status===200&&html.includes('action="/account/complete"'),'verified setup renders native completion form');
       check(html.includes('method="POST"')||html.includes('method="post"'),'native POST');
       check(html.includes('name="password"')&&html.includes('name="passwordConfirmation"')&&html.includes('name="csrf"'),'only completion input contract');
       check(html.includes('autoComplete="new-password"')||html.includes('autocomplete="new-password"'),'password manager hints');
       check(html.includes('value="'+f.csrf+'"'),'existing domain separated CSRF rendered');
       check(!html.includes(f.invitation.id)&&!html.includes(f.invitation.auth_user_id)&&!html.includes(f.password),'no setup identifiers or password rendered');
-      check(form.response.headers.get('referrer-policy')==='no-referrer','setup referrer suppressed');
       for(const result of ['invalid_input','password_rejected','retry_later','renew_invitation','access_denied']){
         const error=await page(f.session,{},'/account/setup?result='+result);privatePolicy(error.response);check(error.body.includes('role="alert"'),'recognized failure accessible');
       }
