@@ -57,6 +57,42 @@ Storage and Realtime services are enabled locally, but there are no buckets or p
 application tables yet. Add private buckets, object policies and Realtime publications
 with the feature that needs them; do not publish role data.
 
+## Profile persistence handoff — VOLO-159
+
+The profile migration is
+`supabase/migrations/20261011020000_create_profiles.sql`. One optional profile row
+belongs to each Auth identity; onboarding creates it after admission. There is no
+automatic profile trigger. Identity/email stay in Auth, and access/roles stay in
+`memberships`. The Auth foreign key restricts deletion until retention is agreed.
+
+Required fields are trimmed display name (1–80 characters), uppercase
+alphanumeric home-airport identifier (2–8 characters, format only), and
+`pilot_designation` (`student` or `licensed`). Certificates and ratings are
+self-reported text arrays, each with at most 20 nonblank, trimmed entries of
+1–80 characters; omitted arrays default to empty. Optional `aircraft_access` and
+`flying_interests` allow 500 characters each, and `bio` allows 2,000. Optional
+`photo_storage_path` stores up to 1,024 characters; Storage upload, path/object
+authorization and display remain VOLO-36 work.
+
+Active members read profiles. An active owner inserts/updates only the permitted
+profile fields using their session client. Inserts **omit** `user_id`,
+`created_at` and `updated_at`: Auth supplies identity, database defaults supply
+timestamps, and a trigger maintains update time. Column grants reject client
+identity/timestamp writes, including an explicit identity in an upsert. RLS
+checks current membership on every operation; disabled and unadmitted sessions
+have no profile access. An admin session has no cross-owner write override.
+No client deletion, role/status fields, Storage bucket or publication is added.
+
+Local verification on October 11, 2026: clean disposable PostgreSQL rebuilds
+passed with fictional seeds and without seeds. The focused profile and membership
+pgTAP files passed all 58 assertions in both configurations (44 profile, 14
+membership). Existing membership tests already cover role/admission protection;
+new profile tests cover ownership, field constraints and current-membership
+revocation. Generated database types matched a second pinned-CLI introspection;
+Next.js route type generation and `tsc --noEmit` passed with the existing offline
+CI configuration fixtures. The full application suite was not run for this
+database-only change. This evidence does not establish hosted migration or release.
+
 ## Invitation persistence handoff
 
 VOLO-128 delivered the PostgreSQL 17 invitation schema in
