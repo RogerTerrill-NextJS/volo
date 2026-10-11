@@ -120,15 +120,34 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
-                },"profiles": {
+                },"profile_photo_objects": {
                   Row: {
-                    "aircraft_access": string | null,"bio": string | null,"certificates": (string)[],"created_at": string,"display_name": string,"flying_interests": string | null,"home_airport": string,"photo_storage_path": string | null,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"updated_at": string,"user_id": string
+                    "cleanup_token": string | null,"cleanup_until": string | null,"expected_path": string | null,"expected_revision": number,"expires_at": string,"final_path": string,"id": string,"owner_id": string,"processing_until": string | null,"source_deleted": boolean,"source_path": string,"state": string
                   }
                   Insert: {
-                    "aircraft_access"?: string | null,"bio"?: string | null,"certificates"?: (string)[],"created_at"?: string,"display_name": string,"flying_interests"?: string | null,"home_airport": string,"photo_storage_path"?: string | null,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings"?: (string)[],"updated_at"?: string,"user_id"?: string
+                    "cleanup_token"?: string | null,"cleanup_until"?: string | null,"expected_path"?: string | null,"expected_revision": number,"expires_at"?: string,"final_path": string,"id"?: string,"owner_id": string,"processing_until"?: string | null,"source_deleted"?: boolean,"source_path": string,"state"?: string
                   }
                   Update: {
-                    "aircraft_access"?: string | null,"bio"?: string | null,"certificates"?: (string)[],"created_at"?: string,"display_name"?: string,"flying_interests"?: string | null,"home_airport"?: string,"photo_storage_path"?: string | null,"pilot_designation"?: Database["public"]['Enums']["pilot_designation"],"ratings"?: (string)[],"updated_at"?: string,"user_id"?: string
+                    "cleanup_token"?: string | null,"cleanup_until"?: string | null,"expected_path"?: string | null,"expected_revision"?: number,"expires_at"?: string,"final_path"?: string,"id"?: string,"owner_id"?: string,"processing_until"?: string | null,"source_deleted"?: boolean,"source_path"?: string,"state"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "profile_photo_objects_owner_id_fkey"
+      columns: ["owner_id"]
+isOneToOne: false
+      referencedRelation: "profiles"
+      referencedColumns: ["user_id"]
+    }
+                  ]
+                },"profiles": {
+                  Row: {
+                    "aircraft_access": string | null,"bio": string | null,"certificates": (string)[],"created_at": string,"display_name": string,"flying_interests": string | null,"home_airport": string,"photo_revision": number,"photo_storage_path": string | null,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"updated_at": string,"user_id": string
+                  }
+                  Insert: {
+                    "aircraft_access"?: string | null,"bio"?: string | null,"certificates"?: (string)[],"created_at"?: string,"display_name": string,"flying_interests"?: string | null,"home_airport": string,"photo_revision"?: number,"photo_storage_path"?: string | null,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings"?: (string)[],"updated_at"?: string,"user_id"?: string
+                  }
+                  Update: {
+                    "aircraft_access"?: string | null,"bio"?: string | null,"certificates"?: (string)[],"created_at"?: string,"display_name"?: string,"flying_interests"?: string | null,"home_airport"?: string,"photo_revision"?: number,"photo_storage_path"?: string | null,"pilot_designation"?: Database["public"]['Enums']["pilot_designation"],"ratings"?: (string)[],"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     
@@ -139,8 +158,20 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "begin_invitation_completion":
+            "abandon_profile_photo":
+{ Args: { "reservation_id": string }; Returns: Json
+                           },
+"ack_profile_photo_cleanup":
+{ Args: { "claim_token": string,"final_deleted": boolean,"reservation_id": string,"source_deleted": boolean }; Returns: Json
+                           },
+"attach_profile_photo":
+{ Args: { "reservation_id": string }; Returns: Json
+                           },
+"begin_invitation_completion":
 { Args: { "p_email": string,"p_operation_id": string,"p_origin": string,"p_session_id": string,"p_setup_digest": string,"p_subject": string }; Returns: Json
+                           },
+"begin_profile_photo_finalize":
+{ Args: { "reservation_id": string }; Returns: Json
                            },
 "bind_invitation_send_subject":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_subject_id": string }; Returns: Json
@@ -150,6 +181,11 @@ isOneToOne: false
                            },
 "claim_password_recovery":
 { Args: { "p_digest": string,"p_email": string,"p_origin": string,"p_session_id": string,"p_subject": string }; Returns: Json
+                           },
+"claim_profile_photo_cleanup":
+{ Args: { "batch_size"?: number }; Returns: {
+              "claim_token": string,"final_path": string,"id": string,"source_path": string
+            }[]
                            },
 "cleanup_invitation_confirmation":
 { Args: Record<PropertyKey, never>; Returns: undefined
@@ -162,6 +198,12 @@ isOneToOne: false
                            },
 "create_invitation_confirmation_transport":
 { Args: { "p_ciphertext": string,"p_csrf_digest": string,"p_expires_at": string,"p_key_id": string,"p_lookup_digest": string,"p_nonce": string,"p_origin": string,"p_previous_digest"?: string,"p_tag": string }; Returns: Json
+                           },
+"lock_photo_owner":
+{ Args: { "owner": string }; Returns: boolean
+                           },
+"mark_profile_photo_ready":
+{ Args: { "reservation_id": string }; Returns: Json
                            },
 "prepare_invitation_send_proof":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_secret_digest": string,"p_subject_id": string,"p_transport": string }; Returns: Json
@@ -199,11 +241,17 @@ isOneToOne: false
 "release_invitation_password":
 { Args: { "p_email": string,"p_expected_version": number,"p_invitation_id": string,"p_operation_id": string,"p_origin": string,"p_session_id": string,"p_setup_authorization_id": string,"p_setup_digest": string,"p_subject": string }; Returns: Json
                            },
+"remove_profile_photo":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "reserve_invitation_resend":
 { Args: { "p_expected_version": number,"p_invitation_id": string,"p_operation_id": string,"p_requester_id": string }; Returns: Json
                            },
 "reserve_invitation_send":
 { Args: { "p_operation_id": string,"p_recipient_email": string,"p_requester_id": string }; Returns: Json
+                           },
+"reserve_profile_photo":
+{ Args: Record<PropertyKey, never>; Returns: Json
                            }
           }
           Enums: {
