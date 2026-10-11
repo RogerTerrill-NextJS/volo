@@ -15,8 +15,9 @@ The hosted Supabase URL Configuration was inspected on October 6, 2026:
 
 The invitation confirmation, password setup and atomic membership redemption
 flow is implemented and tested with disposable real Auth. VOLO-154 supplies
-public `/login` email/password sign-in and VOLO-155 supplies current-browser logout; VOLO-23 owns ordinary recovery
-and configured mail delivery. Local signup evidence does not establish hosted
+public `/login` email/password sign-in, VOLO-155 supplies current-browser logout,
+and VOLO-156/157 supply ordinary recovery requests, confirmation and reset.
+Hosted mail configuration remains separate. Local signup evidence does not establish hosted
 enablement. VOLO-107 stays
 In Progress until configuration and valid/invalid redirect tests are complete;
 its documentation PR alone does not complete the ticket or VOLO-110.
@@ -133,8 +134,8 @@ request page use private/no-store and no-referrer policy.
 Ordinary recovery supplies the fixed `/auth/confirm?flow=recovery` callback.
 The local template appends `token_hash` and `type=recovery`, with no invitation
 `resume` proof. Its neutral wording also supports invitation renewal. The marker
-grants no authority: ordinary confirmation currently fails closed until VOLO-157
-implements verification and password change. Hosted SMTP, templates and exact
+grants no authority: VOLO-157 verifies the provider token on an explicit POST
+and creates separate password recovery authorization. Hosted SMTP, templates and exact
 redirect allowlists remain separate VOLO-107/110 work.
 
 VOLO-121's approved [invitation activation contract](superpowers/specs/2026-10-07-volo-121-invitation-contract-design.md)
@@ -159,8 +160,8 @@ memberships are not reset or re-enabled by acceptance. Provider operations and
 cookie delivery are outside that transaction; ambiguity leaves access denied
 and follows the documented reconciliation/retry path. Ordinary recovery stays separate. An invitation resend for a confirmed bound
 subject may use `type=recovery` only with the current invitation-specific proof
-described below. The invitation branch is implemented; ordinary recovery and
-hosted acceptance remain separate work.
+described below. Ordinary recovery is implemented separately; hosted acceptance
+verification remains separate work.
 
 Invitation and recovery emails must land at the approved origin's
 `/auth/confirm`. The auth implementation must coordinate its `redirectTo`,
@@ -258,9 +259,8 @@ password, confirmation, ban, membership or role. Both resend links carry a rando
 The server’s fixed callback includes `?flow=invitation`, then adds `resume` on
 renewal. Local templates append `&token_hash=...&type=...` uniformly; they never
 compare origins with the project Site URL. `flow` is a non-authorizing marker and
-must never substitute for provider verification or proof. Future ordinary recovery
-must supply its fixed callback with a non-secret query marker too, such as
-`?flow=recovery`; ordinary recovery still requires no invitation proof.
+must never substitute for provider verification or proof. Ordinary recovery
+uses the fixed `?flow=recovery` callback and requires no invitation proof.
 
 VOLO-122 verifies the actual provider token and exact subject/email, then
 consumes the matching current-generation proof **in the same SQL transaction**
@@ -361,3 +361,35 @@ and [persistence contract](superpowers/specs/2026-10-07-volo-127-invitation-sche
 remain authoritative. [VOLO-125 evidence](volo-125-verification.md) and the
 [VOLO-126 readiness record](preview-verification.md#volo-126-account-signup-handoff)
 separate local/CI acceptance from pending hosted checks.
+
+## VOLO-157 ordinary recovery
+
+An explicit `flow=recovery`, `type=recovery` confirmation accepts no invitation
+proof or destination. The encrypted, short-lived confirmation transport preserves
+that purpose. GET/HEAD never verify the provider token; the clean confirmation
+page contains no token. An origin/CSRF-checked POST verifies the real Auth user
+and session, then redirects only to `/reset-password`.
+
+Recovery authorization is separate from invitation setup: an opaque HttpOnly
+cookie identifies a digest-only, 30-minute database grant bound to the verified
+user, normalized email, Auth session and exact origin. A fresh verified email
+replaces the user's previous grant. Active account bans deny recovery; retained
+timestamps from elapsed temporary bans do not. Recovery creates no membership,
+role, invitation redemption or admission authority. The service-only RPCs validate
+all bindings, and a five-minute cleanup job erases expired grants.
+
+The native reset form requires matching passwords and domain-separated CSRF.
+`POST /auth/reset-password` validates origin and bounded input, re-verifies the
+current Auth identity, and atomically consumes the grant before one bounded
+provider password update. Concurrent requests and replay cannot authorize a
+second update. Invalid input can be corrected before consumption. After provider
+rejection or an uncertain response, request a new email; a password whose
+committed response was lost may already work for sign-in. Never automatically
+retry the password write.
+
+Success attempts bounded current-session sign-out, clears browser Auth and
+confirmation/setup/recovery cookies even when revocation is unavailable, and
+redirects to `/login?result=password_reset` for fresh sign-in. Reset pages and
+responses are private/no-store and no-referrer; only fixed safe feedback is
+accepted. Logout also clears recovery authority. Hosted schema/template settings,
+Deploy Preview acceptance and production release must be verified separately.

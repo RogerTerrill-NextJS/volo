@@ -1,4 +1,5 @@
 const messages:Record<string,string>={
+ password_reset:'Your password has been reset. Sign in with your new password.',
  invalid_input:'Enter your email address and password, then try again.',
  invalid_credentials:'We could not sign you in with those details. Check your email and password.',
  unavailable:'Sign-in is temporarily unavailable. Wait a moment, then try again.',

@@ -42,6 +42,11 @@ function passwordArgs(input:CompletionContext&{operationId:string}){
  const i=input.identity;return {p_operation_id:input.operationId,p_invitation_id:input.invitationId,p_expected_version:input.version,p_setup_authorization_id:input.authorizationId,p_setup_digest:input.setupDigest,p_subject:i.subject,p_email:i.email,p_session_id:i.sessionId,p_origin:input.origin};
 }
 export function createConfirmationStore(){return {
+ async recovery(action:'record'|'read'|'claim',input:{digest:string;identity:VerifiedConfirmation;origin:string}):Promise<{code:'recorded'|'authorized'|'claimed'|'denied'|'unavailable'}>{try{
+  const i=input.identity,result=await rpc(action==='record'?'record_password_recovery':action==='read'?'read_password_recovery':'claim_password_recovery',{p_digest:input.digest,p_subject:i.subject,p_email:i.email,p_session_id:i.sessionId,p_origin:input.origin});
+  const expected=action==='record'?'recorded':action==='read'?'authorized':'claimed';
+  if(result.code===expected)return {code:expected};if(result.code==='denied')return {code:'denied'};throw new Error();
+ }catch{return {code:'unavailable'};}},
  async beginCompletion(input:CompletionStart):Promise<CompletionBeginResult>{try{
   const i=input.identity,result=await rpc('begin_invitation_completion',{p_operation_id:input.operationId,p_setup_digest:input.setupDigest,p_subject:i.subject,p_email:i.email,p_session_id:i.sessionId,p_origin:input.origin});
   if(result.code==='busy'||result.code==='renew_required'||result.code==='denied')return {code:result.code};

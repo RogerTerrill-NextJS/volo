@@ -6,7 +6,7 @@ import {parseMutationOrigin} from '../../../lib/auth/mutation-origin.mjs';
 import {parseConfirmationLink,readConfirmationCsrf} from '../../../lib/auth/invitation-confirmation-input.ts';
 import {createConfirmationStore} from '../../../lib/auth/invitation-confirmation-store.ts';
 import {newConfirmationSecret,sealConfirmation,openConfirmation,confirmationDigest,isConfirmationSecret} from '../../../lib/auth/invitation-confirmation-crypto.ts';
-import {createConfirmationTransport,acceptInvitationConfirmation,type TransportPorts} from '../../../lib/auth/invitation-confirmation.ts';
+import {createConfirmationTransport,acceptInvitationConfirmation,acceptRecoveryConfirmation,type TransportPorts} from '../../../lib/auth/invitation-confirmation.ts';
 import {createConfirmationAuthTransport,verifyConfirmationSession} from '../../../lib/auth/invitation-confirmation-auth.ts';
 import {confirmationCookieNames} from '../../../lib/auth/invitation-setup.ts';
 import {createServerSupabaseClient} from '../../../lib/supabase/server.ts';
@@ -15,7 +15,7 @@ import {readInvitationEligibility} from '../../../lib/auth/invitation-eligibilit
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 function headers(){const h=new Headers();applyPrivateResponseHeaders(h);h.set('Referrer-Policy','no-referrer');h.set('Content-Security-Policy',"default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");h.set('X-Content-Type-Options','nosniff');return h;}
-function message(status=200){return new NextResponse('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Invitation confirmation</title><main><h1>Invitation confirmation</h1><p>'+ (status===503?'Confirmation is temporarily unavailable. Try again later.':'This link cannot be used. Open a current invitation email or ask an admin to renew the link.')+'</p></main></html>',{status,headers:{...Object.fromEntries(headers()),'Content-Type':'text/html; charset=utf-8'}});}
+function message(status=200){return new NextResponse('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Account confirmation</title><main><h1>Account confirmation</h1><p>'+ (status===503?'Confirmation is temporarily unavailable. Try again later.':'This link cannot be used. Open a current account email or request a new password reset link.')+'</p></main></html>',{status,headers:{...Object.fromEntries(headers()),'Content-Type':'text/html; charset=utf-8'}});}
 function ports():TransportPorts{return {store:createConfirmationStore(),newSecret:newConfirmationSecret,seal:sealConfirmation,open:openConfirmation,digest:confirmationDigest,now:Date.now};}
 function trustedOrigin(){return parseMutationOrigin(process.env.VOLO_MUTATION_ORIGIN??'',true);}
 function prefetch(request:NextRequest){return request.headers.has('next-router-prefetch')||/prefetch/i.test(request.headers.get('purpose')??'')||/prefetch/i.test(request.headers.get('sec-purpose')??'');}
@@ -34,7 +34,9 @@ export async function GET(request:NextRequest){
   const lookupDigest=confirmationDigest(cookie),stored=await p.store.read({lookupDigest,origin});if(stored.code!=='found')return message(stored.code==='unavailable'?503:400);
   const payload=openConfirmation(stored.envelope,{lookupDigest,origin,expiresAt:stored.envelope.expiresAt});if(!payload)return message(400);
   // CSRF is the only dynamic output; its canonical alphabet cannot contain HTML.
-  return new NextResponse('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Accept invitation</title><main><h1>Accept invitation</h1><p>Continue to account setup. Invitations do not expire with age.</p><form method="post" action="/auth/confirm"><input type="hidden" name="csrf" value="'+payload.csrf+'"><button type="submit">Accept invitation</button></form></main></html>',{headers:{...Object.fromEntries(headers()),'Content-Type':'text/html; charset=utf-8'}});
+  const recovery=payload.flow==='recovery';
+  return new NextResponse('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'+ (recovery?'Confirm password reset':'Accept invitation')+'</title><main><h1>'+ (recovery?'Confirm password reset':'Accept invitation')+'</h1><p>'+ (recovery?'Continue to choose a new password.':'Continue to account setup. Invitations do not expire with age.')+'</p><form method="post" action="/auth/confirm"><input type="hidden" name="csrf" value="'+payload.csrf+'"><button type="submit">'+(recovery?'Confirm password reset':'Accept invitation')+'</button></form></main></html>',{headers:{...Object.fromEntries(headers()),'Content-Type':'text/html; charset=utf-8'}});
+
  }catch{return message(503);}
 }
 export async function POST(request:NextRequest){
@@ -46,6 +48,7 @@ export async function POST(request:NextRequest){
    const store=await cookies(),base='sb-'+new URL(getSupabasePublicConfig().url).hostname.split('.')[0]+'-auth-token';
    for(const item of store.getAll())if(item.name===base||(item.name.startsWith(base+'.')&&/^\d+$/.test(item.name.slice(base.length+1))))store.set(item.name,'',{path:'/',maxAge:0,sameSite:'lax',secure:names.secure});
    response.cookies.set(names.setup,'',{path:'/',httpOnly:true,secure:names.secure,sameSite:'lax',maxAge:0});
+   response.cookies.set(names.recovery,'',{path:'/',httpOnly:true,secure:names.secure,sameSite:'lax',maxAge:0});
   }
   return response;
  };
@@ -54,17 +57,30 @@ export async function POST(request:NextRequest){
   const csrf=await readConfirmationCsrf(request);if(!csrf)return message(400);
   names=confirmationCookieNames(origin);const cookie=request.cookies.get(names.confirmation)?.value;if(!isConfirmationSecret(cookie))return message(400);
   const sdkHeaders=headers(),p=ports(),claim=p.store.claim;p.store.claim=async(input)=>{const result=await claim(input);if(result.code==='claimed')claimed=true;return result;};
-  const result=await acceptInvitationConfirmation({cookie,csrf,origin},{...p,eligible:readInvitationEligibility,async verify(payload){
+  const lookupDigest=confirmationDigest(cookie),stored=await p.store.claim({lookupDigest,csrfDigest:confirmationDigest(csrf),origin});
+  if(stored.code!=='claimed')return await failure(stored.code==='unavailable'?503:400);
+  // Select the flow only from atomically claimed, CSRF-checked evidence. The
+  // selected domain handler receives that same claim without another RPC.
+  p.store.claim=async()=>stored;
+  const payload=openConfirmation(stored.envelope,{lookupDigest,origin,expiresAt:stored.envelope.expiresAt});if(!payload)return await failure(400);
+  const accept=payload.flow==='recovery'?acceptRecoveryConfirmation:acceptInvitationConfirmation;
+  const result=await accept({cookie,csrf,origin},{...p,eligible:readInvitationEligibility,async verify(payload){
    transport=createConfirmationAuthTransport();
    const client=await createServerSupabaseClient({cookieMode:'read-write',fetch:transport.fetch,setResponseHeaders(updates){wroteSession=true;for(const [key,value] of Object.entries(updates))sdkHeaders.set(key,value);applyPrivateResponseHeaders(sdkHeaders);}});
    const verified=await client.auth.verifyOtp({token_hash:payload.tokenHash,type:payload.type});
    if(transport.isUnavailable())return {code:'unavailable'};if(verified.error||!verified.data.session)return {code:'denied'};
    const identity=await verifyConfirmationSession(client,verified.data.session.access_token);return transport.isUnavailable()?{code:'unavailable'}:identity;
   }});
-  if(result.code!=='accepted')return await failure(result.code==='unavailable'?503:400);
+  if(result.code!=='accepted'&&result.code!=='recovered')return await failure(result.code==='unavailable'?503:400);
   const response=new NextResponse(null,{status:303,headers:sdkHeaders});
   response.cookies.set(names.confirmation,'',{path:'/',httpOnly:true,secure:names.secure,sameSite:'lax',maxAge:0});
-  response.headers.set('Location',new URL('/account/setup',origin).href);response.cookies.set(names.setup,result.setupCookie,{path:'/',httpOnly:true,secure:names.secure,sameSite:'lax',maxAge:1800});
+  if(result.code==='recovered'){
+   response.headers.set('Location',new URL('/reset-password',origin).href);response.cookies.set(names.recovery,result.recoveryCookie,{path:'/',httpOnly:true,secure:names.secure,sameSite:'lax',maxAge:1800});
+   response.cookies.set(names.setup,'',{path:'/',httpOnly:true,secure:names.secure,sameSite:'lax',maxAge:0});
+  }else{
+   response.headers.set('Location',new URL('/account/setup',origin).href);response.cookies.set(names.setup,result.setupCookie,{path:'/',httpOnly:true,secure:names.secure,sameSite:'lax',maxAge:1800});
+   response.cookies.set(names.recovery,'',{path:'/',httpOnly:true,secure:names.secure,sameSite:'lax',maxAge:0});
+  }
   return response;
  }catch{return await failure(503);}finally{transport?.close();}
 }

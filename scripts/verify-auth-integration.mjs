@@ -144,7 +144,7 @@ try{
       finally{await read('/api/logout-control',{method:'POST',body:'off'});}
       const malformed=invalidSession(await fresh('A'),'malformed');sessions.push(malformed);const malformedResult=await post(malformed);check(malformedResult.status===303&&malformed.cookieHeader()==='','logout clears malformed session');
       const stale=emptySession(stack),base='sb-'+new URL(stack.apiUrl).hostname.split('.')[0]+'-auth-token';
-      const owned=[base+'.3',base+'-code-verifier.0',base+'-flows-code-verifier',base+'-flow-fixture-code-verifier.0','volo-setup','volo-confirmation'];
+      const owned=['volo-recovery',base+'.3',base+'-code-verifier.0',base+'-flows-code-verifier',base+'-flow-fixture-code-verifier.0','volo-setup','volo-confirmation'];
       const seeded=new Headers();for(const name of [...owned,'unrelated'])seeded.append('Set-Cookie',name+'=fixture-stale; Path=/');stale.applyResponse(new Response(null,{headers:seeded}));
       const cleared=await post(stale);check(cleared.status===303&&stale.cookieHeader()==='unrelated=fixture-stale','logout clears stale chunks/verifier/setup authority and preserves unrelated cookies');
       return 'Guarded native current-session sign-out, cookie clearing, fresh denial, independent-session retention, membership-independent/idempotent logout and bounded outage feedback.';
@@ -171,15 +171,14 @@ try{
       check(messages.length===1,'existing account receives one local recovery email');check((await stack.readCapturedInvites(unknown)).length===0,'unknown email receives no message');
       const href=messages[0].match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&'),link=new URL(href);
       check(link.origin===app.origin&&link.pathname==='/auth/confirm'&&link.searchParams.get('flow')==='recovery'&&link.searchParams.get('type')==='recovery'&&Boolean(link.searchParams.get('token_hash'))&&!link.searchParams.has('resume'),'ordinary recovery link cannot carry invitation authority');
-      check((await app.request(link.pathname+link.search)).status===400,'confirmation fails closed until VOLO-157 supplies recovery authority');
-      const verified=await stack.verifyCapturedLink(recovery.email,messages[0]);check(verified.subjectId===recovery.id&&verified.type==='recovery','local mail contains real recovery evidence for owned subject');
+      check((await app.request(link.pathname+link.search,{method:'HEAD'})).status===200,'recovery HEAD does not consume mail evidence');
       for(const mode of ['outage','rate-limit','malformed']){
         await read('/api/recovery-control',{method:'POST',body:mode});const start=await calls();
         try{const response=await post(unknown);privatePolicy(response);check(response.headers.get('location')===app.origin+'/forgot-password?result=sent'&&await response.text()==='','provider failure has same safe acknowledgment');check(await calls()===start+1,'recovery provider failure never retries');check(response.headers.getSetCookie().length===0,'recovery failure creates no session');}
         finally{await read('/api/recovery-control',{method:'POST',body:'off'});}
       }
       const secret='recovery-query-canary',query=await read('/forgot-password?email='+secret+'&next=https://foreign.invalid');check(query.status===303&&!query.headers.get('location').includes(secret),'request page canonicalizes sensitive query input');
-      return 'Native guarded public recovery request, non-disclosing account/outage outcomes, preserved browser session, exact ordinary-recovery callback and real owned local mail; confirmation remains VOLO-157.';
+      return 'Native guarded public recovery request, non-disclosing account/outage outcomes, preserved browser session, exact ordinary-recovery callback and real owned local mail.';
     });
     await scenario('admission',async()=>{
       for(const label of ['A','B','admin']){const response=await read('/api/subject',{session:users[label]});privatePolicy(response);check(response.status===200,'admission status');const data=await response.json();check(data.userId===accounts[label].id,'admission subject');check(data.role===(label==='admin'?'admin':'member'),'admission role');}
@@ -238,6 +237,41 @@ try{
     const postConfirmation=async(session,csrf,requestOrigin=app.origin)=>{
       const response=await app.request('/auth/confirm',{session,method:'POST',headers:{Origin:requestOrigin,'content-type':'application/x-www-form-urlencoded'},body:'csrf='+csrf});privatePolicy(response);await audit(response);return response;
     };
+    await scenario('recovery_confirmation_and_reset',async()=>{
+      const writes=async()=>Number((await (await read('/api/completion-control')).json()).writes);
+      const formData=(csrf,password)=>new URLSearchParams({csrf,password,passwordConfirmation:password}).toString();
+      const reset=(session,body,headers={Origin:app.origin},route='/auth/reset-password')=>read(route,{session,method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',...headers},body});
+      const authority=async(label)=>{
+        const account=await stack.createAccount({label:'reset-'+label,role:'member'}),session=emptySession(stack);sessions.push(session);
+        const sent=await read('/auth/recovery',{method:'POST',headers:{Origin:app.origin,'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({email:account.email}).toString()});check(sent.status===303,'recovery request sent');
+        let mail=[];const deadline=Date.now()+10000;do{mail=await stack.readCapturedInvites(account.email);if(mail.length)break;await delay(100);}while(Date.now()<deadline);check(mail.length===1,'captured recovery mail');const link=linkFrom(mail[0]);
+        const wrong=new URL(link);wrong.searchParams.set('type','invite');check((await app.request(wrong.pathname+wrong.search)).status===400,'wrong recovery provider type rejected');
+        const external=new URL(link);external.searchParams.set('next','https://foreign.invalid');check((await app.request(external.pathname+external.search)).status===400,'untrusted callback destination rejected');
+        const prefetch=await app.request(link.pathname+link.search,{session,headers:{purpose:'prefetch'}});check(prefetch.status===200&&session.cookieHeader()==='','prefetch does not consume recovery');
+        const head=await app.request(link.pathname+link.search,{method:'HEAD',session});check(head.status===200&&session.cookieHeader()==='','HEAD leaves recovery unused');
+        const landing=await app.request(link.pathname+link.search,{session});privatePolicy(landing);check(landing.status===303&&landing.headers.get('location')===app.origin+'/auth/confirm','recovery token moves to protected transport');
+        const confirmation=await read('/auth/confirm',{session}),html=await confirmation.text();check(html.includes('Confirm password reset')&&!html.includes(link.searchParams.get('token_hash')),'clean explicit recovery confirmation');const csrf=html.match(/name="csrf" value="([A-Za-z0-9_-]{43})"/)?.[1];check(Boolean(csrf),'recovery confirmation CSRF');
+        check((await postConfirmation(session,csrf,'https://foreign.invalid')).status===403,'foreign recovery confirmation rejected');
+        check((await postConfirmation(session,'A'.repeat(43))).status===400,'wrong confirmation CSRF does not consume recovery');
+        const accepted=await postConfirmation(session,csrf);check(accepted.status===303&&accepted.headers.get('location')===app.origin+'/reset-password','verified recovery destination');check(!session.cookieHeader().includes('volo-setup='),'recovery grants no invitation setup');
+        check((await postConfirmation(session,csrf)).status===400,'recovery confirmation replay denied');
+        const replay=emptySession(stack);sessions.push(replay);await app.request(link.pathname+link.search,{session:replay});const replayPage=await app.request('/auth/confirm',{session:replay}),replayCsrf=(await replayPage.text()).match(/name="csrf" value="([A-Za-z0-9_-]{43})"/)?.[1];check((await postConfirmation(replay,replayCsrf)).status===400&&!replay.cookieHeader().includes('auth-token'),'provider token replay establishes no session');
+        const page=await read('/reset-password',{session});privatePolicy(page);const body=await page.text();check(page.status===200&&body.includes('name="passwordConfirmation"')&&body.includes('action="/auth/reset-password"'),'authorized native reset form');const resetCsrf=body.match(/name="csrf" value="([a-f0-9]{64})"/)?.[1];check(Boolean(resetCsrf),'reset form CSRF only');
+        return {account,session,csrf:resetCsrf,link};
+      };
+      const f=await authority('success'),password='Reset-'+randomUUID()+'!',body=formData(f.csrf,password);invitationPasswords.add(password);const start=await writes();
+      for(const [headers,route,input,status] of [[{},'/auth/reset-password',body,403],[{Origin:'https://foreign.invalid'},'/auth/reset-password',body,403],[{Origin:app.origin,'Sec-Fetch-Site':'cross-site'},'/auth/reset-password',body,403],[{Origin:app.origin},'/auth/reset-password?next=https://foreign.invalid',body,303],[{Origin:app.origin},'/auth/reset-password',body+'&password=duplicate',303]])check((await reset(f.session,input,headers,route)).status===status,'invalid reset request rejected');
+      const grantValue=f.session.cookieHeader().match(/(?:^|; )volo-recovery=([^;]+)/)?.[1];check(Boolean(grantValue),'opaque recovery cookie');const grant={name:'volo-recovery',value:grantValue};
+      const other=await fresh('B'),otherCookies=other.cookieHeader();const swapped=await read('/auth/reset-password',{method:'POST',headers:{Origin:app.origin,'content-type':'application/x-www-form-urlencoded',Cookie:otherCookies+'; '+grant.name+'='+grant.value},body});check(swapped.status===303&&swapped.headers.get('location')===app.origin+'/reset-password?result=link_required','borrowed grant cannot reset another user');
+      check(await writes()===start,'reset guards deny before password write');
+      const snapshot=f.session.clone(),responses=await Promise.all([reset(f.session,body),reset(snapshot,body)]);check(responses.filter(x=>x.headers.get('location')===app.origin+'/login?result=password_reset').length===1,'one concurrent reset succeeds');check(await writes()===start+1,'one password update across concurrent resets');
+      const newSession=await signInSession(stack,{...f.account,password});sessions.push(newSession);check(newSession.userId===f.account.id,'new password authenticates original subject');check((await read('/api/subject',{session:newSession})).status===200,'membership remains active');
+      check((await reset(snapshot,body)).headers.get('location')===app.origin+'/reset-password?result=link_required'&&await writes()===start+1,'reset grant cannot replay');
+      const expired=await authority('expired');await stack.expireRecovery(expired.account.id);check((await reset(expired.session,formData(expired.csrf,password))).headers.get('location')===app.origin+'/reset-password?result=link_required'&&await writes()===start+1,'expired recovery authority cannot write');
+      const uncertain=await authority('uncertain'),uncertainBody=formData(uncertain.csrf,password);await read('/api/completion-control',{method:'POST',body:'password-lost'});const before=await writes();
+      try{const response=await reset(uncertain.session,uncertainBody);check(response.headers.get('location')===app.origin+'/reset-password?result=link_required','uncertain password outcome requires fresh recovery');check(await writes()===before+1,'uncertain update never retries');check((await reset(uncertain.session,uncertainBody)).headers.get('location')===app.origin+'/reset-password?result=link_required'&&await writes()===before+1,'uncertain grant consumed');}finally{await read('/api/completion-control',{method:'POST',body:'off'});}
+      return 'Real explicit recovery confirmation, separate session-bound authority, origin/input/user/expiry denials, one concurrent password write, replay fencing and no retry after committed response loss.';
+    });
     const confirmedSetup=async(session,invitation)=>{
       check(session.userId===invitation.auth_user_id,'persisted cookie has provider subject');
       const response=await app.request('/api/confirmation-session',{session});privatePolicy(response);const data=await response.json();
@@ -335,7 +369,10 @@ try{
       privatePolicy(response);return {status:response.status,body:await response.json()};
     };
     const setupRenewal=async(label)=>{
-      const email=ownedEmail(label);check((await issue(email)).body.data?.code==='accepted','initial accepted');
+      const email=ownedEmail(label),initial=await issue(email);
+      const failed=initial.body.data?.code!=='accepted',failedRow=failed?await stack.readInvitationForEmail(email):null;
+      const attempt=failedRow?(await stack.readSendAttempts(failedRow.id)).at(-1):null;
+      check(!failed,`initial accepted (HTTP ${initial.status}; code ${initial.body.data?.code??initial.body.error?.code??'none'}; outcome ${attempt?.outcome??'none'}; error ${attempt?.error_code??'none'}; session ${users.admin.expiresAt*1000>Date.now()?'unexpired':'expired'})`);
       const invitation=await stack.readInvitationForEmail(email);await stack.trackIssuedSubject(invitation.auth_user_id);return {email,invitation};
     };
     const acceptCompletionLink=async({email,invitation},link)=>{
@@ -530,7 +567,7 @@ try{
       const recoverySession=emptySession(stack);sessions.push(recoverySession);const recoveryCsrf=await prepareConfirmation(link,recoverySession);check((await postConfirmation(recoverySession,recoveryCsrf)).status===303,'proof-bearing recovery accepts explicitly');await confirmedSetup(recoverySession,row);
       check(Boolean((await stack.readSendProof(attempt.id)).consumed_at),'recovery proof consumed atomically');
       await delay(1100);const overlap=await Promise.all([consume(),renew(row)]);
-      check(['conflict','stale'].includes(overlap[0].code)&&overlap[1].body.data?.code==='accepted','proof consumption and renewal serialize');
+      check(['conflict','stale'].includes(overlap[0].code)&&overlap[1].body.data?.code==='accepted',`proof consumption and renewal serialize (consume ${overlap[0].code}; renewal HTTP ${overlap[1].status}, ${overlap[1].body.data?.code??overlap[1].body.error?.code??'none'})`);
       check((await consume()).code==='stale','renewal fences previous generation');check(await stack.readSendProof(attempt.id)===null,'old proof removed');row=await stack.readInvitationForEmail(email);
       const currentAttempt=(await stack.readSendAttempts(row.id)).find(a=>a.invitation_version===4);check(!(await stack.readSendProof(currentAttempt.id)).consumed_at,'old consumer cannot consume new proof');
       await stack.revokeInvitation(row.id,accounts.admin.id);check((await renew(row)).body.data?.code==='conflict','terminal renewal denied');await captured(email,4);

@@ -33,6 +33,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await cp(path.join(root,'app/auth'),path.join(directory,'app/auth'),{recursive:true});
     await cp(path.join(root,'app/login'),path.join(directory,'app/login'),{recursive:true});
     await cp(path.join(root,'app/forgot-password'),path.join(directory,'app/forgot-password'),{recursive:true});
+    await cp(path.join(root,'app/reset-password'),path.join(directory,'app/reset-password'),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'protected-layout.tsx'));
     await cp(path.join(root,'app/(protected)/admin'),path.join(directory,'app/(protected)/admin'),{recursive:true});
     await cp(path.join(root,'app/(protected)/_components'),path.join(directory,'app/(protected)/_components'),{recursive:true});
