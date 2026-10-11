@@ -11,9 +11,9 @@ import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
 const root=path.resolve(import.meta.dirname,'..');
 const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.','Provider/setup expiry and invitation age use backdated owned timestamps, not a 30-minute wall-clock wait.']};
 const cancellation=new AbortController();const interrupt=()=>{process.exitCode=130;cancellation.abort();};process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
-let stack,app,setupStage='stack',diagnosticStage='scenario';const sessions=[],invitationPasswords=new Set();
+let stack,app,setupStage='stack',diagnosticStage='scenario',prepareScenario=async()=>{};const sessions=[],invitationPasswords=new Set();
 const check=(condition,message)=>assert.ok(condition,message);
-async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){
+async function scenario(name,run){try{await prepareScenario();const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){
   const evidence=error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:`Service/transport failure (${diagnosticStage}; ${error.operation??'unknown'}; ${Number.isInteger(error.httpStatus)?error.httpStatus:'no-status'})`;
   summary.scenarios.push({name,status:'failed',evidence});
   // The same sanitized evidence is already saved in the downloadable summary.
@@ -79,6 +79,9 @@ try{
     for(const [label,role,status] of [['A','member','active'],['B','member','active'],['admin','admin','active'],['disabled','member','disabled'],['absent',null,'active']]){
       accounts[label]=await stack.createAccount({label,role,status});users[label]=await fresh(label);
     }
+    // A 120-second fixture JWT enters the SDK's 90-second refresh window after
+    // only 30 seconds. Prepare once per scenario, preserving concurrent sends.
+    prepareScenario=()=>users.admin.refresh();
     await scenario('native_password_login',async()=>{
       const loginPage=await read('/login');privatePolicy(loginPage);const html=await loginPage.text();
       check(/<form[^>]*action="\/auth\/login"[^>]*method="post"/.test(html),'native login form');
