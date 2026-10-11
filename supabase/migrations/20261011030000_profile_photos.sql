@@ -61,7 +61,7 @@ declare r public.profile_photo_objects; p public.profiles; begin
  if found and r.state='current' and p.photo_storage_path=r.final_path then return jsonb_build_object('code','saved'); end if;
  if r.id is null or r.state<>'ready' or r.expires_at<=clock_timestamp() or r.processing_until<=clock_timestamp()
  or p.photo_revision<>r.expected_revision or p.photo_storage_path is distinct from r.expected_path then return jsonb_build_object('code','conflict'); end if;
- update public.profile_photo_objects set state='obsolete' where owner_id=auth.uid() and state='current';
+ update public.profile_photo_objects set state='obsolete',cleanup_token=null,cleanup_until=null where owner_id=auth.uid() and state='current';
  update public.profiles set photo_storage_path=r.final_path,photo_revision=photo_revision+1 where user_id=auth.uid();
  update public.profile_photo_objects set state='current' where id=r.id;
  return jsonb_build_object('code','saved');
@@ -70,7 +70,7 @@ create function public.remove_profile_photo() returns jsonb language plpgsql sec
 begin
  if not public.lock_photo_owner(auth.uid()) then return jsonb_build_object('code','forbidden'); end if;
  update public.profiles set photo_storage_path=null,photo_revision=photo_revision+1 where user_id=auth.uid();
- update public.profile_photo_objects set state='obsolete' where owner_id=auth.uid() and state='current';
+ update public.profile_photo_objects set state='obsolete',cleanup_token=null,cleanup_until=null where owner_id=auth.uid() and state='current';
  return jsonb_build_object('code','removed');
 end $$;
 create function public.mark_profile_photo_ready(reservation_id uuid) returns jsonb language plpgsql security definer set search_path='' as $$

@@ -53,6 +53,9 @@ update public.profile_photo_objects set expires_at=now()-interval '1 minute' whe
 select lives_ok('select * from public.claim_profile_photo_cleanup(20)','Cleanup claims expired and obsolete candidates');
 select is(public.mark_profile_photo_ready(current_setting('photo.test.second')::uuid)->>'code','conflict','Cleanup claim cannot be revived');
 select throws_ok($$insert into storage.objects(bucket_id,name) values('profile-photo-uploads','44444444-4444-4444-8444-444444444444/'||current_setting('photo.test.second')||'/source')$$,'42501',null,'Late privileged Storage commit rechecks lifecycle');
+select set_config('photo.test.third',(public.reserve_profile_photo()->>'id'),true);
+update public.profile_photo_objects set expires_at=clock_timestamp()-interval '1 second' where id=current_setting('photo.test.third')::uuid;
+select is(public.reserve_profile_photo()->>'code','limited','Expired cleanup work still counts toward outstanding cap');
 set local role anon;
 select throws_ok('select public.reserve_profile_photo()','42501',null,'Anonymous reservation denied');
 reset role;
