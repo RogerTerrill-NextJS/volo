@@ -28,7 +28,7 @@ export default async function DashboardPage() {
       </header>
       {profile==='missing'&&<section aria-labelledby="profile-heading" className="rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
         <h2 id="profile-heading" className="text-xl font-semibold">Complete your pilot profile</h2>
-        <p className="mt-3 text-zinc-600 dark:text-zinc-400">Introduce yourself to other pilots. You can keep browsing and complete your profile later.</p>
+        <p className="mt-3 text-zinc-600 dark:text-zinc-400">Complete your pilot profile before posting or requesting a flight. You can keep browsing and complete your profile later.</p>
         <Link href="/onboarding" prefetch={false} className="mt-4 inline-block rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 dark:bg-zinc-100 dark:text-zinc-900">Complete profile</Link>
       </section>}
       {profile==='unavailable'&&<p role="status">Your profile could not be checked. You can keep browsing. <a href="/dashboard" className="underline underline-offset-4">Try again</a></p>}

@@ -9,7 +9,7 @@ import {promisify} from "node:util";
 import {setTimeout as delay} from "node:timers/promises";
 import {startAccessFixture,accessKey,accessCanaries} from "./access-fixture.mjs";
 
-export async function startMutationFixture({actions=false,profiles=false,onboarding=false}={}) {
+export async function startMutationFixture({actions=false,profiles=false,onboarding=false,requireCompleteProfile=false}={}) {
   const root=path.resolve(import.meta.dirname,"../..");
   const directory=await mkdtemp(path.join(tmpdir(),"volo-mutations-"));
   const backend=await startAccessFixture();const effects=[],bare=[];
@@ -46,6 +46,7 @@ export async function startMutationFixture({actions=false,profiles=false,onboard
     await put("fixture-policy.ts",`import type {MutationPolicy} from './lib/auth/mutation';
       type Input={value:string;mode?:string};
       export function policy(admin=false):MutationPolicy<Input,{saved:boolean}>{return {
+        ...${JSON.stringify(requireCompleteProfile?{requireCompleteProfile:true}:{})},
         allowedRoles:admin?['admin']:['member','admin'],
         parse(raw){if(raw && typeof raw==='object' && 'mode' in raw && raw.mode==='parse-throw')throw new Error('mutation-error-canary');
           if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(k=>!['value','mode'].includes(k)))return {ok:false};

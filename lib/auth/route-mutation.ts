@@ -3,7 +3,7 @@ import {runMutation,mutationFailure,type MutationPolicy,type MutationResult,type
 import {readMutationJson} from "./mutation-input.ts";
 import {applyPrivateResponseHeaders} from "../http/private-response.ts";
 
-const status:Record<MutationCode,number>={unauthenticated:401,forbidden:403,unavailable:503,invalid_input:400,too_large:413,unsupported_media_type:415,unsupported_method:405,internal_error:500};
+const status:Record<MutationCode,number>={unauthenticated:401,forbidden:403,profile_required:403,unavailable:503,invalid_input:400,too_large:413,unsupported_media_type:415,unsupported_method:405,internal_error:500};
 function response<T>(result:MutationResult<T>,headers:Record<string,string>={}) {
   const responseHeaders=new Headers(headers);
   applyPrivateResponseHeaders(responseHeaders);
