@@ -39,6 +39,8 @@ jobs:
         run: npm run lint
       - name: Production build
         run: npm run build
+      - name: Profile photo image processing
+        run: npm run test:profile-photos:unit
       - name: Production smoke tests
         run: npm test
       - name: Supabase request-scoped clients and cookie persistence
@@ -61,7 +63,7 @@ jobs:
   auth-integration:
     name: Real Auth and session integration
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
         with:
@@ -79,6 +81,20 @@ jobs:
       - name: Stop only the owned integration stack
         if: always()
         run: node scripts/verify-auth-integration.mjs --cleanup
+      - name: Verify protected profile photos against real Storage
+        timeout-minutes: 15
+        run: npm run test:profile-photos
+      - name: Stop only the owned photo stack
+        if: always()
+        run: node scripts/verify-profile-photos.mjs --cleanup
+      - name: Upload sanitized photo summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: profile-photo-summary
+          path: .superpowers/sdd/2026-10-11-volo-164-profile-photo/photo-summary.json
+          include-hidden-files: true
+          if-no-files-found: warn
       - name: Upload sanitized Auth integration summary
         if: always()
         uses: actions/upload-artifact@v7

@@ -519,3 +519,84 @@ need guarded admin operations and an audit trail in their feature ticket.
 - [Database types](https://supabase.com/docs/guides/api/rest/generating-types)
 - [VOLO-17](https://outsidethecockpit.atlassian.net/browse/VOLO-17)
 - [VOLO-13 entity proposal](https://outsidethecockpit.atlassian.net/browse/VOLO-13)
+
+### Protected profile photos (VOLO-164)
+
+Apply `20261011030000_profile_photos.sql` through the reviewed migration workflow.
+It creates private `profile-photo-uploads` and `profile-photos` buckets, each with a
+5,000,000-byte limit. Ordinary profile edits cannot set `photo_storage_path`.
+Photo changes require an active owner with an existing profile; administrators
+have no override. Photos are optional and never gate profile completion.
+
+VOLO-165 browser integration uses the existing authenticated Supabase client:
+
+1. POST `{}` to `/api/profile/photo/uploads` with the application's Origin.
+   A successful envelope contains `{code:'reserved',reservationId,sourcePath}`.
+2. Upload JPEG, PNG or WebP directly to `profile-photo-uploads` at `sourcePath`,
+   with the actual MIME type and `upsert:false`. Do not use original filenames.
+3. POST `{reservation_id:reservationId}` to `/api/profile/photo`. A successful
+   envelope contains `{code:'saved',cleanupPending:boolean}`.
+4. DELETE `/api/profile/photo` with no content or query parameters removes the
+   pointer. Success contains `{code:'removed',cleanupPending:boolean}`.
+
+Use the app's normal session and Origin protection for each application request.
+Domain failures return `invalid_image` (422), `conflict` (409), `limited` (429),
+`forbidden` (403) or `unavailable` (503). Guard failures retain existing mutation
+codes. A successful save/removal can have pending cleanup; do not show it as a
+failed change. On unavailable/conflict, reread the profile before retrying.
+
+The server decodes the actual image, rejects MIME disagreement and animation,
+auto-orients it, fits it within 512×512 without enlargement and emits WebP with
+source metadata stripped. Source downloads and Storage calls are bounded.
+Only current final objects are readable by active members. Use authenticated
+SDK downloads for display, with an object URL revoked when no longer needed;
+do not expose raw source URLs or public URLs. Avoid persistent signed links
+that would outlive membership revocation. UI controls and fallback belong to
+VOLO-165.
+
+Cleanup claims are bounded to 20 records and use recoverable 60-second leases.
+Inline cleanup handles only the affected owner, with a two-second total budget
+and a separate one-second status read. Operator cleanup has a forty-second total
+budget and skips expired claims. Pending counts include leased and unselected
+work; unfinished cleanup remains durable for retry.
+Only exact recorded obsolete/expired paths are deleted through the Storage API.
+Storage v1.79.28 commits upload metadata as superuser after its initial RLS probe;
+a bucket-scoped trigger rechecks lifecycle state at that commit so an in-flight
+upload cannot recreate an acknowledged object. Reverify this integration when
+upgrading Storage. Normal provider failed-upload cleanup removes rejected
+physical versions; a provider outage can delay that cleanup.
+
+The operator command defaults to read-only dry-run and requires an explicit
+project reference matching `NEXT_PUBLIC_SUPABASE_URL`:
+
+```sh
+node scripts/cleanup-profile-photos.mjs --project-ref YOUR_PROJECT_REFERENCE
+node scripts/cleanup-profile-photos.mjs --project-ref YOUR_PROJECT_REFERENCE --execute
+```
+
+Supply the existing server-only secret configuration. Each execution handles at
+most 20 eligible records; repeat bounded runs when needed. The dry-run summary
+samples at most 1,000 lifecycle rows and prints counts only. No cron, hosted
+cleanup, hosted migration or release is enabled by this ticket.
+
+**Launch prerequisite:** separately authorize and enable daily hosted cleanup.
+Until that runs, idle expired/obsolete objects have no guaranteed physical
+retention bound. Provider backups follow existing retention and are not erased
+by object removal. Netlify Deploy Preview verification and production release
+verification remain separate from owned local checks.
+
+Focused verification: `npm run test:profile-photos:unit` and
+`npm run test:profile-photos`. The real verifier creates its own local Supabase
+stack and compiled app, checks physical Storage deletion and held upload races,
+and records a sanitized summary. Recovery uses
+`node scripts/verify-profile-photos.mjs --cleanup`, which stops only its recorded
+owned stack. It never targets developer or hosted data.
+
+
+Local VOLO-164 verification on 2026-10-11 passed 76 focused database assertions,
+five processing/cleanup unit tests and 12 real Storage/compiled endpoint
+scenarios, including physical held/aborted-upload deletion. The owned prior-schema
+upgrade preserved Auth/membership fixtures and matched generated types. Netlify
+Deploy Preview verification is pending a PR; production release is pending an
+explicit release request. The full application suite and invitation-specific
+GitHub-only concurrency upgrade checks remain for their CI/release workflow.

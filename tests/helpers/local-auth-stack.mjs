@@ -307,8 +307,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
 
 export const startLocalAuthStack=options=>createLocalAuthStack(options);
 
-export async function cleanupOwnedStack(repositoryRoot) {
-  const stateFile=path.join(evidenceDirectory(repositoryRoot),'owned-stack.json');
+export async function cleanupOwnedStack(repositoryRoot,{stateFile=path.join(evidenceDirectory(repositoryRoot),'owned-stack.json')}={}) {
   let state;try{state=JSON.parse(await readFile(stateFile,'utf8'));}catch(error){if(error.code==='ENOENT')return;throw new Error('Invalid owned stack state');}
   if(!idPattern.test(state.projectId)||typeof state.workdir!=='string'||path.dirname(state.workdir)!==tmpdir()||!path.basename(state.workdir).startsWith(state.projectId+'-'))throw new Error('Refusing unowned stack cleanup');
   const config=await readFile(path.join(state.workdir,'supabase/config.toml'),'utf8');

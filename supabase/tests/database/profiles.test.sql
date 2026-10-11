@@ -36,7 +36,7 @@ select is((select certificates from public.profiles where user_id = auth.uid()),
 select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Duplicate', 'KPAO', 'student')$$, '23505', null, 'Only one profile per identity');
 select throws_ok($$insert into public.profiles (user_id, display_name, home_airport, pilot_designation) values ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'Impersonated', 'KPAO', 'student')$$, '42501', null, 'Client cannot supply another profile identity');
 select set_config('volo.profile_initial_updated_at', (select updated_at::text from public.profiles where user_id = auth.uid()), true);
-select lives_ok($$update public.profiles set certificates = array['Private pilot'], ratings = array['Instrument'], aircraft_access = 'Flying club C172', flying_interests = 'Day trips', bio = 'Local pilot', photo_storage_path = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/photo.webp' where user_id = auth.uid()$$, 'Owner updates permitted optional fields');
+select lives_ok($$update public.profiles set certificates = array['Private pilot'], ratings = array['Instrument'], aircraft_access = 'Flying club C172', flying_interests = 'Day trips', bio = 'Local pilot' where user_id = auth.uid()$$, 'Owner updates permitted optional fields');
 select cmp_ok((select updated_at from public.profiles where user_id = auth.uid()), '>', current_setting('volo.profile_initial_updated_at')::timestamptz, 'Profile edits advance server-managed update time');
 select is((select bio from public.profiles where user_id = auth.uid()), 'Local pilot', 'Owner update persists');
 with changed as (update public.profiles set bio = 'Cross-owner edit' where user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' returning user_id)
@@ -66,7 +66,7 @@ select throws_ok($$update public.profiles set ratings = array[['Instrument']] wh
 select throws_ok($$update public.profiles set aircraft_access = repeat('A', 501) where user_id = auth.uid()$$, '23514', null, 'Aircraft access bounded');
 select throws_ok($$update public.profiles set flying_interests = repeat('I', 501) where user_id = auth.uid()$$, '23514', null, 'Interests bounded');
 select throws_ok($$update public.profiles set bio = repeat('B', 2001) where user_id = auth.uid()$$, '23514', null, 'Bio bounded');
-select lives_ok('update public.profiles set aircraft_access = null, flying_interests = null, bio = null, photo_storage_path = null where user_id = auth.uid()', 'Optional text and photo can be cleared');
+select lives_ok('update public.profiles set aircraft_access = null, flying_interests = null, bio = null where user_id = auth.uid()', 'Optional text can be cleared');
 
 select set_config('request.jwt.claims', '{"sub":"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","role":"authenticated"}', true);
 select lives_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Lev', 'S1', 'student')$$, 'Student profile needs no certificates or ratings');

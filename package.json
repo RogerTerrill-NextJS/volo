@@ -29,7 +29,9 @@
     "db:test": "supabase test db --local",
     "db:types": "node scripts/database-types.mjs",
     "db:types:check": "node scripts/database-types.mjs --check",
-    "test:invitations:unit": "node --conditions=react-server --test tests/invitation-send.unit.mts tests/invitation-resend.unit.mts tests/invitation-admin-query.unit.mts tests/invitation-admin-form.unit.mts tests/invitation-confirmation*.unit.mts tests/invitation-completion*.unit.mts tests/invitation-setup-ui.unit.mts"
+    "test:invitations:unit": "node --conditions=react-server --test tests/invitation-send.unit.mts tests/invitation-resend.unit.mts tests/invitation-admin-query.unit.mts tests/invitation-admin-form.unit.mts tests/invitation-confirmation*.unit.mts tests/invitation-completion*.unit.mts tests/invitation-setup-ui.unit.mts",
+    "test:profile-photos:unit": "node --conditions=react-server --test --test-reporter=dot tests/profile-photo-image.unit.mts tests/profile-photo-cleanup.unit.mts",
+    "test:profile-photos": "node scripts/verify-profile-photos.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
@@ -37,7 +39,8 @@
     "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "0.0.1"
+    "server-only": "0.0.1",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

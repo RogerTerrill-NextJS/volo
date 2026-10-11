@@ -11,7 +11,7 @@ import {promisify} from 'node:util';
 import {reservePort,validateLocalApiUrl,sanitizeDiagnostics,evidenceDirectory} from './local-auth-stack.mjs';
 
 const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
-export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false}) {
+export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false,photos=false}) {
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
   const directory=await mkdtemp(path.join(tmpdir(),'volo-real-auth-app-'));const effects=[];let server,recorder,output='',closePromise,fixtureStage='files';
   const put=async(name,value)=>{const file=path.join(directory,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,value);};
@@ -38,10 +38,13 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await cp(path.join(root,'app/(protected)/admin'),path.join(directory,'app/(protected)/admin'),{recursive:true});
     await cp(path.join(root,'app/(protected)/_components'),path.join(directory,'app/(protected)/_components'),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/(protected)/layout.tsx'));
+    if(photos)await cp(path.join(root,'app/api/profile/photo'),path.join(directory,'app/api/profile/photo'),{recursive:true});
     await put('package.json',JSON.stringify({private:true,type:'module'}));
     await put('instrumentation.js',`export function register(){const original=globalThis.fetch;globalThis.fetch=async(input,init)=>{
       const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);
       if(!${JSON.stringify([stack.apiUrl,recordOrigin])}.includes(url.origin)||url.username||url.password)throw new Error('Fixture forbids outbound requests');
+      if(globalThis.__voloPhotoMode==='delete-failure'&&url.pathname.startsWith('/storage/v1/object/')&&init?.method==='DELETE')return Response.json({error:'fixture_unavailable'},{status:503});
+      if(globalThis.__voloPhotoMode==='upload-failure'&&url.pathname.startsWith('/storage/v1/object/profile-photos/')&&init?.method==='POST')return Response.json({error:'fixture_unavailable'},{status:503});
       if(url.pathname==='/auth/v1/recover'){
         globalThis.__voloRecoveryCalls=(globalThis.__voloRecoveryCalls??0)+1;
         if(globalThis.__voloRecoveryMode==='outage')return Response.json({code:'fixture_unavailable'},{status:503});
@@ -65,6 +68,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       if(mode==='record-failure'&&url.pathname==='/rest/v1/rpc/record_invitation_password')return Response.json({code:'fixture_unavailable'},{status:503});
       const response=await original(input,{...init,redirect:'error'});
       if(password&&!response.ok){const data=await response.clone().json();globalThis.__voloPasswordCode=data.code??data.error_code;}
+      if(globalThis.__voloPhotoMode==='attach-lost'&&url.pathname==='/rest/v1/rpc/attach_profile_photo'){await response.text();throw new Error('Owned fixture discarded committed response');}
       if((mode==='password-lost'&&password)||(mode==='record-lost'&&url.pathname==='/rest/v1/rpc/record_invitation_password')||(mode==='redeem-lost'&&url.pathname==='/rest/v1/rpc/redeem_invitation')){await response.text();throw new Error('Owned fixture discarded committed response');}
       return response;
     };}`);
@@ -74,6 +78,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     }
     await put('app/layout.tsx',browser?"import './globals.css';export default function Layout({children}:{children:React.ReactNode}){return <html lang=\"en\" className=\"h-full antialiased\"><body className=\"min-h-full flex flex-col\">{children}</body></html>}":'export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}' );
     await put('app/page.tsx','export default function Page(){return <p>Public fixture</p>}');
+    if(photos)await put('app/api/photo-control/route.ts',`type State=typeof globalThis & {__voloPhotoMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','delete-failure','upload-failure','attach-lost'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloPhotoMode=mode;return Response.json({fixture:true});}`);
     await put('app/api/login-control/route.ts',`type State=typeof globalThis & {__voloLoginMode?:string;__voloLoginCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloLoginCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloLoginMode=mode;return Response.json({fixture:true});}`);
     await put('app/api/recovery-control/route.ts',`type State=typeof globalThis & {__voloRecoveryMode?:string;__voloRecoveryCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloRecoveryCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage','rate-limit','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloRecoveryMode=mode;return Response.json({fixture:true});}`);
     await put('app/api/logout-control/route.ts',`type State=typeof globalThis & {__voloLogoutMode?:string;__voloLogoutCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloLogoutCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloLogoutMode=mode;return Response.json({fixture:true});}`);
