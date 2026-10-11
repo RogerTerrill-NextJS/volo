@@ -330,3 +330,64 @@ browser and integration stacks were cleaned up.
 
 This is local evidence only. Deploy Preview acceptance and production release
 verification remain separate; automatic production publishing stays locked.
+
+## VOLO-110: partial hosted verification
+
+Reviewed PR #43 revision `0138e309081ea3724d902d2ff888417c4b790298` passed seven
+GitHub checks and deployed successfully as Netlify deploy
+`6acb280041956e0008a41501`. Browser and HTTP checks used
+`https://deploy-preview-43--voloapp.netlify.app`; its immutable deployment is
+`https://6acb280041956e0008a41501--voloapp.netlify.app`. PR #43 merged into main
+at `575902a3bc9d6d47792e62c4a3f48a7f24659070`. A merge does not establish a
+production release.
+
+All eight existing anonymous smoke tests passed. The private-cache reporter
+exited 1 when a protected HEAD response reported `Age: 1`. Recorded protected
+responses retained private/no-store and `CDN-Cache-Control: no-store`, durable
+cache bypass and edge misses, without protected hit/storage markers, cookies or
+private content. This reproduces the deferred VOLO-120 evidence issue; neither
+edge misses nor these observations prove CDN non-storage.
+
+The user approved two existing test accounts and explicitly approved active
+member access in the shared hosted database. Both initially lacked membership;
+the first signed-in session correctly showed Access denied. Exactly two active
+member rows were added, with the existing admin unchanged. Account A in Chrome
+and account B in the Codex in-app browser then rendered `/dashboard` across
+reload and public-home navigation. Signing A out returned focused sign-in
+feedback; a fresh `/dashboard` request redirected to
+`/login?reason=authentication-required`. B remained signed in on reload and
+navigation. The dashboard currently has no subject-specific content, so this
+verifies independent browser login/logout behavior, not full subject or cookie
+isolation. There is no private JSON API route in the current application;
+`/api/health` is public.
+
+A read-only hosted audit found migration history stopped at
+`20261009020000`, confirmation/setup tables absent and `cron.job` absent.
+The user separately approved applying these four existing migrations:
+
+- `20261009030000_invitation_confirmation.sql`
+- `20261009040000_invitation_redemption.sql`
+- `20261010010000_invitation_password_completion.sql`
+- `20261011010000_password_recovery.sql`
+
+The pinned CLI dry run proposed exactly that set. Application with
+`db push --linked --skip-vault --yes` succeeded against confirmed project
+`macrktxywcqauxqkbnqb`, without seeds or role-file changes. Remote migration
+history now matches all nine local versions. Hosted catalog checks verified all
+14 expected functions deny anon/authenticated execution, permit service-role
+execution and use security-definer mode. All three new tables enable RLS and
+deny direct SELECT/INSERT/UPDATE/DELETE to anon, authenticated and service-role
+users. Both five-minute cleanup jobs are active and completed their first
+scheduled executions successfully at 2026-10-11 06:35:00 UTC. No artificial
+expired hosted records were created; job execution does not prove a populated
+cleanup deletion scenario. Account B's dashboard still worked afterward.
+
+VOLO-110 remains In Progress. The hosted callback audit showed no Redirect URLs
+configured. Exact preview callback activation, confirmation runtime keys,
+templates/SMTP and platform ingress exclusion of `token_hash`/`resume` remain
+unverified under the existing configuration gate. Natural expiry/refresh,
+authenticated HTML/RSC headers, refreshed-cookie isolation and hosted
+invitation/recovery acceptance remain outstanding. No emails, password changes,
+Vault changes or application production publication were performed by this
+verification work. Production publishing remains locked by workflow; its lock
+was not reverified in this run.
