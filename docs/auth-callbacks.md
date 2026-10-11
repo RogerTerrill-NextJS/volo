@@ -121,6 +121,22 @@ release evidence remain VOLO-110.
 
 ### Invitation and recovery callback
 
+VOLO-156 adds public `/forgot-password`, linked from login, and native
+`POST /auth/recovery`. The handler checks the exact configured Origin and
+fetch-site evidence, rejects query destinations, and accepts one bounded email
+field before contacting Auth. A stateless public client requests mail without
+reading, refreshing or changing visitor cookies. Existing/unknown accounts,
+provider rejection, rate limits and outages receive the same fixed acknowledgment;
+provider calls are bounded and never automatically retried. Responses and the
+request page use private/no-store and no-referrer policy.
+
+Ordinary recovery supplies the fixed `/auth/confirm?flow=recovery` callback.
+The local template appends `token_hash` and `type=recovery`, with no invitation
+`resume` proof. Its neutral wording also supports invitation renewal. The marker
+grants no authority: ordinary confirmation currently fails closed until VOLO-157
+implements verification and password change. Hosted SMTP, templates and exact
+redirect allowlists remain separate VOLO-107/110 work.
+
 VOLO-121's approved [invitation activation contract](superpowers/specs/2026-10-07-volo-121-invitation-contract-design.md)
 defines the invitation branch. Invitations target one specific email address and
 do not expire with age: they remain eligible until redeemed, revoked or

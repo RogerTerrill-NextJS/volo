@@ -251,7 +251,7 @@ subject = "You have been invited"
 content_path = "./supabase/templates/invite.html"
 
 [auth.email.template.recovery]
-subject = "Continue account setup"
+subject = "Continue securely with Volo"
 content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize notification email template

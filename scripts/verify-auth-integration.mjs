@@ -149,6 +149,38 @@ try{
       const cleared=await post(stale);check(cleared.status===303&&stale.cookieHeader()==='unrelated=fixture-stale','logout clears stale chunks/verifier/setup authority and preserves unrelated cookies');
       return 'Guarded native current-session sign-out, cookie clearing, fresh denial, independent-session retention, membership-independent/idempotent logout and bounded outage feedback.';
     });
+    await scenario('forgotten_password_request',async()=>{
+      const login=await read('/login');check((await login.text()).includes('href="/forgot-password"'),'login offers forgotten password');
+      const form=await read('/forgot-password');privatePolicy(form);const html=await form.text();
+      check(/<form[^>]*action="\/auth\/recovery"[^>]*method="post"/.test(html)&&/name="email"/.test(html),'accessible native recovery request form');
+      const calls=async()=>Number((await (await read('/api/recovery-control')).json()).calls);
+      const post=(email,headers={Origin:app.origin},route='/auth/recovery',session,extra='')=>read(route,{session,method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',...headers},body:new URLSearchParams({email}).toString()+extra});
+      const before=await calls(),session=await fresh('A'),cookies=session.cookieHeader();
+      for(const [headers,route,extra,status] of [[{},'/auth/recovery','',403],[{Origin:'https://foreign.invalid'},'/auth/recovery','',403],[{Origin:app.origin,'Sec-Fetch-Site':'cross-site'},'/auth/recovery','',403],[{Origin:app.origin},'/auth/recovery?next=https://foreign.invalid','',400],[{Origin:app.origin},'/auth/recovery','&email=other@example.invalid',303]]){
+        const denied=await post(accounts.A.email,headers,route,session,extra);privatePolicy(denied);check(denied.status===status,'invalid recovery request rejected');check(denied.headers.getSetCookie().length===0&&session.cookieHeader()===cookies,'rejected recovery preserves browser session');
+      }
+      for(const method of ['GET','HEAD','PUT','OPTIONS']){const denied=await read('/auth/recovery',{method,session});privatePolicy(denied);check(denied.status===405&&denied.headers.get('allow')==='POST','recovery supports only POST');}
+      check(await calls()===before,'recovery boundary rejects before provider');
+      const recovery=await stack.createAccount({label:'recovery',role:'member'}),disabledRecovery=await stack.createAccount({label:'recovery-disabled',role:'member',status:'disabled'});
+      const unknown=stack.ownInvitationEmail('recovery-unknown-'+randomUUID()+'@example.invalid');
+      for(const email of [recovery.email,unknown,disabledRecovery.email]){
+        const response=await post(email,{Origin:app.origin},'/auth/recovery',session);privatePolicy(response);check(response.status===303&&response.headers.get('location')===app.origin+'/forgot-password?result=sent','recovery acknowledgment does not disclose account or membership');
+        check(response.headers.getSetCookie().length===0&&session.cookieHeader()===cookies,'recovery neither establishes nor alters browser session');check(await response.text()==='','recovery does not echo email or provider data');
+      }
+      let messages=[];const deadline=Date.now()+10000;do{messages=await stack.readCapturedInvites(recovery.email);if(messages.length===1)break;await delay(100);}while(Date.now()<deadline);
+      check(messages.length===1,'existing account receives one local recovery email');check((await stack.readCapturedInvites(unknown)).length===0,'unknown email receives no message');
+      const href=messages[0].match(/href="([^"]+)"/)?.[1]?.replaceAll('&amp;','&'),link=new URL(href);
+      check(link.origin===app.origin&&link.pathname==='/auth/confirm'&&link.searchParams.get('flow')==='recovery'&&link.searchParams.get('type')==='recovery'&&Boolean(link.searchParams.get('token_hash'))&&!link.searchParams.has('resume'),'ordinary recovery link cannot carry invitation authority');
+      check((await app.request(link.pathname+link.search)).status===400,'confirmation fails closed until VOLO-157 supplies recovery authority');
+      const verified=await stack.verifyCapturedLink(recovery.email,messages[0]);check(verified.subjectId===recovery.id&&verified.type==='recovery','local mail contains real recovery evidence for owned subject');
+      for(const mode of ['outage','rate-limit','malformed']){
+        await read('/api/recovery-control',{method:'POST',body:mode});const start=await calls();
+        try{const response=await post(unknown);privatePolicy(response);check(response.headers.get('location')===app.origin+'/forgot-password?result=sent'&&await response.text()==='','provider failure has same safe acknowledgment');check(await calls()===start+1,'recovery provider failure never retries');check(response.headers.getSetCookie().length===0,'recovery failure creates no session');}
+        finally{await read('/api/recovery-control',{method:'POST',body:'off'});}
+      }
+      const secret='recovery-query-canary',query=await read('/forgot-password?email='+secret+'&next=https://foreign.invalid');check(query.status===303&&!query.headers.get('location').includes(secret),'request page canonicalizes sensitive query input');
+      return 'Native guarded public recovery request, non-disclosing account/outage outcomes, preserved browser session, exact ordinary-recovery callback and real owned local mail; confirmation remains VOLO-157.';
+    });
     await scenario('admission',async()=>{
       for(const label of ['A','B','admin']){const response=await read('/api/subject',{session:users[label]});privatePolicy(response);check(response.status===200,'admission status');const data=await response.json();check(data.userId===accounts[label].id,'admission subject');check(data.role===(label==='admin'?'admin':'member'),'admission role');}
       for(const label of ['disabled','absent']){const response=await read('/api/subject',{session:users[label]});check(response.status===403,'membership denial');const result=await page(users[label]);check(result.body.includes('Access denied'),'denied HTML');for(const transport of ['json','native','fetched'])await deny(transport,users[label]);}

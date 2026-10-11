@@ -32,6 +32,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await cp(path.join(root,'app/account'),path.join(directory,'app/account'),{recursive:true});
     await cp(path.join(root,'app/auth'),path.join(directory,'app/auth'),{recursive:true});
     await cp(path.join(root,'app/login'),path.join(directory,'app/login'),{recursive:true});
+    await cp(path.join(root,'app/forgot-password'),path.join(directory,'app/forgot-password'),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'protected-layout.tsx'));
     await cp(path.join(root,'app/(protected)/admin'),path.join(directory,'app/(protected)/admin'),{recursive:true});
     await cp(path.join(root,'app/(protected)/_components'),path.join(directory,'app/(protected)/_components'),{recursive:true});
@@ -40,6 +41,12 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await put('instrumentation.js',`export function register(){const original=globalThis.fetch;globalThis.fetch=async(input,init)=>{
       const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);
       if(!${JSON.stringify([stack.apiUrl,recordOrigin])}.includes(url.origin)||url.username||url.password)throw new Error('Fixture forbids outbound requests');
+      if(url.pathname==='/auth/v1/recover'){
+        globalThis.__voloRecoveryCalls=(globalThis.__voloRecoveryCalls??0)+1;
+        if(globalThis.__voloRecoveryMode==='outage')return Response.json({code:'fixture_unavailable'},{status:503});
+        if(globalThis.__voloRecoveryMode==='rate-limit')return Response.json({code:'over_email_send_rate_limit'},{status:429});
+        if(globalThis.__voloRecoveryMode==='malformed')return new Response('invalid-json',{status:200});
+      }
       if(url.pathname==='/auth/v1/logout'){
         globalThis.__voloLogoutCalls=(globalThis.__voloLogoutCalls??0)+1;
         if(globalThis.__voloLogoutMode==='outage')return Response.json({code:'fixture_unavailable'},{status:503});
@@ -63,6 +70,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await put('app/layout.tsx','export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}');
     await put('app/page.tsx','export default function Page(){return <p>Public fixture</p>}');
     await put('app/api/login-control/route.ts',`type State=typeof globalThis & {__voloLoginMode?:string;__voloLoginCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloLoginCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloLoginMode=mode;return Response.json({fixture:true});}`);
+    await put('app/api/recovery-control/route.ts',`type State=typeof globalThis & {__voloRecoveryMode?:string;__voloRecoveryCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloRecoveryCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage','rate-limit','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloRecoveryMode=mode;return Response.json({fixture:true});}`);
     await put('app/api/logout-control/route.ts',`type State=typeof globalThis & {__voloLogoutMode?:string;__voloLogoutCalls?:number};export async function GET(){return Response.json({calls:(globalThis as State).__voloLogoutCalls??0});}export async function POST(request:Request){const mode=await request.text();if(!['off','outage'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloLogoutMode=mode;return Response.json({fixture:true});}`);
     await put('app/dashboard/layout.tsx',"export {default,dynamic} from '../../protected-layout';");
     await put('app/dashboard/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';import AppShell from '../(protected)/_components/app-shell';import {getPageAccess} from '../../lib/auth/page-access';export default async function Page(){const access=await getPageAccess();if(access.status!=='authorized')return <p>Access denied</p>;return <AppShell isAdmin={access.member.role==='admin'}><p>subject:{access.member.userId} role:{access.member.role}</p><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></AppShell>;}`);
