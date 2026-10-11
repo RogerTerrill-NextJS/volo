@@ -4,7 +4,7 @@ import {getPasswordRecovery} from '../../lib/auth/password-reset';
 import {passwordResetMessage} from '../../lib/auth/password-reset-feedback';
 import PasswordSetupForm from '../account/setup/password-form';
 export const dynamic='force-dynamic';
-export const metadata:Metadata={title:'Choose a new password | Volo',robots:{index:false,follow:false},referrer:'no-referrer'};
+export const metadata:Metadata={title:'Choose a new password | Volo',robots:{index:false,follow:false},referrer:'same-origin'};
 export default async function ResetPasswordPage({searchParams}:{searchParams:Promise<{[key:string]:string|string[]|undefined}>}){
  const query=await searchParams,recovery=await getPasswordRecovery(),message=passwordResetMessage(query.result);
  return <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-12 sm:py-16">

@@ -7,7 +7,7 @@ import PasswordSetupForm from './password-form';
 import {setupResultMessage} from '../../../lib/auth/invitation-setup-feedback';
 
 export const dynamic='force-dynamic';
-export const metadata:Metadata={title:'Complete your account | Volo',description:'Set your password to complete your invited Volo account.',robots:{index:false,follow:false},referrer:'no-referrer'};
+export const metadata:Metadata={title:'Complete your account | Volo',description:'Set your password to complete your invited Volo account.',robots:{index:false,follow:false},referrer:'same-origin'};
 export default async function AccountSetupPage({searchParams}:{searchParams:Promise<{[key:string]:string|string[]|undefined}>}) {
  const query=await searchParams;
  // Canonicalize untrusted query input before Next serializes page props.

@@ -16,6 +16,7 @@ export async function proxy(request: NextRequest) {
       catch{return new NextResponse(null,{status:503,headers});}
       return new NextResponse(null,{status:303,headers});
     }
+    headers.set('Referrer-Policy','same-origin');
     const {response}=await refreshSupabaseSession(request);for(const [key,value] of headers)response.headers.set(key,value);return response;
   }
   if (["/forgot-password","/forgot-password/"].includes(request.nextUrl.pathname)) {
@@ -26,6 +27,7 @@ export async function proxy(request: NextRequest) {
       catch{return new NextResponse(null,{status:503,headers});}
       return new NextResponse(null,{status:303,headers});
     }
+    headers.set('Referrer-Policy','same-origin');
     // Public recovery initiation must not refresh, clear or require a visitor session.
     const response=NextResponse.next();for(const [key,value] of headers)response.headers.set(key,value);return response;
   }

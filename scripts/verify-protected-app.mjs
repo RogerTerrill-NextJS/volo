@@ -115,7 +115,15 @@ try {
   loginRedirect(await request("/dashboard"));
   const login = await request("/login");
   assert.equal(login.response.status, 200); assert.match(login.body, /action="\/auth\/login"/);privateHeaders(login.response);
-  console.log("PASS: anonymous dashboard redirects safely and public login exists");
+  for (const route of ['/login','/forgot-password','/reset-password']) {
+    const page=await request(route);
+    assert.equal(page.response.headers.get('referrer-policy'),'same-origin','clean Auth pages must preserve native form Origin without cross-origin referrers');
+    assert.match(page.body,/<meta name="referrer" content="same-origin"/,'HTML metadata must agree with the native form policy');
+    const rejected=await request(route+'?token=provider_canary');
+    assert.equal(rejected.response.status,303);
+    assert.equal(rejected.response.headers.get('referrer-policy'),'no-referrer','unexpected query values stay suppressed during scrubbing');
+  }
+  console.log("PASS: anonymous dashboard redirects safely and native Auth forms preserve Origin");
   const seed = async (label, options) => {
     const account = await backend.seed(label, options);
     for (const value of account.jar.values()) canaries.add(value);

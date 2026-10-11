@@ -3,7 +3,7 @@ import Link from 'next/link';
 import {passwordRecoveryMessage} from '../../lib/auth/password-recovery-feedback';
 import RecoveryForm from './recovery-form';
 export const dynamic='force-dynamic';
-export const metadata:Metadata={title:'Reset password | Volo',description:'Request a password reset link.',robots:{index:false,follow:false},referrer:'no-referrer'};
+export const metadata:Metadata={title:'Reset password | Volo',description:'Request a password reset link.',robots:{index:false,follow:false},referrer:'same-origin'};
 export default async function ForgotPasswordPage({searchParams}:{searchParams:Promise<{[key:string]:string|string[]|undefined}>}){
  const query=await searchParams;
  return <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-12 sm:py-16">

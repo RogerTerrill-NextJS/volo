@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   title: "Sign in | Volo",
   description: "Sign in to your Volo workspace.",
   robots: {index:false,follow:false},
-  referrer: 'no-referrer',
+  referrer: 'same-origin',
 };
 
 export const dynamic='force-dynamic';

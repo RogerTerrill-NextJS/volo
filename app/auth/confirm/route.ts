@@ -14,7 +14,7 @@ import {getSupabasePublicConfig} from '../../../lib/supabase/public-config.mjs';
 import {readInvitationEligibility} from '../../../lib/auth/invitation-eligibility.ts';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
-function headers(){const h=new Headers();applyPrivateResponseHeaders(h);h.set('Referrer-Policy','no-referrer');h.set('Content-Security-Policy',"default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");h.set('X-Content-Type-Options','nosniff');return h;}
+function headers(referrerPolicy:'no-referrer'|'same-origin'='no-referrer'){const h=new Headers();applyPrivateResponseHeaders(h);h.set('Referrer-Policy',referrerPolicy);h.set('Content-Security-Policy',"default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");h.set('X-Content-Type-Options','nosniff');return h;}
 function message(status=200){return new NextResponse('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Account confirmation</title><main><h1>Account confirmation</h1><p>'+ (status===503?'Confirmation is temporarily unavailable. Try again later.':'This link cannot be used. Open a current account email or request a new password reset link.')+'</p></main></html>',{status,headers:{...Object.fromEntries(headers()),'Content-Type':'text/html; charset=utf-8'}});}
 function ports():TransportPorts{return {store:createConfirmationStore(),newSecret:newConfirmationSecret,seal:sealConfirmation,open:openConfirmation,digest:confirmationDigest,now:Date.now};}
 function trustedOrigin(){return parseMutationOrigin(process.env.VOLO_MUTATION_ORIGIN??'',true);}
@@ -34,8 +34,9 @@ export async function GET(request:NextRequest){
   const lookupDigest=confirmationDigest(cookie),stored=await p.store.read({lookupDigest,origin});if(stored.code!=='found')return message(stored.code==='unavailable'?503:400);
   const payload=openConfirmation(stored.envelope,{lookupDigest,origin,expiresAt:stored.envelope.expiresAt});if(!payload)return message(400);
   // CSRF is the only dynamic output; its canonical alphabet cannot contain HTML.
+  // The token URL is already scrubbed. Native form POSTs need a non-null Origin.
   const recovery=payload.flow==='recovery';
-  return new NextResponse('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'+ (recovery?'Confirm password reset':'Accept invitation')+'</title><main><h1>'+ (recovery?'Confirm password reset':'Accept invitation')+'</h1><p>'+ (recovery?'Continue to choose a new password.':'Continue to account setup. Invitations do not expire with age.')+'</p><form method="post" action="/auth/confirm"><input type="hidden" name="csrf" value="'+payload.csrf+'"><button type="submit">'+(recovery?'Confirm password reset':'Accept invitation')+'</button></form></main></html>',{headers:{...Object.fromEntries(headers()),'Content-Type':'text/html; charset=utf-8'}});
+  return new NextResponse('<!doctype html><html lang="en"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'+ (recovery?'Confirm password reset':'Accept invitation')+'</title><main><h1>'+ (recovery?'Confirm password reset':'Accept invitation')+'</h1><p>'+ (recovery?'Continue to choose a new password.':'Continue to account setup. Invitations do not expire with age.')+'</p><form method="post" action="/auth/confirm"><input type="hidden" name="csrf" value="'+payload.csrf+'"><button type="submit">'+(recovery?'Confirm password reset':'Accept invitation')+'</button></form></main></html>',{headers:{...Object.fromEntries(headers('same-origin')),'Content-Type':'text/html; charset=utf-8'}});
 
  }catch{return message(503);}
 }
