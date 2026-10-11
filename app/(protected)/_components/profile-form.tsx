@@ -43,8 +43,8 @@ export default function ProfileForm({unavailable=false,initial=empty,save,permal
   {text('display_name','Display name (required)','1–80 characters. This is the name other pilots will see.')}
   {text('home_airport','Home airport (required)','Use an airport identifier, such as KPAO. 2–8 letters or numbers.')}
   <fieldset id="profile-pilot_designation" tabIndex={-1} aria-describedby={errors.pilot_designation?'profile-pilot_designation-error':undefined} aria-invalid={errors.pilot_designation?true:undefined} className="space-y-3">
-   <legend className="text-sm font-medium">Pilot designation (required)</legend>
-   {(['student','licensed'] as const).map(value=><label key={value} className="flex min-h-11 items-center gap-3"><input type="radio" name="pilot_designation" value={value} required defaultChecked={state.values.pilot_designation===value} className="h-5 w-5"/>{value==='student'?'Student pilot':'Licensed pilot'}</label>)}
+   <legend className="text-sm font-medium">Pilot eligibility (required)</legend>
+   <label className="flex min-h-11 items-center gap-3"><input type="checkbox" name="pilot_designation" value="licensed" required defaultChecked={state.values.pilot_designation==='licensed'} className="h-5 w-5"/>I am a licensed pilot</label>
    {errors.pilot_designation&&<p id="profile-pilot_designation-error" className="text-sm text-red-700 dark:text-red-400">{errors.pilot_designation}</p>}
   </fieldset>
   <h2 className="text-xl font-semibold">More about your flying (optional)</h2>

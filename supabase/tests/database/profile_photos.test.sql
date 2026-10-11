@@ -11,13 +11,13 @@ insert into public.memberships(user_id,role,status) values
  ('44444444-4444-4444-8444-444444444444','member','active'),
  ('55555555-5555-4555-8555-555555555555','admin','active');
 insert into public.profiles(user_id,display_name,home_airport,pilot_designation) values
- ('44444444-4444-4444-8444-444444444444','Owner','KPAO','student'),
+ ('44444444-4444-4444-8444-444444444444','Owner','KPAO','licensed'),
  ('55555555-5555-4555-8555-555555555555','Admin','KPAO','licensed');
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"44444444-4444-4444-8444-444444444444","role":"authenticated"}',true);
 select throws_ok('select * from public.profile_photo_objects','42501',null,'Lifecycle history is private');
 select throws_ok($$update public.profiles set photo_storage_path='spoof' where user_id=auth.uid()$$,'42501',null,'Direct photo pointer writes denied');
-select throws_ok($$insert into public.profiles(display_name,home_airport,pilot_designation,photo_storage_path) values('Spoof','KPAO','student','spoof')$$,'42501',null,'Direct photo pointer insertion denied');
+select throws_ok($$insert into public.profiles(display_name,home_airport,pilot_designation,photo_storage_path) values('Spoof','KPAO','licensed','spoof')$$,'42501',null,'Direct photo pointer insertion denied');
 select set_config('photo.test.id',(public.reserve_profile_photo()->>'id'),true);
 select is(public.reserve_profile_photo()->>'code','limited','Only one live candidate');
 select lives_ok($$insert into storage.objects(bucket_id,name,owner_id) values('profile-photo-uploads','44444444-4444-4444-8444-444444444444/'||current_setting('photo.test.id')||'/source',auth.uid()::text)$$,'Owner uploads reserved source');

@@ -28,7 +28,7 @@ begin
     values
       ('11111111-1111-4111-8111-111111111111', 'Fictional Licensed Pilot', 'KPAO', 'licensed',
        array['Private pilot'], array['Instrument'], 'Flying club C172', 'Local trips', 'Fictional local fixture'),
-      ('22222222-2222-4222-8222-222222222222', 'Fictional Student Pilot', 'SQL', 'student',
+      ('22222222-2222-4222-8222-222222222222', 'Fictional Licensed Pilot', 'SQL', 'licensed',
        '{}', '{}', null, 'Training', null),
       ('33333333-3333-4333-8333-333333333333', 'Fictional Disabled Pilot', 'KSQL', 'licensed',
        array['Private pilot'], '{}', null, null, null)

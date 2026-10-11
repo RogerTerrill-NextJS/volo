@@ -11,7 +11,7 @@ insert into auth.users (id, email) values
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'profile-owner@example.invalid'),
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'profile-disabled@example.invalid'),
   ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'profile-unadmitted@example.invalid'),
-  ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'profile-student@example.invalid');
+  ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'profile-licensed@example.invalid');
 insert into public.memberships (user_id, role, status, disabled_at, disabled_reason) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'admin', 'active', null, null),
   ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'member', 'active', null, null),
@@ -19,11 +19,11 @@ insert into public.memberships (user_id, role, status, disabled_at, disabled_rea
   ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'member', 'active', null, null);
 insert into public.profiles (user_id, display_name, home_airport, pilot_designation) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Admin Pilot', 'KPAO', 'licensed'),
-  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'Disabled Pilot', 'SQL', 'student');
+  ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'Disabled Pilot', 'SQL', 'licensed');
 
 set local role anon;
 select throws_ok('select * from public.profiles', '42501', null, 'Anonymous profile reads denied');
-select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Anon', 'KPAO', 'student')$$, '42501', null, 'Anonymous profile writes denied');
+select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Anon', 'KPAO', 'licensed')$$, '42501', null, 'Anonymous profile writes denied');
 reset role;
 
 set local role authenticated;
@@ -33,8 +33,8 @@ select is((select count(*)::integer from public.profiles where user_id in (
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   'cccccccc-cccc-4ccc-8ccc-cccccccccccc')), 3, 'Active member reads network profiles');
 select is((select certificates from public.profiles where user_id = auth.uid()), '{}'::text[], 'Certificates can be omitted');
-select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Duplicate', 'KPAO', 'student')$$, '23505', null, 'Only one profile per identity');
-select throws_ok($$insert into public.profiles (user_id, display_name, home_airport, pilot_designation) values ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'Impersonated', 'KPAO', 'student')$$, '42501', null, 'Client cannot supply another profile identity');
+select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Duplicate', 'KPAO', 'licensed')$$, '23505', null, 'Only one profile per identity');
+select throws_ok($$insert into public.profiles (user_id, display_name, home_airport, pilot_designation) values ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'Impersonated', 'KPAO', 'licensed')$$, '42501', null, 'Client cannot supply another profile identity');
 select set_config('volo.profile_initial_updated_at', (select updated_at::text from public.profiles where user_id = auth.uid()), true);
 select lives_ok($$update public.profiles set certificates = array['Private pilot'], ratings = array['Instrument'], aircraft_access = 'Flying club C172', flying_interests = 'Day trips', bio = 'Local pilot' where user_id = auth.uid()$$, 'Owner updates permitted optional fields');
 select cmp_ok((select updated_at from public.profiles where user_id = auth.uid()), '>', current_setting('volo.profile_initial_updated_at')::timestamptz, 'Profile edits advance server-managed update time');
@@ -44,7 +44,7 @@ select is((select count(*)::integer from changed), 0, 'Cross-owner update change
 select throws_ok($$update public.profiles set user_id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' where user_id = auth.uid()$$, '42501', null, 'Owner cannot transfer profile identity');
 select throws_ok('update public.profiles set created_at = now()', '42501', null, 'Owner cannot rewrite creation time');
 select throws_ok('update public.profiles set updated_at = now()', '42501', null, 'Owner cannot supply update time');
-select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation, created_at) values ('Timestamp spoof', 'KPAO', 'student', now())$$, '42501', null, 'Client cannot supply creation time');
+select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation, created_at) values ('Timestamp spoof', 'KPAO', 'licensed', now())$$, '42501', null, 'Client cannot supply creation time');
 select throws_ok('delete from public.profiles where user_id = auth.uid()', '42501', null, 'Account deletion is not a profile edit');
 select throws_ok($$update public.memberships set role = 'admin', status = 'active' where user_id = auth.uid()$$, '42501', null, 'Profile owner cannot edit membership or promote self');
 
@@ -69,7 +69,9 @@ select throws_ok($$update public.profiles set bio = repeat('B', 2001) where user
 select lives_ok('update public.profiles set aircraft_access = null, flying_interests = null, bio = null where user_id = auth.uid()', 'Optional text can be cleared');
 
 select set_config('request.jwt.claims', '{"sub":"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee","role":"authenticated"}', true);
-select lives_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Lev', 'S1', 'student')$$, 'Student profile needs no certificates or ratings');
+select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Student', 'S1', 'student')$$, '23514', null, 'Student profile creation rejected');
+select lives_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Lev', 'S1', 'licensed')$$, 'Licensed profile needs no certificates or ratings');
+select throws_ok($$update public.profiles set pilot_designation = 'student' where user_id = auth.uid()$$, '23514', null, 'Owner cannot change to a student profile');
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","role":"authenticated"}', true);
 with changed as (update public.profiles set bio = 'Admin override' where user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' returning user_id)
 select is((select count(*)::integer from changed), 0, 'Admin session has no cross-owner edit override');
@@ -83,10 +85,10 @@ select set_config('request.jwt.claims', '{"sub":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbb
 select is((select count(*)::integer from public.profiles), 0, 'Disabling owner revokes reads with existing JWT');
 with changed as (update public.profiles set bio = 'Disabled write' where user_id = auth.uid() returning user_id)
 select is((select count(*)::integer from changed), 0, 'Disabling owner revokes writes with existing JWT');
-select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Disabled', 'KPAO', 'student')$$, '42501', null, 'Disabled owner cannot create profile');
+select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Disabled', 'KPAO', 'licensed')$$, '42501', null, 'Disabled owner cannot create profile');
 select set_config('request.jwt.claims', '{"sub":"dddddddd-dddd-4ddd-8ddd-dddddddddddd","role":"authenticated","user_metadata":{"role":"admin","status":"active"}}', true);
 select is((select count(*)::integer from public.profiles), 0, 'Auth identity without membership cannot read profiles');
-select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Unadmitted', 'KPAO', 'student')$$, '42501', null, 'Unadmitted account cannot create profile');
+select throws_ok($$insert into public.profiles (display_name, home_airport, pilot_designation) values ('Unadmitted', 'KPAO', 'licensed')$$, '42501', null, 'Unadmitted account cannot create profile');
 reset role;
 
 select is((select display_name from public.profiles where user_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), 'Admin Pilot', 'Unauthorized edits left other profile unchanged');

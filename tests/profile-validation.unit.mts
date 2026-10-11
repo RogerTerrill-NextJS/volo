@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {validateProfile, type ProfileField} from '../lib/profiles/validation.ts';
 
-const required = {display_name:'Student Pilot', home_airport:'KPAO', pilot_designation:'student'};
+const required = {display_name:'Licensed Pilot', home_airport:'KPAO', pilot_designation:'licensed'};
 function rejects(input:unknown, field?:ProfileField) {
   const result=validateProfile(input);
   assert.equal(result.ok,false);
@@ -12,12 +12,13 @@ function rejects(input:unknown, field?:ProfileField) {
   return result;
 }
 
-test('students and licensed pilots share normalized fields without mandatory certificates',()=>{
-  assert.deepEqual(validateProfile({...required, display_name:'  Student Pilot  ',home_airport:' kpao '}),{
+test('licensed pilots have normalized fields without mandatory certificates',()=>{
+  assert.deepEqual(validateProfile({...required, display_name:'  Licensed Pilot  ',home_airport:' kpao '}),{
     ok:true,value:{...required,certificates:[],ratings:[],aircraft_access:null,flying_interests:null,bio:null},
   });
   assert.equal(validateProfile({...required,pilot_designation:'licensed'}).ok,true);
   rejects({...required,pilot_designation:'commercial'},'pilot_designation');
+  rejects({...required,pilot_designation:'student'},'pilot_designation');
   for(const field of ['display_name','home_airport','pilot_designation'] as const) {
     const input:Record<string,unknown>={...required};delete input[field];rejects(input,field);
     rejects({...required,[field]:' \t\n'},field);
