@@ -46,7 +46,7 @@ export function createProxyAuthTransport(credentialCodes:ReadonlySet<string> = A
           const code = upstreamCode;
           return Response.json({code, error_code:code, message:"Authentication rejected."}, {status:response.status, headers:response.headers});
         }
-        if (response.ok) {
+        if (response.ok && !(response.status === 200 && url.pathname === '/auth/v1/recover' && data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length === 0)) {
           const user = data?.user ?? data;
           if (typeof user?.id !== "string" || !user.id) return terminal();
           if (url.pathname.endsWith("/token") && (

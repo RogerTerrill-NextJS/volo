@@ -16,7 +16,7 @@ test("Proxy matcher covers application requests and excludes exact public assets
     for(const headers of [{},{rsc:"1"},{"next-router-prefetch":"1"}])
       assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url,headers}),true,url);
   }
-  for (const url of ["/auth/logout", "/auth/logout/", "/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
+  for (const url of ["/auth/recovery", "/auth/recovery/", "/auth/logout", "/auth/logout/", "/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
     assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url}),false,url);
 });
 
@@ -132,6 +132,7 @@ test("Auth transport preserves success/rejection and bounds every outage includi
     const route = request.url!;
     if (route === "/socket") { request.socket.destroy(); return; }
     if (route === "/hang") return;
+    if (route === '/auth/v1/recover') {response.setHeader('Content-Type','application/json');response.end('{}');return;}
     if (route === '/auth/v1/logout?scope=local') {response.writeHead(204).end();return;}
     response.setHeader("Content-Type", "application/json");
     if (route === "/body") { response.writeHead(200); response.write('{"id":'); return; }
@@ -146,12 +147,12 @@ test("Auth transport preserves success/rejection and bounds every outage includi
   const origin = `http://127.0.0.1:${(server.address() as {port:number}).port}`;
   try {
     assert.equal(AUTH_VERIFICATION_TIMEOUT_MS, 5000);
-    for (const route of ["/auth/v1/logout?scope=local", "/user", "/401", "/429", "/500", "/socket", "/malformed", "/invalid", "/hang", "/body"]) {
+    for (const route of ["/auth/v1/recover", "/auth/v1/logout?scope=local", "/user", "/401", "/429", "/500", "/socket", "/malformed", "/invalid", "/hang", "/body"]) {
       const transport = createProxyAuthTransport();
       try {
         const started = Date.now();
         const response = await transport.fetch(origin + route);
-        const healthy = ["/auth/v1/logout?scope=local", "/user", "/401"].includes(route);
+        const healthy = ["/auth/v1/recover", "/auth/v1/logout?scope=local", "/user", "/401"].includes(route);
         assert.equal(response.status, healthy ? route === "/401" ? 401 : route.startsWith('/auth/v1/logout') ? 204 : 200 : 400, route);
         assert.equal(transport.isUnavailable(), !healthy, route);
         if(route === "/401") {
@@ -198,4 +199,12 @@ test('login query canonicalization removes credentials and untrusted destination
    assert.equal(await response.text(),'');assert.match(response.headers.get('cache-control')??'',/private.*no-store/);assert.equal(response.headers.get('referrer-policy'),'no-referrer');
   }
  }finally{if(previous===undefined)delete process.env.VOLO_MUTATION_ORIGIN;else process.env.VOLO_MUTATION_ORIGIN=previous;}
+});
+
+test('forgotten-password query input is removed before public form rendering or Auth',async()=>{
+ const {proxy}=await import('../proxy.ts');const previous=process.env.VOLO_MUTATION_ORIGIN;process.env.VOLO_MUTATION_ORIGIN='https://app.example.invalid';
+ try{for(const query of ['email=private-canary&next=https://foreign.invalid','result=sent&result=invalid_input','result=private-canary']){
+  const response=await proxy(new NextRequest('https://untrusted.invalid/forgot-password?'+query));
+  assert.equal(response.status,303);assert.equal(response.headers.get('location'),'https://app.example.invalid/forgot-password?result=invalid_input');assert.equal(await response.text(),'');assert.match(response.headers.get('cache-control')??'',/private.*no-store/);
+ }}finally{if(previous===undefined)delete process.env.VOLO_MUTATION_ORIGIN;else process.env.VOLO_MUTATION_ORIGIN=previous;}
 });

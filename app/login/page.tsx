@@ -18,6 +18,7 @@ export default async function LoginPage({searchParams}:{searchParams:Promise<{[k
       <h1 className="text-3xl font-semibold tracking-tight">Sign in</h1>
       <p className="text-zinc-600 dark:text-zinc-400">Sign in with the email and password for your invited account.</p>
       <LoginForm message={loginResultMessage(query.result)}/>
+      <Link href="/forgot-password" className="w-fit text-sm font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">Forgot password?</Link>
       <Link href="/" className="w-fit text-sm font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
         Back to home
       </Link>

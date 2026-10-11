@@ -130,8 +130,8 @@ schema/admission/redemption are implemented. Hosted callback activation remains
 VOLO-107; local implementation does not close its hosted verification gate.
 
 - [VOLO-21](https://outsidethecockpit.atlassian.net/browse/VOLO-21): invitation-gated session establishment and admission.
-- [VOLO-22](https://outsidethecockpit.atlassian.net/browse/VOLO-22): VOLO-154 supplies native login; logout and broader session-change navigation remain VOLO-155.
-- [VOLO-23](https://outsidethecockpit.atlassian.net/browse/VOLO-23): recovery and configured mail delivery.
+- [VOLO-22](https://outsidethecockpit.atlassian.net/browse/VOLO-22): VOLO-154/155 supply native login and current-browser logout; broader navigation remains VOLO-25.
+- [VOLO-23](https://outsidethecockpit.atlassian.net/browse/VOLO-23): VOLO-156 supplies recovery requests and local mail; confirmation/password change remain VOLO-157 and hosted mail verification remains VOLO-107/110.
 - [VOLO-107](https://outsidethecockpit.atlassian.net/browse/VOLO-107): exact `/auth/confirm` activation and redirect evidence when consumers exist; see [callback contract](auth-callbacks.md).
 - [VOLO-110](https://outsidethecockpit.atlassian.net/browse/VOLO-110): hosted authenticated verification and explicit release evidence.
 - [VOLO-120](https://outsidethecockpit.atlassian.net/browse/VOLO-120): deferred Netlify Age/non-storage reporting.
@@ -223,3 +223,28 @@ Two earlier local runs failed existing invitation uncertainty assertions; the
 full rerun passed. Added sanitized failure diagnostics, with every assertion
 retained; the intermittent cause remains unconfirmed. CI, Deploy Preview and
 production release verification are separate and remain pending.
+
+## Forgotten-password request coverage (VOLO-156)
+
+The existing real Auth fixture tests the production request page and native
+handler. Origin/query/input/method denials occur before Auth; known, unknown and
+disabled-member recipients share fixed feedback. Requests preserve the visitor's
+independent session and create no cookies. Injected outage, rate-limit and
+malformed responses have the same acknowledgment and exactly one provider call.
+Dedicated disposable recipients keep recovery mail separate from invitation
+assertions. Captured local mail has the exact owned callback, ordinary recovery
+marker and real provider token evidence, without invitation renewal proof.
+Ordinary application confirmation fails closed pending VOLO-157.
+
+Local validation on October 10, 2026 passed all 33 real Auth scenarios with owned
+stack cleanup, 46 core tests, 9 focused Proxy/recovery-input tests, and all 8
+access unit tests. Private-cache and client/server boundary checks, type checking,
+lint and the production webpack build passed. Review found no implementation
+blocker; the recovery-input tests were added to the existing CI access command.
+
+Chrome verified the labeled form, acknowledgment focus, and empty email field
+after reload using the existing local cache fixture. Chrome blocked its native
+POST with `ERR_BLOCKED_BY_CLIENT`; browser submission is not established by that
+check. HTTP submission and actual local SMTP delivery are covered by the real
+Auth suite. Hosted email, Deploy Preview acceptance and production release
+verification remain separate.
