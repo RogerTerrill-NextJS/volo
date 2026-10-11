@@ -20,6 +20,9 @@ test('profile editing loads and saves only the active owner with recoverable fee
   assert.match(page.body,/Original biography<\/textarea>/);
   assert.doesNotMatch(page.body,/Other pilot|private-photo|name="user_id"/);
   assert.match(page.body,/href="\/profile\/edit"/);
+  assert.match(page.body,/Profile photo \(optional\)/);
+  assert.match(page.body,/accept="image\/jpeg,image\/png,image\/webp"/);
+  assert.match(page.body,/Remove photo/);
   assert.equal((await fixture.request('/profile/edit',missing.jar)).response.headers.get('location'),'/onboarding');
   assert.match((await fixture.request('/profile/edit')).response.headers.get('location'),/^\/login\?/);
   const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&amp;','&').replaceAll('&lt;','<').replaceAll('&gt;','>');

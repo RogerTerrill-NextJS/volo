@@ -87,6 +87,12 @@ try{
   const result=await call('/api/profile/photo',A,{body:{reservation_id:first.reservationId}});assert.equal(result.status,200);assert.equal(result.data.data.code,'saved');
   const key=await pointer(owner);assert.equal(key,`${owner.id}/${first.reservationId}.webp`);
   const image=await b.storage.from('profile-photos').download(key);assert.equal(image.error,null);
+  const photo=await app.request(`/api/profiles/${owner.id}/photo`,{session:B});
+  assert.equal(photo.status,200);assert.equal(photo.headers.get('content-type'),'image/webp');
+  for(const header of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(photo.headers.get(header),/no-store/);
+  assert.deepEqual(Buffer.from(await photo.arrayBuffer()),Buffer.from(await image.data.arrayBuffer()));
+  assert.equal((await app.request(`/api/profiles/${owner.id}/photo`)).status,401);
+  assert.equal((await app.request(`/api/profiles/${other.id}/photo`,{session:A})).status,404);
   const meta=await sharp(Buffer.from(await image.data.arrayBuffer())).metadata();assert.equal(meta.width,512);assert.equal(meta.height,256);assert.equal(meta.format,'webp');assert.equal(meta.exif,undefined);
   const publicResponse=await fetch(`${stack.apiUrl}/storage/v1/object/public/profile-photos/${key}`);assert.notEqual(publicResponse.status,200);
   await b.storage.from('profile-photos').remove([key]);assert.equal((await admin.storage.from('profile-photos').download(key)).error,null,'Other pilot cannot delete final');
@@ -130,6 +136,7 @@ try{
   await stack.setMembership(owner.id,{role:'member',status:'disabled'});
   assert.equal((await call('/api/profile/photo',A,{body:{reservation_id:r.reservationId}})).status,403);
   assert.equal((await call('/api/profile/photo/uploads',A)).status,403);
+  assert.equal((await app.request(`/api/profiles/${owner.id}/photo`,{session:A})).status,403);
   assert.notEqual((await a.storage.from('profile-photos').download(await pointer(owner))).error,null);
   await rpc('abandon_profile_photo',{reservation_id:r.reservationId});await cleanup();
   assert.notEqual((await admin.storage.from('profile-photo-uploads').download(r.sourcePath)).error,null);

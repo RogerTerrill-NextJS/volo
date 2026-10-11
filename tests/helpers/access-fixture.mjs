@@ -10,6 +10,7 @@ export async function startAccessFixture() {
   let sequence=0;
   const invitations={rows:[{id:'30000000-0000-4000-8000-000000000001',version:2,recipient_email:'person+tag@example.invalid',status:'revoked',created_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-02T00:00:00Z',auth_user_id:'private-invitation-authority-canary',invitation_send_attempts:[{invitation_version:2,outcome:'unknown',reconciled_outcome:null}]}],failure:null};
   const profiles={rows:new Map(),writes:[],failure:null};
+  const photos={objects:new Map(),reads:[],failure:null};
   const encode=value=>Buffer.from(JSON.stringify(value)).toString("base64url");
   const user=id=>({id,aud:"authenticated",role:"authenticated",email:"fictional@example.invalid",
     app_metadata:{},user_metadata:{role:"admin",canary:accessCanaries[1]},created_at:"2026-01-01T00:00:00Z"});
@@ -72,14 +73,22 @@ export async function startAccessFixture() {
       res.end(JSON.stringify(data));return;
     }
     if(req.method==='POST'&&url.pathname==='/rest/v1/rpc/claim_invitation_confirmation_transport'){res.setHeader('content-type','application/json');res.end(JSON.stringify({code:'denied'}));return;}
+    if(url.pathname.startsWith('/storage/v1/object/profile-photos/')){
+      const key=url.pathname.split('/profile-photos/')[1];photos.reads.push({subject:entry?.id,key});
+      if(!entry||entry.status!=='active'||![...profiles.rows.values()].some(row=>row.photo_storage_path===key)){failure('denied',req,res);return;}
+      if(failure(photos.failure,req,res))return;
+      const image=photos.objects.get(key);if(!image){res.writeHead(404).end('{}');return;}
+      res.setHeader('content-type','image/webp');res.end(image);return;
+    }
     if(url.pathname==='/rest/v1/profiles'){
       const payload=body?JSON.parse(body):null;
       calls.push({service:'profiles',subject:entry?.id,method:req.method,filter:url.searchParams.get('user_id'),select:url.searchParams.get('select'),payload});
       if(!entry||entry.status!=='active'){failure('denied',req,res);return;}
       if(failure(profiles.failure,req,res))return;
       if(req.method==='GET'){
-        const row=url.searchParams.get('user_id')===`eq.${entry.id}`?profiles.rows.get(entry.id):undefined;
         const selected=(url.searchParams.get('select')??'').split(',');
+        const target=url.searchParams.get('user_id')?.slice(3);
+        const row=target===entry.id||selected.includes('photo_storage_path')&&selected.length===2?profiles.rows.get(target):undefined;
         res.end(JSON.stringify(row?[Object.fromEntries(selected.map(key=>[key,row[key]]))]:[]));return;
       }
       if(req.method==='POST'&&profiles.rows.has(entry.id)){res.writeHead(409).end(JSON.stringify({code:'23505',message:accessCanaries[0]}));return;}
@@ -93,7 +102,7 @@ export async function startAccessFixture() {
   });
   server.listen(0,"127.0.0.1");await once(server,"listening");
   const origin=`http://127.0.0.1:${server.address().port}`;
-  return {origin,calls,unexpected,cases,invitations,profiles,async seed(label,options={}) {
+  return {origin,calls,unexpected,cases,invitations,profiles,photos,async seed(label,options={}) {
     const id=`aaaaaaaa-aaaa-4aaa-8aaa-${String(++sequence).padStart(12,"0")}`;
     const entry={label,id,role:"member",status:"active",...options};cases.set(label,entry);
     const jar=new Map();

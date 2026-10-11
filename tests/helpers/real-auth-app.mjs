@@ -38,7 +38,11 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await cp(path.join(root,'app/(protected)/admin'),path.join(directory,'app/(protected)/admin'),{recursive:true});
     await cp(path.join(root,'app/(protected)/_components'),path.join(directory,'app/(protected)/_components'),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/(protected)/layout.tsx'));
-    if(photos)await cp(path.join(root,'app/api/profile/photo'),path.join(directory,'app/api/profile/photo'),{recursive:true});
+    if(photos){
+      await cp(path.join(root,'app/api/profile/photo'),path.join(directory,'app/api/profile/photo'),{recursive:true});
+      await cp(path.join(root,'app/api/profiles'),path.join(directory,'app/api/profiles'),{recursive:true});
+      await cp(path.join(root,'app/(protected)/profile'),path.join(directory,'app/(protected)/profile'),{recursive:true});
+    }
     await put('package.json',JSON.stringify({private:true,type:'module'}));
     await put('instrumentation.js',`export function register(){const original=globalThis.fetch;globalThis.fetch=async(input,init)=>{
       const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);

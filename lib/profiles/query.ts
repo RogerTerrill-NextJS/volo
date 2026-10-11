@@ -24,16 +24,16 @@ export async function getOwnProfileStatus(member:ActiveMember):Promise<'missing'
 }
 
 /** Fresh active-member access must precede this owner-only read. */
-export async function getOwnProfile(member:ActiveMember):Promise<{status:'complete';profile:ProfileFields}|{status:'missing'|'unavailable'}>{
+export async function getOwnProfile(member:ActiveMember):Promise<{status:'complete';profile:ProfileFields;photoAvailable:boolean}|{status:'missing'|'unavailable'}>{
  try{
   const client=await profileReadClient();
-  const {data,error}=await client.from('profiles').select('user_id,display_name,home_airport,pilot_designation,certificates,ratings,aircraft_access,flying_interests,bio').eq('user_id',member.userId).retry(false).maybeSingle();
+  const {data,error}=await client.from('profiles').select('user_id,display_name,home_airport,pilot_designation,certificates,ratings,aircraft_access,flying_interests,bio,photo_storage_path').eq('user_id',member.userId).retry(false).maybeSingle();
   if(error)return {status:'unavailable'};
   if(data===null)return {status:'missing'};
   if(data.user_id!==member.userId)return {status:'unavailable'};
-  const {user_id:owner,...fields}=data;
+  const {user_id:owner,photo_storage_path:photo,...fields}=data;
   void owner;
   const result=validateProfile(fields);
-  return result.ok?{status:'complete',profile:result.value}:{status:'unavailable'};
+  return result.ok?{status:'complete',profile:result.value,photoAvailable:typeof photo==='string'&&photo.length>0}:{status:'unavailable'};
  }catch{return {status:'unavailable'};}
 }
