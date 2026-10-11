@@ -171,6 +171,34 @@ and stalled-save recovery. No full suite, hosted writes, Deploy Preview or
 production release was run. Run the focused tests with
 `node --test --test-reporter=dot tests/profile-validation.unit.mts tests/profile-save.test.mjs tests/profile-onboarding.test.mjs`.
 
+## Profile completion guard handoff (VOLO-162)
+
+Future flight-posting and flight-requesting mutation policies must set
+`requireCompleteProfile: true` and enter `handleRouteMutation` or
+`handleActionMutation`. The shared guard verifies Origin, current active membership,
+input and resource permission, then calls `getOwnProfileStatus` with the verified
+member before invoking the effect. The lookup uses the caller's session, selects
+only `user_id`, filters to the verified owner, does not cache or retry, and times
+out stalled headers/bodies. A missing profile returns `profile_required` (HTTP 403)
+with completion guidance; a failed/invalid read returns `unavailable` (HTTP 503).
+Admins must complete their own profiles too. Client-submitted completion or
+identity fields cannot supply this server-owned policy setting.
+
+The existing dashboard prompt now explains that profile completion is required
+before posting/requesting, links to `/onboarding`, and leaves browsing available.
+Onboarding, profile saves and existing invitation mutations do not opt in. No
+flight/request endpoint or table exists yet; those feature tickets must adopt the
+guard and enforce their own database access rules when implemented.
+
+Local verification reused the disposable mutation fixture to exercise direct HTTP,
+fetched and native Server Action bypass attempts, completed profiles, current
+membership revocation, removed profiles, admins, foreign-owner rows, outages and
+stalled responses without mutation effects. The existing shared mutation regression
+verifier, profile validation/save/onboarding checks, mutation-input unit tests,
+typecheck and focused lint passed. No migration, full suite, hosted write, Deploy
+Preview or production release was run. Run the new focused check with
+`node --test --test-reporter=dot tests/profile-completion.test.mjs`.
+
 ## Invitation persistence handoff
 
 VOLO-128 delivered the PostgreSQL 17 invitation schema in
