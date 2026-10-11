@@ -199,6 +199,29 @@ typecheck and focused lint passed. No migration, full suite, hosted write, Deplo
 Preview or production release was run. Run the new focused check with
 `node --test --test-reporter=dot tests/profile-completion.test.mjs`.
 
+## Profile editing handoff (VOLO-163)
+
+`/profile/edit` loads the current active member's permitted fields with a fresh,
+session-bound owner filter. The My profile navigation link sends members without
+a profile to onboarding. Read failures show retry feedback without a blank editable
+form. Identity, membership status, administrator role and photo storage are excluded.
+
+Editing and onboarding share the accessible form and VOLO-160 validation. The edit
+action uses the existing guarded `updateProfile` operation; a confirmed save stays
+on the edit screen with normalized values and a focused success status. Invalid
+submissions retain entered values and link field errors. An uncertain save preserves
+the entered fields and requires reloading before another attempt. No schema or
+hosted configuration changes are required.
+
+Local verification: the new compiled edit-page regression and existing onboarding,
+profile-save and completion regressions passed. Protected-app checks, focused lint,
+route type generation and TypeScript checking passed. Browser verification confirmed
+prefilled fields, client error focus, confirmed save feedback and a 390px mobile
+layout without horizontal overflow. Read-only code review found no actionable issues.
+The full suite and real Auth integration were not rerun for this UI change.
+Netlify preview and production release verification remain pending; no hosted
+profile writes or production publication were performed.
+
 ## Invitation persistence handoff
 
 VOLO-128 delivered the PostgreSQL 17 invitation schema in

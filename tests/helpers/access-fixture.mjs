@@ -79,7 +79,8 @@ export async function startAccessFixture() {
       if(failure(profiles.failure,req,res))return;
       if(req.method==='GET'){
         const row=url.searchParams.get('user_id')===`eq.${entry.id}`?profiles.rows.get(entry.id):undefined;
-        res.end(JSON.stringify(row?[{user_id:row.user_id}]:[]));return;
+        const selected=(url.searchParams.get('select')??'').split(',');
+        res.end(JSON.stringify(row?[Object.fromEntries(selected.map(key=>[key,row[key]]))]:[]));return;
       }
       if(req.method==='POST'&&profiles.rows.has(entry.id)){res.writeHead(409).end(JSON.stringify({code:'23505',message:accessCanaries[0]}));return;}
       if(req.method==='PATCH'&&(url.searchParams.get('user_id')!==`eq.${entry.id}`||!profiles.rows.has(entry.id))){res.end('[]');return;}
