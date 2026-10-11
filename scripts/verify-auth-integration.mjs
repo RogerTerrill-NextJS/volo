@@ -13,7 +13,13 @@ const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'})
 const cancellation=new AbortController();const interrupt=()=>{process.exitCode=130;cancellation.abort();};process.on('SIGINT',interrupt);process.on('SIGTERM',interrupt);
 let stack,app,setupStage='stack',diagnosticStage='scenario';const sessions=[],invitationPasswords=new Set();
 const check=(condition,message)=>assert.ok(condition,message);
-async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){summary.scenarios.push({name,status:'failed',evidence:error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:`Service/transport failure (${diagnosticStage}; ${error.operation??'unknown'}; ${Number.isInteger(error.httpStatus)?error.httpStatus:'no-status'})`});throw new Error(`Integration scenario failed: ${name}`);}}
+async function scenario(name,run){try{const evidence=await run();summary.scenarios.push({name,status:'passed',...(evidence?{evidence}:{})});console.log(`PASS ${name}`);}catch(error){
+  const evidence=error.code==='ERR_ASSERTION'?error.message.split('\n')[0]:`Service/transport failure (${diagnosticStage}; ${error.operation??'unknown'}; ${Number.isInteger(error.httpStatus)?error.httpStatus:'no-status'})`;
+  summary.scenarios.push({name,status:'failed',evidence});
+  // The same sanitized evidence is already saved in the downloadable summary.
+  console.error(`FAIL ${name}: ${evidence}`);
+  throw new Error(`Integration scenario failed: ${name}`);
+}}
 function privatePolicy(response){
   check(/no-store/.test(response.headers.get('cache-control')??''),'browser no-store');
   for(const field of ['cdn-cache-control','netlify-cdn-cache-control'])check(response.headers.get(field)==='no-store','CDN no-store');
