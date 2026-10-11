@@ -201,3 +201,25 @@ boundary checks, type checking, lint and a production webpack build. Chrome
 verification confirmed error focus and empty password fields. Independent review
 reported no actionable findings. CI, Deploy Preview acceptance and production
 release verification remain pending; logout is VOLO-155.
+
+## Current-browser logout coverage (VOLO-155)
+
+The existing real Auth fixture now tests the production native logout handler:
+origin/query/method rejects occur before provider access or cookie changes; local
+scope revokes current refresh authority while retaining independent sessions.
+Anonymous and denied-membership sessions can sign out. Provider failure does not
+retry and still clears browser authority with safe feedback. Malformed sessions,
+stale auth/verifier chunks and setup cookies are cleared; unrelated cookies remain.
+Existing refresh, natural-expiry and retained-JWT scenarios remain authoritative
+for their separate guarantees. Logout does not promise instant JWT invalidation.
+
+Local validation on October 10, 2026 passed all 32 real Auth scenarios, 46 core
+tests, focused Proxy/protected-page and private-cache checks, client/server
+boundaries, type checking, lint and a production webpack build. Chrome Back and
+reload checks used the existing cache fixture with the production AppShell; see
+[local browser evidence](private-caching.md#logout-navigation-evidence-volo-155).
+Independent review's verifier-cookie cleanup finding was corrected and verified.
+Two earlier local runs failed existing invitation uncertainty assertions; the
+full rerun passed. Added sanitized failure diagnostics, with every assertion
+retained; the intermittent cause remains unconfirmed. CI, Deploy Preview and
+production release verification are separate and remain pending.

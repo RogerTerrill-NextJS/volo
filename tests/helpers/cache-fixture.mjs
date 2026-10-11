@@ -47,9 +47,9 @@ export async function startCacheFixture() {
     await put("package.json",JSON.stringify({private:true,type:"module"}));
     await put("app/layout.tsx","export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}");
     await put("app/page.tsx",'import Link from "next/link"; export default function Page(){return <main><h1>Public cache fixture</h1><Link href="/dashboard/cache-check" prefetch={false}>Private page</Link><br/><Link href="/fixture-controls" prefetch={false}>Fixture controls</Link></main>}');
-    await put("app/(protected)/dashboard/cache-check/page.tsx",`import Link from 'next/link';import {getPageAccess} from '../../../../lib/auth/page-access';import AccessState from '../../_components/access-state';
+    await put("app/(protected)/dashboard/cache-check/page.tsx",`import Link from 'next/link';import {getPageAccess} from '../../../../lib/auth/page-access';import AccessState from '../../_components/access-state';import AppShell from '../../_components/app-shell';
       export default async function Page(){const access=await getPageAccess();if(access.status!=='authorized')return <AccessState status={access.status}/>;
-      return <main><p>{'subject:'+access.member.userId}</p><Link href='/' prefetch={false}>Public page</Link><br/><Link href='/fixture-controls' prefetch={false}>Fixture controls</Link></main>;}`);
+      return <AppShell><p>{'subject:'+access.member.userId}</p><Link href='/' prefetch={false}>Public page</Link><br/><Link href='/fixture-controls' prefetch={false}>Fixture controls</Link></AppShell>;}`);
     await put("app/api/cache-check/route.ts",`import {getAccess} from '../../../lib/auth/access';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';
       export async function GET(){const access=await getAccess(),headers=new Headers();applyPrivateResponseHeaders(headers);
       return Response.json(access.status==='authorized'?{subject:access.member.userId}:{status:access.status},{headers,status:access.status==='authorized'?200:access.status==='unauthenticated'?401:access.status==='forbidden'?403:503});}`);

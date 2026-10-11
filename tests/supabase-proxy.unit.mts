@@ -16,7 +16,7 @@ test("Proxy matcher covers application requests and excludes exact public assets
     for(const headers of [{},{rsc:"1"},{"next-router-prefetch":"1"}])
       assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url,headers}),true,url);
   }
-  for (const url of ["/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
+  for (const url of ["/auth/logout", "/auth/logout/", "/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
     assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url}),false,url);
 });
 
@@ -132,6 +132,7 @@ test("Auth transport preserves success/rejection and bounds every outage includi
     const route = request.url!;
     if (route === "/socket") { request.socket.destroy(); return; }
     if (route === "/hang") return;
+    if (route === '/auth/v1/logout?scope=local') {response.writeHead(204).end();return;}
     response.setHeader("Content-Type", "application/json");
     if (route === "/body") { response.writeHead(200); response.write('{"id":'); return; }
     const status = route === "/429" ? 429 : route === "/500" ? 500 : route === "/401" ? 401 : 200;
@@ -145,13 +146,13 @@ test("Auth transport preserves success/rejection and bounds every outage includi
   const origin = `http://127.0.0.1:${(server.address() as {port:number}).port}`;
   try {
     assert.equal(AUTH_VERIFICATION_TIMEOUT_MS, 5000);
-    for (const route of ["/user", "/401", "/429", "/500", "/socket", "/malformed", "/invalid", "/hang", "/body"]) {
+    for (const route of ["/auth/v1/logout?scope=local", "/user", "/401", "/429", "/500", "/socket", "/malformed", "/invalid", "/hang", "/body"]) {
       const transport = createProxyAuthTransport();
       try {
         const started = Date.now();
         const response = await transport.fetch(origin + route);
-        const healthy = ["/user", "/401"].includes(route);
-        assert.equal(response.status, healthy ? route === "/401" ? 401 : 200 : 400, route);
+        const healthy = ["/auth/v1/logout?scope=local", "/user", "/401"].includes(route);
+        assert.equal(response.status, healthy ? route === "/401" ? 401 : route.startsWith('/auth/v1/logout') ? 204 : 200 : 400, route);
         assert.equal(transport.isUnavailable(), !healthy, route);
         if(route === "/401") {
           const rejection = await response.json();

@@ -31,6 +31,12 @@ export function createProxyAuthTransport(credentialCodes:ReadonlySet<string> = A
           await response.body?.cancel();
           return terminal();
         }
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        // Auth logout succeeds without JSON; user/token responses still require it.
+        if (response.status === 204 && url.pathname === '/auth/v1/logout') {
+          if (unavailable || closed) return terminal();
+          return response;
+        }
         const body = await response.text();
         const data = JSON.parse(body);
         if (!response.ok) {
@@ -43,7 +49,6 @@ export function createProxyAuthTransport(credentialCodes:ReadonlySet<string> = A
         if (response.ok) {
           const user = data?.user ?? data;
           if (typeof user?.id !== "string" || !user.id) return terminal();
-          const url = new URL(input instanceof Request ? input.url : String(input));
           if (url.pathname.endsWith("/token") && (
             typeof data.access_token !== "string" || !data.access_token ||
             typeof data.refresh_token !== "string" || !data.refresh_token ||

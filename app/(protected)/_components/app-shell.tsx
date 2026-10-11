@@ -1,8 +1,9 @@
 import Link from "next/link";
+import ProtectedNavigation from './protected-navigation';
 
 export default function AppShell({ children,isAdmin=false }: { children: React.ReactNode;isAdmin?:boolean }) {
   return (
-    <>
+    <ProtectedNavigation>
       <header className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
         <span className="text-xl font-semibold tracking-tight">Volo</span>
         <nav aria-label="App navigation" className="flex gap-6 text-sm font-medium">
@@ -15,9 +16,12 @@ export default function AppShell({ children,isAdmin=false }: { children: React.R
           <Link href="/" className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
             Back to home
           </Link>
+          <form action="/auth/logout" method="post">
+            <button type="submit" className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">Sign out</button>
+          </form>
         </nav>
       </header>
       <main className="flex flex-col gap-10">{children}</main>
-    </>
+    </ProtectedNavigation>
   );
 }

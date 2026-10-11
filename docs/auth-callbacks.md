@@ -15,7 +15,7 @@ The hosted Supabase URL Configuration was inspected on October 6, 2026:
 
 The invitation confirmation, password setup and atomic membership redemption
 flow is implemented and tested with disposable real Auth. VOLO-154 supplies
-public `/login` email/password sign-in; VOLO-155 owns logout, and VOLO-23 owns ordinary recovery
+public `/login` email/password sign-in and VOLO-155 supplies current-browser logout; VOLO-23 owns ordinary recovery
 and configured mail delivery. Local signup evidence does not establish hosted
 enablement. VOLO-107 stays
 In Progress until configuration and valid/invalid redirect tests are complete;
@@ -106,8 +106,18 @@ Successful login returns a native 303 to `/dashboard`, making a fresh document
 request rather than retaining a client navigation decision. The dashboard still
 verifies current active membership; login creates no membership or setup authority.
 Missing/disabled membership remains denied. The form clears retained fields on
-page restoration. Logout and broader Back/Forward/session-change behavior remain
-VOLO-155/25; hosted account tests and release evidence remain VOLO-110.
+page restoration. VOLO-155 adds native `POST /auth/logout` to app navigation. It
+checks the exact configured Origin and fetch-site evidence before Auth, rejects
+query destinations, and uses SDK `signOut({scope: 'local'})`. It requires no
+active membership. All responses are private/no-store. Auth/session chunks, PKCE
+verifier and invitation setup/confirmation cookies are cleared even if provider
+sign-out cannot be confirmed; unrelated cookies and independent sessions remain.
+Success uses a fixed 303 to `/login?result=signed_out`; uncertainty uses fixed
+`logout_unavailable` feedback. Protected document restoration hides historical
+content and reloads to recheck current cookies. Logout revokes current refresh
+authority when Auth confirms it; already-issued access JWTs may remain valid until
+expiry. Broader cross-feature navigation is VOLO-25; hosted account tests and
+release evidence remain VOLO-110.
 
 ### Invitation and recovery callback
 

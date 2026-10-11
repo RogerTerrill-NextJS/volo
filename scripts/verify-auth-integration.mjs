@@ -119,6 +119,36 @@ try{
       assertClean(app.diagnostics());
       return 'Native same-origin form, real sign-in cookies and fresh member/admin access; missing/disabled memberships denied, origin/input rejects precede Auth, generic failures and no automatic outage retry.';
     });
+    await scenario('native_logout',async()=>{
+      const post=(session,headers={Origin:app.origin},route='/auth/logout')=>read(route,{session,method:'POST',headers,body:''});
+      const calls=async()=>Number((await (await read('/api/logout-control')).json()).calls);
+      const session=await fresh('A'),before=await calls(),cookies=session.cookieHeader();
+      for(const [headers,route,status] of [[{},'/auth/logout',403],[{Origin:'https://foreign.example.invalid'},'/auth/logout',403],[{Origin:app.origin,'Sec-Fetch-Site':'cross-site'},'/auth/logout',403],[{Origin:app.origin},'/auth/logout?next=https://foreign.example.invalid',400]]){
+        const response=await post(session,headers,route);privatePolicy(response);check(response.status===status,'logout rejects origin/query before Auth');
+        check(response.headers.getSetCookie().length===0&&session.cookieHeader()===cookies,'rejected logout preserves caller cookies');
+      }
+      for(const method of ['GET','HEAD','OPTIONS','PUT']){const response=await read('/auth/logout',{session,method});privatePolicy(response);check(response.status===405&&response.headers.get('allow')==='POST','logout only supports POST');check(response.headers.getSetCookie().length===0,'unsupported logout cannot clear cookies');}
+      check(await calls()===before,'logout rejection never contacts provider');
+      const other=await fresh('A'),retained=session.clone();sessions.push(retained);
+      const response=await post(session);privatePolicy(response);check(response.status===303&&response.headers.get('location')===app.origin+'/login?result=signed_out','fixed full-document logout destination');
+      check(session.cookieHeader()===''&&response.headers.getSetCookie().some(value=>value.includes('auth-token')&&/Max-Age=0/i.test(value)),'logout clears response-owned session cookies');
+      check(await calls()===before+1,'one logout provider request');
+      check((await read('/api/subject',{session})).status===401,'fresh signed-out request denied');
+      const dashboard=await page(session);check(dashboard.response.status===307&&new URL(dashboard.response.headers.get('location'),app.origin).href===app.origin+'/login?reason=authentication-required'&&!dashboard.body.includes(accounts.A.id),'reload cannot recover protected content');
+      check((await retained.probeRetainedCredentials()).refresh==='rejected','current session refresh revoked');
+      check((await read('/api/subject',{session:other})).status===200,'logout retains independent session');
+      const again=await post(session);check(again.headers.get('location')===app.origin+'/login?result=signed_out','signed-out logout is idempotent');
+      for(const label of ['disabled','absent']){const denied=await fresh(label);const result=await post(denied);check(result.headers.get('location')===app.origin+'/login?result=signed_out'&&denied.cookieHeader()==='','logout does not require active membership');}
+      const outage=await fresh('A'),start=await calls();await read('/api/logout-control',{method:'POST',body:'outage'});
+      try{const result=await post(outage);privatePolicy(result);check(result.headers.get('location')===app.origin+'/login?result=logout_unavailable','safe uncertain server logout feedback');check(outage.cookieHeader()===''&&(await read('/api/subject',{session:outage})).status===401,'outage still clears current browser session');check(await calls()===start+1,'logout outage does not retry');}
+      finally{await read('/api/logout-control',{method:'POST',body:'off'});}
+      const malformed=invalidSession(await fresh('A'),'malformed');sessions.push(malformed);const malformedResult=await post(malformed);check(malformedResult.status===303&&malformed.cookieHeader()==='','logout clears malformed session');
+      const stale=emptySession(stack),base='sb-'+new URL(stack.apiUrl).hostname.split('.')[0]+'-auth-token';
+      const owned=[base+'.3',base+'-code-verifier.0',base+'-flows-code-verifier',base+'-flow-fixture-code-verifier.0','volo-setup','volo-confirmation'];
+      const seeded=new Headers();for(const name of [...owned,'unrelated'])seeded.append('Set-Cookie',name+'=fixture-stale; Path=/');stale.applyResponse(new Response(null,{headers:seeded}));
+      const cleared=await post(stale);check(cleared.status===303&&stale.cookieHeader()==='unrelated=fixture-stale','logout clears stale chunks/verifier/setup authority and preserves unrelated cookies');
+      return 'Guarded native current-session sign-out, cookie clearing, fresh denial, independent-session retention, membership-independent/idempotent logout and bounded outage feedback.';
+    });
     await scenario('admission',async()=>{
       for(const label of ['A','B','admin']){const response=await read('/api/subject',{session:users[label]});privatePolicy(response);check(response.status===200,'admission status');const data=await response.json();check(data.userId===accounts[label].id,'admission subject');check(data.role===(label==='admin'?'admin':'member'),'admission role');}
       for(const label of ['disabled','absent']){const response=await read('/api/subject',{session:users[label]});check(response.status===403,'membership denial');const result=await page(users[label]);check(result.body.includes('Access denied'),'denied HTML');for(const transport of ['json','native','fetched'])await deny(transport,users[label]);}
@@ -486,8 +516,8 @@ try{
       for(const mode of ['lost-response','lost-record']){
         const {email,invitation}=await setupRenewal(mode);check((await renew(invitation,mode)).body.data?.code==='pending_reconciliation','uncertainty fails closed');
         const row=await stack.readInvitationForEmail(email);await captured(email,2);check(row.status==='pending_issuance','uncertainty never issues');
-        check((await renew(row)).body.data?.code==='pending_reconciliation','unresolved generation blocks another send');await captured(email,2);
-        const inspectForm=(await app.invitationForms(users.admin)).find(form=>form.kind==='inspect'&&form.fields.some(([key,value])=>key==='invitationId'&&value===row.id));check(Boolean(inspectForm),'uncertain row offers status check');
+        const blocked=await renew(row);check(blocked.body.data?.code==='pending_reconciliation',`unresolved generation blocks another send (HTTP ${blocked.status}; code ${blocked.body.error?.code??blocked.body.code??'none'}; session ${users.admin.expiresAt*1000>Date.now()?'unexpired':'expired'})`);await captured(email,2);
+        const inspectForm=(await app.invitationForms(users.admin)).find(form=>form.kind==='inspect'&&form.fields.some(([key,value])=>key==='invitationId'&&value===row.id));if(!inspectForm){const current=await app.request('/admin/invitations',{session:users.admin}),html=await current.text();check(false,`uncertain row offers status check (HTTP ${current.status}; session ${users.admin.expiresAt*1000>Date.now()?'unexpired':'expired'}; target ${html.includes(row.id)}; denied ${html.includes('Access denied')}; unavailable ${html.includes('unavailable')}; login ${html.includes('authentication-required')})`);}
         const checked=await app.invitationAction(inspectForm,{session:users.admin});privatePolicy(checked);await audit(checked,accounts.admin.id);check((await checked.text()).includes('Needs review'),'UI inspection does not infer receipt from Auth state');await captured(email,2);
         if(mode==='lost-record'){
           check((await renew(row,'reconcile')).body.data?.code==='accepted','original trusted provider response resolves');
