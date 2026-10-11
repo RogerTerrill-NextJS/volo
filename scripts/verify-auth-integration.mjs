@@ -505,7 +505,11 @@ try{
       const expired=emptySession(stack);sessions.push(expired);const csrf=await prepareConfirmation(original,expired);
       check((await postConfirmation(expired,csrf)).status===400,'real provider rejects expired invitation link');
       check(await stack.readMembership(fixture.invitation.auth_user_id)===null&&(await stack.readInvitationForEmail(fixture.email)).status==='issued','provider expiry leaves old invitation eligible');
-      check((await renew(fixture.invitation)).body.data?.code==='accepted','old invitation can renew expired provider link');
+      const renewal=await renew(fixture.invitation);
+      if(renewal.body.data?.code!=='accepted'){
+        const attempt=(await stack.readSendAttempts(fixture.invitation.id)).find(attempt=>attempt.invitation_version===2);
+        check(false,`old invitation can renew expired provider link (HTTP ${renewal.status}; code ${renewal.body.data?.code??renewal.body.error?.code??'none'}; outcome ${attempt?.outcome??'none'}; error ${attempt?.provider_error_code??'none'}; provider ${JSON.stringify(await stack.authFailureCategory())})`);
+      }
       let row=await stack.readInvitationForEmail(fixture.email);check(row.auth_user_id===fixture.invitation.auth_user_id&&row.created_at.startsWith('2000-01-01'),'renewal preserves old invitation and subject');
       let f=await acceptCompletionLink({email:fixture.email,invitation:row},linkFrom((await captured(fixture.email,2)).find(html=>linkFrom(html).searchParams.has('resume'))));
       await confirmedSetup(f.session,row);await stack.assertSetupLifetime(row.id);
