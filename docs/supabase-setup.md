@@ -93,6 +93,15 @@ Next.js route type generation and `tsc --noEmit` passed with the existing offlin
 CI configuration fixtures. The full application suite was not run for this
 database-only change. This evidence does not establish hosted migration or release.
 
+The existing invitation upgrade verifier explicitly includes the profile migration
+in its allowed and final history. Profile seeds run only when `profiles` exists,
+so its historical membership-only rebuild still works. The historical rebuild
+and upgrade were verified locally with all original Auth/membership fixture fields
+unchanged; all 626 database assertions passed after upgrade. Current-schema seeding
+still creates three fictional profiles, and all 58 focused profile/membership
+assertions and three existing verifier safety-guard tests passed. The complete
+GitHub-hosted concurrency/cleanup verifier remains a CI check.
+
 ## Invitation persistence handoff
 
 VOLO-128 delivered the PostgreSQL 17 invitation schema in
