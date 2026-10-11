@@ -9,7 +9,7 @@ import {promisify} from "node:util";
 import {setTimeout as delay} from "node:timers/promises";
 import {startAccessFixture,accessKey,accessCanaries} from "./access-fixture.mjs";
 
-export async function startMutationFixture({actions=false,profiles=false}={}) {
+export async function startMutationFixture({actions=false,profiles=false,onboarding=false}={}) {
   const root=path.resolve(import.meta.dirname,"../..");
   const directory=await mkdtemp(path.join(tmpdir(),"volo-mutations-"));
   const backend=await startAccessFixture();const effects=[],bare=[];
@@ -74,6 +74,14 @@ export async function startMutationFixture({actions=false,profiles=false}={}) {
     if(profiles){
       assert.ok(actions,'Profile fixture requires Server Action forms');
       await put('app/page.tsx',`import {createProfile,updateProfile} from '../lib/profiles/actions';import FixtureForm from './form';export default function Page(){return <main><FixtureForm action={createProfile} label="Create profile"/><FixtureForm action={updateProfile} label="Update profile"/></main>}`);
+    }
+    if(onboarding){
+      await cp(path.join(root,'app/(protected)'),path.join(directory,'app/(protected)'),{recursive:true});
+      await cp(path.join(root,'app/login'),path.join(directory,'app/login'),{recursive:true});
+      await cp(path.join(root,'app/auth/login'),path.join(directory,'app/auth/login'),{recursive:true});
+      await cp(path.join(root,'app/globals.css'),path.join(directory,'app/globals.css'));
+      await cp(path.join(root,'postcss.config.mjs'),path.join(directory,'postcss.config.mjs'));
+      await put('app/layout.tsx',"import './globals.css';export default function Layout({children}:{children:React.ReactNode}){return <html lang=\"en\"><body>{children}</body></html>}");
     }
     const build=await promisify(execFile)(process.execPath,[path.join(root,"node_modules/next/dist/bin/next"),"build",directory,"--webpack"],{cwd:directory,env,timeout:120000,maxBuffer:8*1024*1024});
     clean(build.stdout+build.stderr);

@@ -73,10 +73,14 @@ export async function startAccessFixture() {
     }
     if(req.method==='POST'&&url.pathname==='/rest/v1/rpc/claim_invitation_confirmation_transport'){res.setHeader('content-type','application/json');res.end(JSON.stringify({code:'denied'}));return;}
     if(url.pathname==='/rest/v1/profiles'){
-      const payload=JSON.parse(body);
+      const payload=body?JSON.parse(body):null;
       calls.push({service:'profiles',subject:entry?.id,method:req.method,filter:url.searchParams.get('user_id'),select:url.searchParams.get('select'),payload});
       if(!entry||entry.status!=='active'){failure('denied',req,res);return;}
       if(failure(profiles.failure,req,res))return;
+      if(req.method==='GET'){
+        const row=url.searchParams.get('user_id')===`eq.${entry.id}`?profiles.rows.get(entry.id):undefined;
+        res.end(JSON.stringify(row?[{user_id:row.user_id}]:[]));return;
+      }
       if(req.method==='POST'&&profiles.rows.has(entry.id)){res.writeHead(409).end(JSON.stringify({code:'23505',message:accessCanaries[0]}));return;}
       if(req.method==='PATCH'&&(url.searchParams.get('user_id')!==`eq.${entry.id}`||!profiles.rows.has(entry.id))){res.end('[]');return;}
       if(!['POST','PATCH'].includes(req.method)){unexpected.push({method:req.method,path:url.pathname});res.writeHead(418).end('{}');return;}

@@ -145,6 +145,32 @@ lint passed. Run the new tests with
 No database migration changed; existing profile RLS tests already cover those
 boundaries. The full suite, hosted database and Deploy Preview were not exercised.
 
+## Profile onboarding handoff (VOLO-161)
+
+After account setup or sign-in, the dashboard prompts active members without a
+profile to visit `/onboarding`. Browsing remains available. The page independently
+checks current membership and reads only the current member's profile ID through
+the session client; existing profiles return to the dashboard. Schema constraints
+ensure persisted rows contain the required fields. Failed reads show retry feedback
+without treating the profile as missing.
+
+The mobile-friendly form reuses `validateProfile` and `createProfile`, with labeled
+inputs, a designation fieldset, linked field errors, focused error feedback,
+retained values, pending feedback and duplicate-submit prevention. It works with
+native form submissions before JavaScript loads. A confirmed save navigates to
+`/dashboard?from=profile-onboarding`; uncertain saves retain values and require a
+reload before another attempt. No draft profile or photo write is introduced.
+Editing belongs to VOLO-35 and posting/requesting completion guards to VOLO-162.
+
+Local verification: six focused profile tests passed, including the actual
+compiled onboarding pages and native Server Action submissions; the existing
+protected-app regression verifier, typecheck and focused lint passed. Browser
+checks on a fictional disposable account verified mobile layout, client field
+errors and focus, retained values, successful navigation, disabled pending saves
+and stalled-save recovery. No full suite, hosted writes, Deploy Preview or
+production release was run. Run the focused tests with
+`node --test --test-reporter=dot tests/profile-validation.unit.mts tests/profile-save.test.mjs tests/profile-onboarding.test.mjs`.
+
 ## Invitation persistence handoff
 
 VOLO-128 delivered the PostgreSQL 17 invitation schema in
