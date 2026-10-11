@@ -9,7 +9,7 @@ import {promisify} from "node:util";
 import {setTimeout as delay} from "node:timers/promises";
 import {startAccessFixture,accessKey,accessCanaries} from "./access-fixture.mjs";
 
-export async function startMutationFixture({actions=false,profiles=false,onboarding=false,requireCompleteProfile=false}={}) {
+export async function startMutationFixture({actions=false,profiles=false,onboarding=false,photos=false,requireCompleteProfile=false}={}) {
   const root=path.resolve(import.meta.dirname,"../..");
   const directory=await mkdtemp(path.join(tmpdir(),"volo-mutations-"));
   const backend=await startAccessFixture();const effects=[],bare=[];
@@ -84,6 +84,7 @@ export async function startMutationFixture({actions=false,profiles=false,onboard
       await cp(path.join(root,'postcss.config.mjs'),path.join(directory,'postcss.config.mjs'));
       await put('app/layout.tsx',"import './globals.css';export default function Layout({children}:{children:React.ReactNode}){return <html lang=\"en\"><body>{children}</body></html>}");
     }
+    if(photos)await cp(path.join(root,'app/api/profiles'),path.join(directory,'app/api/profiles'),{recursive:true});
     const build=await promisify(execFile)(process.execPath,[path.join(root,"node_modules/next/dist/bin/next"),"build",directory,"--webpack"],{cwd:directory,env,timeout:120000,maxBuffer:8*1024*1024});
     clean(build.stdout+build.stderr);
     const start=async(override={})=>{

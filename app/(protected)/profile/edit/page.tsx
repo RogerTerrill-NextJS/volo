@@ -7,6 +7,7 @@ import {profileFormValues} from '../../../../lib/profiles/form-state';
 import AppShell from '../../_components/app-shell';
 import AccessState from '../../_components/access-state';
 import ProfileForm from '../../_components/profile-form';
+import ProfilePhotoControls from '../../_components/profile-photo-controls';
 import {saveProfile} from './actions';
 
 export const metadata:Metadata={title:'Edit your pilot profile | Volo',robots:{index:false,follow:false}};
@@ -20,6 +21,7 @@ export default async function EditProfilePage(){
    <p className="text-zinc-600 dark:text-zinc-400">{result.status==='complete'?'Update the details other pilots see about you.':'We could not load your profile. Try again before submitting.'}</p>
   </header>
   {result.status==='unavailable'&&<a href="/profile/edit" className="w-fit underline underline-offset-4">Try again</a>}
+  {result.status==='complete'&&<ProfilePhotoControls userId={access.member.userId} displayName={result.profile.display_name} initialAvailable={result.photoAvailable}/>}
   <ProfileForm unavailable={result.status==='unavailable'} initial={{revision:0,values:result.status==='complete'?profileFormValues(result.profile):{},fieldErrors:{},message:null,reload:false}} save={saveProfile} permalink="/profile/edit" submitLabel="Save profile"/>
   <Link href="/dashboard" prefetch={false} className="w-fit underline underline-offset-4">Back to dashboard</Link>
  </AppShell>;
