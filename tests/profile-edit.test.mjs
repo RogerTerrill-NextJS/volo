@@ -23,6 +23,8 @@ test('profile editing loads and saves only the active owner with recoverable fee
   assert.match(page.body,/Profile photo \(optional\)/);
   assert.match(page.body,/accept="image\/jpeg,image\/png,image\/webp"/);
   assert.match(page.body,/Remove photo/);
+  assert.match(page.body,/<input[^>]*type="checkbox"[^>]*name="pilot_designation"[^>]*checked/);
+  assert.doesNotMatch(page.body,/Student pilot|type="radio"/);
   assert.equal((await fixture.request('/profile/edit',missing.jar)).response.headers.get('location'),'/onboarding');
   assert.match((await fixture.request('/profile/edit')).response.headers.get('location'),/^\/login\?/);
   const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&amp;','&').replaceAll('&lt;','<').replaceAll('&gt;','>');
@@ -37,7 +39,7 @@ test('profile editing loads and saves only the active owner with recoverable fee
    for(const [key,value] of Object.entries(values))form.set(key,value);
    return fixture.request('/profile/edit',jar,{method:'POST',body:form});
   }
-  const values={display_name:' Updated pilot ',home_airport:' ksfo ',pilot_designation:'student',certificates:'Glider',ratings:'',aircraft_access:'',flying_interests:'Local flying',bio:'Updated biography'};
+  const values={display_name:' Updated pilot ',home_airport:' ksfo ',pilot_designation:'licensed',certificates:'Glider',ratings:'',aircraft_access:'',flying_interests:'Local flying',bio:'Updated biography'};
   let result=await submit(page.body,{...values,home_airport:''});
   assert.equal(profiles.writes.length,0);
   assert.match(result.body,/id="profile-home_airport-error"/);

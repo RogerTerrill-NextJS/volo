@@ -2,7 +2,7 @@ import type {Database} from '../supabase/database.types';
 
 export type ProfileFields = Pick<Database['public']['Tables']['profiles']['Insert'],
   'display_name'|'home_airport'|'pilot_designation'|'certificates'|'ratings'|'aircraft_access'|'flying_interests'|'bio'> & {
-  certificates:string[];ratings:string[];aircraft_access:string|null;flying_interests:string|null;bio:string|null;
+  pilot_designation:'licensed';certificates:string[];ratings:string[];aircraft_access:string|null;flying_interests:string|null;bio:string|null;
 };
 export type ProfileField = keyof ProfileFields;
 export type ProfileFieldErrors = Partial<Record<ProfileField,string>>;
@@ -23,7 +23,7 @@ export function validateProfile(raw:unknown):ProfileValidation {
   const airport=validText(input.home_airport)?input.home_airport.trim().toUpperCase():'';
   if(!/^[A-Z0-9]{2,8}$/.test(airport))fieldErrors.home_airport='Enter a home airport identifier of 2–8 letters or numbers.';
   const designation=input.pilot_designation;
-  if(designation!=='student'&&designation!=='licensed')fieldErrors.pilot_designation='Choose student or licensed pilot.';
+  if(designation!=='licensed')fieldErrors.pilot_designation='Confirm that you are a licensed pilot to create or update your profile.';
 
   function labels(field:'certificates'|'ratings'):string[] {
     const raw=input[field];

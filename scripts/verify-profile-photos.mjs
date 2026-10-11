@@ -55,7 +55,7 @@ try{
  admin=createClient(stack.apiUrl,stack.serverSecret,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}});
  for(const label of ['photo-owner','photo-admin','photo-no-profile'])accounts.push(await stack.createAccount({label,role:label==='photo-admin'?'admin':'member'}));
  const [owner,other]=accounts;
- for(const a of [owner,other]){const r=await admin.from('profiles').insert({user_id:a.id,display_name:a===owner?'Owner':'Other',home_airport:'KPAO',pilot_designation:'student'});assert.equal(r.error,null,'Profile provisioning failed');}
+ for(const a of [owner,other]){const r=await admin.from('profiles').insert({user_id:a.id,display_name:a===owner?'Owner':'Other',home_airport:'KPAO',pilot_designation:'licensed'});assert.equal(r.error,null,'Profile provisioning failed');}
  for(const a of accounts)sessions.push(await signInSession(stack,a));
  const [A,B,C]=sessions;
  const clients=[];

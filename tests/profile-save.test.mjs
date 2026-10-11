@@ -22,7 +22,7 @@ test('profile Server Actions validate and save only the current active owner', {
     assert.equal(ids.length,2);
     const invoke=async(index=0,account=member,overrides={},headers={})=>{
       const form=new FormData();
-      for(const [key,value] of Object.entries({display_name:' Student Pilot ',home_airport:' kpao ',pilot_designation:'student',certificates:'Glider\n Private pilot ',ratings:'',aircraft_access:'Club rental',bio:'Hello',...overrides}))form.set(key,value);
+      for(const [key,value] of Object.entries({display_name:' Licensed Pilot ',home_airport:' kpao ',pilot_designation:'licensed',certificates:'Glider\n Private pilot ',ratings:'',aircraft_access:'Club rental',bio:'Hello',...overrides}))form.set(key,value);
       const result=await fixture.request('/',account.jar,{method:'POST',body:await encodeReply([null,form]),headers:{Accept:'text/x-component','Next-Action':ids[index],...headers}});
       assert.equal(result.response.status,200,result.body);
       assert.match(result.response.headers.get('cache-control'),/no-store/);
@@ -30,7 +30,7 @@ test('profile Server Actions validate and save only the current active owner', {
     };
     assert.match(await invoke(),/"code":"saved"/);
     assert.deepEqual(backend.rows.get(member.entry.id),{
-      user_id:member.entry.id,display_name:'Student Pilot',home_airport:'KPAO',pilot_designation:'student',certificates:['Glider','Private pilot'],ratings:[],aircraft_access:'Club rental',flying_interests:null,bio:'Hello',
+      user_id:member.entry.id,display_name:'Licensed Pilot',home_airport:'KPAO',pilot_designation:'licensed',certificates:['Glider','Private pilot'],ratings:[],aircraft_access:'Club rental',flying_interests:null,bio:'Hello',
     });
     backend.rows.get(member.entry.id).photo_storage_path='member/photo.jpg';
     assert.match(await invoke(1,member,{bio:'',aircraft_access:''}),/"code":"saved"/);
@@ -54,6 +54,9 @@ test('profile Server Actions validate and save only the current active owner', {
       const before=backend.writes.length,body=await run();
       assert.match(body,new RegExp('"code":"'+code+'"'));assert.equal(backend.writes.length,before);return body;
     };
+    await noWrite(()=>invoke(0,member,{pilot_designation:'student'}),'invalid_input');
+    await noWrite(()=>invoke(1,member,{pilot_designation:'student'}),'invalid_input');
+    await noWrite(()=>invoke(1,member,{pilot_designation:''}),'invalid_input');
     const invalid=await noWrite(()=>invoke(1,member,{display_name:'',home_airport:'!',bio:'a'.repeat(2001)}),'invalid_input');
     assert.match(invalid,/"fieldErrors":\{/);assert.match(invalid,/"display_name":/);assert.match(invalid,/"home_airport":/);assert.match(invalid,/"bio":/);
     for(const field of ['user_id','role','updated_at','photo_storage_path'])await noWrite(()=>invoke(1,other,{[field]:member.entry.id}),'invalid_input');
@@ -72,7 +75,7 @@ test('profile Server Actions validate and save only the current active owner', {
     assert.match(await invoke(1,other,{display_name:'Administrator pilot',pilot_designation:'licensed'}),/"code":"saved"/);
     assert.equal(backend.rows.get(other.entry.id).display_name,'Administrator pilot');
     assert.equal(backend.rows.get(other.entry.id).photo_storage_path,'owned/photo.jpg');
-    assert.equal(backend.rows.get(member.entry.id).display_name,'Student Pilot');
+    assert.equal(backend.rows.get(member.entry.id).display_name,'Licensed Pilot');
     assert.deepEqual(fixture.backend.unexpected,[]);fixture.clean(fixture.output);
   }finally{await fixture.close();}
 });
