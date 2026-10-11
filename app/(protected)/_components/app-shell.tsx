@@ -6,10 +6,11 @@ export default function AppShell({ children,isAdmin=false }: { children: React.R
     <ProtectedNavigation>
       <header className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
         <span className="text-xl font-semibold tracking-tight">Volo</span>
-        <nav aria-label="App navigation" className="flex gap-6 text-sm font-medium">
+        <nav aria-label="App navigation" className="flex flex-wrap gap-6 text-sm font-medium">
           <Link href="/dashboard" prefetch={false} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
             Dashboard
           </Link>
+          <Link href="/profile/edit" prefetch={false} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">My profile</Link>
           {isAdmin && <Link href="/admin/invitations" prefetch={false} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
             Invitations
           </Link>}
