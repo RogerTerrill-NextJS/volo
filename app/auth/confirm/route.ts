@@ -57,9 +57,12 @@ export async function POST(request:NextRequest){
   const csrf=await readConfirmationCsrf(request);if(!csrf)return message(400);
   names=confirmationCookieNames(origin);const cookie=request.cookies.get(names.confirmation)?.value;if(!isConfirmationSecret(cookie))return message(400);
   const sdkHeaders=headers(),p=ports(),claim=p.store.claim;p.store.claim=async(input)=>{const result=await claim(input);if(result.code==='claimed')claimed=true;return result;};
-  const lookupDigest=confirmationDigest(cookie),stored=await p.store.read({lookupDigest,origin});
-  if(stored.code!=='found')return message(stored.code==='unavailable'?503:400);
-  const payload=openConfirmation(stored.envelope,{lookupDigest,origin,expiresAt:stored.envelope.expiresAt});if(!payload)return message(400);
+  const lookupDigest=confirmationDigest(cookie),stored=await p.store.claim({lookupDigest,csrfDigest:confirmationDigest(csrf),origin});
+  if(stored.code!=='claimed')return await failure(stored.code==='unavailable'?503:400);
+  // Select the flow only from atomically claimed, CSRF-checked evidence. The
+  // selected domain handler receives that same claim without another RPC.
+  p.store.claim=async()=>stored;
+  const payload=openConfirmation(stored.envelope,{lookupDigest,origin,expiresAt:stored.envelope.expiresAt});if(!payload)return await failure(400);
   const accept=payload.flow==='recovery'?acceptRecoveryConfirmation:acceptInvitationConfirmation;
   const result=await accept({cookie,csrf,origin},{...p,eligible:readInvitationEligibility,async verify(payload){
    transport=createConfirmationAuthTransport();

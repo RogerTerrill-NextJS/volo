@@ -369,7 +369,10 @@ try{
       privatePolicy(response);return {status:response.status,body:await response.json()};
     };
     const setupRenewal=async(label)=>{
-      const email=ownedEmail(label);check((await issue(email)).body.data?.code==='accepted','initial accepted');
+      const email=ownedEmail(label),initial=await issue(email);
+      const failed=initial.body.data?.code!=='accepted',failedRow=failed?await stack.readInvitationForEmail(email):null;
+      const attempt=failedRow?(await stack.readSendAttempts(failedRow.id)).at(-1):null;
+      check(!failed,`initial accepted (HTTP ${initial.status}; code ${initial.body.data?.code??initial.body.error?.code??'none'}; outcome ${attempt?.outcome??'none'}; error ${attempt?.error_code??'none'}; session ${users.admin.expiresAt*1000>Date.now()?'unexpired':'expired'})`);
       const invitation=await stack.readInvitationForEmail(email);await stack.trackIssuedSubject(invitation.auth_user_id);return {email,invitation};
     };
     const acceptCompletionLink=async({email,invitation},link)=>{
