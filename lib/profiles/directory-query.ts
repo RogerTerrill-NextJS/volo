@@ -1,9 +1,10 @@
 import 'server-only';
 import type {AccessResult} from '../auth/access.ts';
 import {validateProfile,type ProfileFields} from './validation.ts';
+import {normalizeDirectorySearch} from './directory-search.ts';
 
 export type DirectoryProfile=ProfileFields & {user_id:string;photoAvailable:boolean};
-export type DirectoryPage={after:string|null;pageSize:number};
+export type DirectoryPage={after:string|null;pageSize:number;search?:string};
 export type DirectoryQueryPorts={access:()=>Promise<AccessResult>;readRows:(page:DirectoryPage)=>Promise<unknown>};
 export type NetworkProfileQueryPorts={access:()=>Promise<AccessResult>;readRow:(userId:string)=>Promise<unknown>};
 export type NetworkProfileResult={status:'authorized';profile:DirectoryProfile}
@@ -16,11 +17,13 @@ const unavailable=()=>new Error('Directory unavailable.');
 function pageInput(input:unknown):DirectoryPage|null{
  if(!input||typeof input!=='object'||Array.isArray(input))return null;
  const value=input as Record<string,unknown>;
- if(Object.keys(value).some(key=>key!=='after'&&key!=='pageSize'))return null;
+ if(Object.keys(value).some(key=>key!=='after'&&key!=='pageSize'&&key!=='search'))return null;
+ const search=normalizeDirectorySearch(value.search);
+ if(search===null)return null;
  const pageSize=value.pageSize===undefined?20:value.pageSize,after=value.after??null;
  if(typeof pageSize!=='number'||!Number.isInteger(pageSize)||pageSize<1||pageSize>50
   ||(after!==null&&(typeof after!=='string'||!uuid.test(after))))return null;
- return {after:typeof after==='string'?after.toLowerCase():null,pageSize};
+ return {after:typeof after==='string'?after.toLowerCase():null,pageSize,...(search?{search}:{})};
 }
 
 function project(input:unknown):DirectoryProfile{
@@ -50,7 +53,7 @@ async function networkReadClient(){
 export function createDirectoryQueryPorts():DirectoryQueryPorts{
  return {access:async()=>(await import('../auth/access.ts')).getAccess(),async readRows(page){
   const {client,signal}=await networkReadClient();
-  const result=await client.rpc('list_directory_profiles',{p_after:page.after??undefined,p_page_size:page.pageSize}).abortSignal(signal).retry(false);
+  const result=await client.rpc('list_directory_profiles',{p_after:page.after??undefined,p_page_size:page.pageSize,...(page.search?{p_search:page.search}:{})}).abortSignal(signal).retry(false);
   if(result.error)throw unavailable();
   return result.data;
  }};

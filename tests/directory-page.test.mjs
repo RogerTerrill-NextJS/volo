@@ -41,6 +41,31 @@ test('directory renders guarded pilot cards, cursor navigation and recoverable s
   assert.doesNotMatch(page.body,/Next page/);
   assert.deepEqual(reads().at(-1).payload,{p_after:id(20),p_page_size:20});
 
+  directory.rows=[row(21)];
+  page=await read('/directory?q=%20pAo%20&after='+id(20));
+  assert.match(page.body,/Search pilots/);
+  assert.match(page.body,/name="q"/);
+  assert.match(page.body,/Clear search/);
+  assert.match(page.body,/href="\/directory\?q=pAo"/);
+  assert.deepEqual(reads().at(-1).payload,{p_after:id(20),p_page_size:20,p_search:'pAo'});
+  directory.rows=Array.from({length:21},(_,i)=>row(i+1));
+  page=await read('/directory?q=Pilot');
+  assert.match(page.body,new RegExp(`href="/directory\\?q=Pilot(?:&amp;|&)after=${id(20)}"`));
+  directory.rows=[];
+  page=await read('/directory?q=Missing');
+  assert.match(page.body,/No pilots match/);
+  page=await read('/directory?q=%3Cscript%3E');
+  assert.match(page.body,/value="&lt;script&gt;"/);
+  assert.deepEqual(reads().at(-1).payload,{p_page_size:20,p_search:'<script>'});
+  page=await read('/directory?q=Pilot&after='+id(21));
+  assert.match(page.body,/No more pilots on this page/);
+  const invalidSearchReads=reads().length;
+  for(const query of ['q=a&q=b','q='+ 'x'.repeat(81),'q=bad%00name']){
+   page=await read('/directory?'+query);
+   assert.match(page.body,/Invalid directory/);
+   assert.equal(reads().length,invalidSearchReads);
+  }
+
   const before=reads().length;
   for(const path of ['/directory?after=invalid','/directory?after=a&after=b']){
    page=await read(path);assert.match(page.body,/Invalid directory page/);assert.match(page.body,/href="\/directory"/);
