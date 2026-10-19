@@ -66,6 +66,26 @@ test('directory renders guarded pilot cards, cursor navigation and recoverable s
    assert.equal(reads().length,invalidSearchReads);
   }
 
+  directory.rows=Array.from({length:21},(_,i)=>row(i+1));
+  page=await read('/directory?q=Pilot&certificate=%20Private%20&rating=Instrument&aircraft=Club');
+  for(const label of ['Certificate','Rating','Aircraft access','Reset all'])assert.ok(page.body.includes(label));
+  assert.deepEqual(reads().at(-1).payload,{p_page_size:20,p_search:'Pilot',p_certificate:'Private',p_rating:'Instrument',p_aircraft:'Club'});
+  assert.match(page.body,new RegExp(`href="/directory\\?q=Pilot(?:&amp;|&)certificate=Private(?:&amp;|&)rating=Instrument(?:&amp;|&)aircraft=Club(?:&amp;|&)after=${id(20)}"`));
+  directory.rows=[row(21)];
+  page=await read('/directory?certificate=Private&rating=Instrument&aircraft=Club&after='+id(20));
+  assert.match(page.body,/href="\/directory\?certificate=Private(?:&amp;|&)rating=Instrument(?:&amp;|&)aircraft=Club"/);
+  const filterReads=reads().length;
+  for(const field of ['certificate','rating','aircraft'])for(const value of ['a&'+field+'=b','x'.repeat(81),'bad%00value']){
+   page=await read('/directory?'+field+'='+value);
+   assert.match(page.body,/Invalid directory/);assert.equal(reads().length,filterReads);
+  }
+  directory.rows=[{...row(1),certificates:[],ratings:[],aircraft_access:null}];
+  page=await read();
+  assert.equal((page.body.match(/>Not provided</g)??[]).length,3);
+  directory.rows=[];
+  page=await read('/directory?certificate=Missing');assert.match(page.body,/No pilots match/);
+  directory.rows=[row(21)];
+
   const before=reads().length;
   for(const path of ['/directory?after=invalid','/directory?after=a&after=b']){
    page=await read(path);assert.match(page.body,/Invalid directory page/);assert.match(page.body,/href="\/directory"/);

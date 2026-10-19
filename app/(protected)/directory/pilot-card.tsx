@@ -13,7 +13,7 @@ export default function PilotCard({pilot}:{pilot:DirectoryProfile}){
      <p className="text-sm text-zinc-600 dark:text-zinc-400">Licensed pilot</p>
     </div>
    </header>
-   <PilotDetails pilot={pilot}/>
+   <PilotDetails pilot={pilot} showMissing/>
   </article>
  </li>;
 }

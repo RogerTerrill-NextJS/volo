@@ -76,3 +76,24 @@ test('directory normalizes bounded literal search and rejects malformed terms be
   assert.equal(reads,0);
  }
 });
+
+
+test('directory normalizes and bounds each filter and preserves all combined criteria',async()=>{
+ let actual:unknown;
+ const p={...ports(),readRows:async(input:unknown)=>{actual=input;return [];}};
+ assert.equal((await listDirectoryProfiles({search:'pAo',certificate:'  Private\t pilot ',rating:' Instrument ',aircraft:' Club   C172 ',after:id(1),pageSize:1},p)).status,'authorized');
+ assert.deepEqual(actual,{after:id(1),pageSize:1,search:'pAo',certificate:'Private pilot',rating:'Instrument',aircraft:'Club C172'});
+ for(const field of ['certificate','rating','aircraft']){
+  for(const value of [['a','b'],null,{},1,'x'.repeat(81),'bad\u0000value','\ud800']){
+   let reads=0;
+   assert.deepEqual(await listDirectoryProfiles({[field]:value},{...ports(),readRows:async()=>{reads++;return [];}}),{status:'invalid'});
+   assert.equal(reads,0);
+  }
+  await listDirectoryProfiles({[field]:'\u2003  '},p);
+  assert.deepEqual(actual,{after:null,pageSize:20});
+  assert.equal((await listDirectoryProfiles({[field]:'😀'.repeat(80)},p)).status,'authorized');
+  assert.deepEqual(actual,{after:null,pageSize:20,[field]:'😀'.repeat(80)});
+  await listDirectoryProfiles({[field]:'%_\\'},p);
+  assert.deepEqual(actual,{after:null,pageSize:20,[field]:'%_\\'});
+ }
+});

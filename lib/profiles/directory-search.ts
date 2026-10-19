@@ -7,3 +7,17 @@ export function normalizeDirectorySearch(value:unknown):string|null{
  if(typeof value!=='string'||!value.isWellFormed()||value.includes('\u0000')||[...value].length>80)return null;
  return value.replace(whitespace,' ').replace(/^ | $/g,'');
 }
+
+
+export type DirectoryCriteria={search?:string;certificate?:string;rating?:string;aircraft?:string};
+
+/** Only nonblank criteria are forwarded; a malformed value rejects the request. */
+export function normalizeDirectoryCriteria(input:Record<string,unknown>):DirectoryCriteria|null{
+ const criteria:DirectoryCriteria={};
+ for(const field of ['search','certificate','rating','aircraft'] as const){
+  const value=normalizeDirectorySearch(input[field]);
+  if(value===null)return null;
+  if(value)criteria[field]=value;
+ }
+ return criteria;
+}

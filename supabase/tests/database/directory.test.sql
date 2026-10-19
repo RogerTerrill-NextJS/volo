@@ -3,7 +3,7 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 select no_plan();
 
-select has_function('public', 'list_directory_profiles', array['uuid','integer','text'], 'Directory query exists');
+select has_function('public', 'list_directory_profiles', array['uuid','integer','text','text','text','text'], 'Directory query exists');
 select has_function('public', 'get_network_profile', array['uuid'], 'Targeted network profile query exists');
 insert into auth.users(id,email) values
  ('61000000-0000-4000-8000-000000000001','directory-admin@example.invalid'),
@@ -82,11 +82,11 @@ select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-00000000
 select is((select count(*)::integer from public.list_directory_profiles('61000000-0000-4000-8000-000000000001')),0,'Target revocation removes retained profile immediately');
 select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000003')),0,'Fresh target revocation removes direct profile access');
 reset role;
-select ok(not (select prosecdef from pg_proc where oid='public.list_directory_profiles(uuid,integer,text)'::regprocedure),'Profile query runs with caller RLS');
+select ok(not (select prosecdef from pg_proc where oid='public.list_directory_profiles(uuid,integer,text,text,text,text)'::regprocedure),'Profile query runs with caller RLS');
 select ok((select not prosecdef and provolatile='s' from pg_proc where oid='public.get_network_profile(uuid)'::regprocedure),'Targeted read preserves caller RLS and is read-only');
 select ok(not has_schema_privilege('anon','directory_private','usage'),'Anonymous clients cannot use eligibility schema');
 select ok(not has_function_privilege('anon','directory_private.active_profile_owner(uuid)','execute'),'Eligibility helper denies anonymous callers');
-select ok(not has_function_privilege('service_role','public.list_directory_profiles(uuid,integer,text)','execute'),'Directory RPC is intended for member sessions only');
+select ok(not has_function_privilege('service_role','public.list_directory_profiles(uuid,integer,text,text,text,text)','execute'),'Directory RPC is intended for member sessions only');
 update public.profiles set photo_storage_path='61000000-0000-4000-8000-000000000001/placeholder.webp'
  where user_id='61000000-0000-4000-8000-000000000001';
 -- Enough independent rows to exercise both default and maximum page bounds.
@@ -112,8 +112,31 @@ select results_eq($$select user_id from public.list_directory_profiles('62000000
 select results_eq($$select user_id from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',1,'sql')$$,
  $$values ('62000000-0000-4000-8000-000000000052'::uuid)$$,'Late airport match is filtered before page size');
 select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',50,U&'\00A0\2003')),51,'Unicode whitespace search is unfiltered');
+reset role;
+update public.profiles set certificates=array['Private   pilot','Commercial'],ratings=array[E'Instrument\t Airplane'],aircraft_access='Club   C172'
+ where user_id in ('62000000-0000-4000-8000-000000000051','62000000-0000-4000-8000-000000000052');
+update public.profiles set certificates=array['Private pilot'],ratings=array['Instrument Airplane'],aircraft_access='Club C172'
+ where user_id in ('61000000-0000-4000-8000-000000000002','61000000-0000-4000-8000-000000000005');
+set local role authenticated;
+select results_eq($$select user_id from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',1,'','  private  PILOT ',' instrument airplane ',' club C172 ')$$,
+ $$values ('62000000-0000-4000-8000-000000000051'::uuid),('62000000-0000-4000-8000-000000000052'::uuid)$$,'Combined filters normalize input and stored values before pagination/lookahead');
+select results_eq($$select user_id from public.list_directory_profiles('62000000-0000-4000-8000-000000000051',1,'SQL','private','instrument','c172')$$,
+ $$values ('62000000-0000-4000-8000-000000000052'::uuid)$$,'Search and all filters combine with cursor without overlap');
+select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',20,'','private','missing','c172')),0,'Filters combine with AND rather than OR');
+select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',50,'','commercial')),2,'Any certificate label can match a substring');
+select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',50,'','','airplane')),2,'Rating-only filter excludes missing arrays');
+select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',50,'','','','club')),2,'Aircraft-only filter excludes absent optional text');
+select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',50,'',' ',' ',' ')),51,'Blank filters retain the existing unfiltered page bounds');
+select is((select count(*)::integer from public.list_directory_profiles('61000000-0000-4000-8000-000000000000',50,'','private','instrument','c172')),2,'Matching disabled and unadmitted targets stay excluded');
+select is((select count(*)::integer from public.list_directory_profiles(null,20,'','%')),0,'Certificate percent is literal');
+select is((select count(*)::integer from public.list_directory_profiles(null,20,'','','_')),0,'Rating underscore is literal');
+select is((select count(*)::integer from public.list_directory_profiles(null,20,'','','','%')),0,'Aircraft percent is literal');
+select throws_ok($$select * from public.list_directory_profiles(null,20,'',repeat('x',81))$$,'22023',null,'Oversized certificate filter rejected');
+select throws_ok($$select * from public.list_directory_profiles(null,20,'','',null)$$,'22023',null,'Explicit null rating filter rejected');
+select throws_ok($$select * from public.list_directory_profiles(null,20,'','','',repeat('x',81))$$,'22023',null,'Oversized aircraft filter rejected');
 select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 select is((select count(*)::integer from public.list_directory_profiles(null,20,'Page')),0,'Disabled viewer cannot search matching public profiles');
+select is((select count(*)::integer from public.list_directory_profiles(null,20,'','private','instrument','c172')),0,'Disabled viewer cannot use combined filters');
 reset role;
 select * from finish();
 rollback;
