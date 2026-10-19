@@ -31,7 +31,8 @@
     "db:types:check": "node scripts/database-types.mjs --check",
     "test:invitations:unit": "node --conditions=react-server --test tests/invitation-send.unit.mts tests/invitation-resend.unit.mts tests/invitation-admin-query.unit.mts tests/invitation-admin-form.unit.mts tests/invitation-confirmation*.unit.mts tests/invitation-completion*.unit.mts tests/invitation-setup-ui.unit.mts",
     "test:profile-photos:unit": "node --conditions=react-server --test --test-reporter=dot tests/profile-photo-image.unit.mts tests/profile-photo-cleanup.unit.mts tests/profile-photo-client.unit.mts",
-    "test:profile-photos": "node scripts/verify-profile-photos.mjs"
+    "test:profile-photos": "node scripts/verify-profile-photos.mjs",
+    "test:directory:unit": "node --conditions=react-server --test --test-reporter=dot tests/directory-query.unit.mts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

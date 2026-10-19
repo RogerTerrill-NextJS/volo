@@ -9,7 +9,7 @@ import {promisify} from "node:util";
 import {setTimeout as delay} from "node:timers/promises";
 import {startAccessFixture,accessKey,accessCanaries} from "./access-fixture.mjs";
 
-export async function startMutationFixture({actions=false,profiles=false,onboarding=false,photos=false,requireCompleteProfile=false}={}) {
+export async function startMutationFixture({actions=false,profiles=false,onboarding=false,photos=false,directoryQuery=false,requireCompleteProfile=false}={}) {
   const root=path.resolve(import.meta.dirname,"../..");
   const directory=await mkdtemp(path.join(tmpdir(),"volo-mutations-"));
   const backend=await startAccessFixture();const effects=[],bare=[];
@@ -85,6 +85,12 @@ export async function startMutationFixture({actions=false,profiles=false,onboard
       await put('app/layout.tsx',"import './globals.css';export default function Layout({children}:{children:React.ReactNode}){return <html lang=\"en\"><body>{children}</body></html>}");
     }
     if(photos)await cp(path.join(root,'app/api/profiles'),path.join(directory,'app/api/profiles'),{recursive:true});
+    if(directoryQuery)await put('app/api/directory-fixture/route.ts',`import {listDirectoryProfiles} from '../../../lib/profiles/directory-query';
+      import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';
+      export async function GET(request:Request){const params=new URL(request.url).searchParams;
+        const input={...(params.has('after')?{after:params.get('after')}:{}),...(params.has('size')?{pageSize:Number(params.get('size'))}:{})};
+        const headers=new Headers();applyPrivateResponseHeaders(headers);
+        return Response.json(await listDirectoryProfiles(input),{headers});}`);
     const build=await promisify(execFile)(process.execPath,[path.join(root,"node_modules/next/dist/bin/next"),"build",directory,"--webpack"],{cwd:directory,env,timeout:120000,maxBuffer:8*1024*1024});
     clean(build.stdout+build.stderr);
     const start=async(override={})=>{
