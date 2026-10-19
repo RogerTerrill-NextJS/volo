@@ -87,3 +87,17 @@ Changed files:
 - `docs/volo-169-verification.md`
 
 Preexisting modified `AGENTS.md` and untracked `docs/audits/` remain untouched.
+
+## PR #56 seeded CI follow-up
+
+The first CI database run failed assertion 51: the airport search for `sql`
+returned the existing fictional seeded member before the test's late `KSQL`
+profile. The local verification stack had seeds disabled. The matching behavior
+was correct; the assertion had not isolated its fixture range. The late-match
+checks now use their fixture's lower UUID cursor boundary while preserving the
+one-row page size, expected target, and intervening nonmatching records.
+
+All 53 directory assertions passed with the repository's fictional CI seeds,
+then passed again after an owned local reset with no seeds. The disposable stack
+was removed. This correction changes only test isolation and verification notes;
+application behavior, schema, expected target and assertion strength are unchanged.

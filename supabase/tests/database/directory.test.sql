@@ -107,9 +107,9 @@ reset role;
 update public.profiles set display_name=E'Élodie\t Pilot',home_airport='KSQL'
  where user_id='62000000-0000-4000-8000-000000000052';
 set local role authenticated;
-select results_eq($$select user_id from public.list_directory_profiles(null,1,'éLODIE   pilot')$$,
+select results_eq($$select user_id from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',1,'éLODIE   pilot')$$,
  $$values ('62000000-0000-4000-8000-000000000052'::uuid)$$,'Late name match is filtered before page size and normalizes stored whitespace');
-select results_eq($$select user_id from public.list_directory_profiles(null,1,'sql')$$,
+select results_eq($$select user_id from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',1,'sql')$$,
  $$values ('62000000-0000-4000-8000-000000000052'::uuid)$$,'Late airport match is filtered before page size');
 select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',50,U&'\00A0\2003')),51,'Unicode whitespace search is unfiltered');
 select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
