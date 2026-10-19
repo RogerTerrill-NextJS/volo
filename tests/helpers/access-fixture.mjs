@@ -73,6 +73,13 @@ export async function startAccessFixture() {
       if(entry.membership==="null-row")data=[null];
       res.end(JSON.stringify(data));return;
     }
+    if(req.method==='POST'&&url.pathname==='/rest/v1/rpc/get_network_profile'){
+      const payload=JSON.parse(body);
+      calls.push({service:'network-profile',subject:entry?.id,method:req.method,payload});
+      if(!entry||entry.status!=='active'){failure('denied',req,res);return;}
+      if(failure(directory.failure,req,res))return;
+      res.end(JSON.stringify(directory.rows.filter(row=>row.user_id===payload.p_user_id)));return;
+    }
     if(req.method==='POST'&&url.pathname==='/rest/v1/rpc/list_directory_profiles'){
       calls.push({service:'directory',subject:entry?.id,method:req.method,payload:JSON.parse(body)});
       if(!entry||entry.status!=='active'){failure('denied',req,res);return;}

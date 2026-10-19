@@ -5,6 +5,9 @@ import {validateProfile,type ProfileFields} from './validation.ts';
 export type DirectoryProfile=ProfileFields & {user_id:string;photoAvailable:boolean};
 export type DirectoryPage={after:string|null;pageSize:number};
 export type DirectoryQueryPorts={access:()=>Promise<AccessResult>;readRows:(page:DirectoryPage)=>Promise<unknown>};
+export type NetworkProfileQueryPorts={access:()=>Promise<AccessResult>;readRow:(userId:string)=>Promise<unknown>};
+export type NetworkProfileResult={status:'authorized';profile:DirectoryProfile}
+ | {status:'unauthenticated'|'forbidden'|'unavailable'|'missing'};
 export type DirectoryResult={status:'authorized';rows:DirectoryProfile[];nextCursor:string|null}
  | {status:'unauthenticated'|'forbidden'|'unavailable'|'invalid'};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -33,19 +36,49 @@ function project(input:unknown):DirectoryProfile{
  return {...result.value,user_id:row.user_id.toLowerCase(),photoAvailable:row.photo_available};
 }
 
-/** Session credentials only: the invoker RPC preserves profile RLS. No shared cache. */
-export function createDirectoryQueryPorts():DirectoryQueryPorts{
- return {access:async()=>(await import('../auth/access.ts')).getAccess(),async readRows(page){
+async function networkReadClient(){
   const {createServerSupabaseClient}=await import('../supabase/server.ts');
   const signal=AbortSignal.timeout(5000);
   const client=await createServerSupabaseClient({cookieMode:'read-only',fetch:async(url,init)=>{
    const response=await fetch(url,{...init,signal:init?.signal?AbortSignal.any([signal,init.signal]):signal,cache:'no-store',redirect:'error'});
    return new Response(await response.text(),{status:response.status,headers:response.headers});
   }});
+  return {client,signal};
+}
+
+/** Session credentials only: invoker RPCs preserve profile RLS. No shared cache. */
+export function createDirectoryQueryPorts():DirectoryQueryPorts{
+ return {access:async()=>(await import('../auth/access.ts')).getAccess(),async readRows(page){
+  const {client,signal}=await networkReadClient();
   const result=await client.rpc('list_directory_profiles',{p_after:page.after??undefined,p_page_size:page.pageSize}).abortSignal(signal).retry(false);
   if(result.error)throw unavailable();
   return result.data;
  }};
+}
+
+export function createNetworkProfileQueryPorts():NetworkProfileQueryPorts{
+ return {access:async()=>(await import('../auth/access.ts')).getAccess(),async readRow(userId){
+  const {client,signal}=await networkReadClient();
+  const result=await client.rpc('get_network_profile',{p_user_id:userId}).abortSignal(signal).retry(false).maybeSingle();
+  if(result.error)throw unavailable();
+  return result.data;
+ }};
+}
+
+/** One requested identity; absent/inactive targets share the same missing outcome. */
+export async function getNetworkProfile(userId:unknown,ports:NetworkProfileQueryPorts=createNetworkProfileQueryPorts()):Promise<NetworkProfileResult>{
+ try{
+  const before=await ports.access();
+  if(before.status!=='authorized')return {status:before.status};
+  if(typeof userId!=='string'||!uuid.test(userId))return {status:'missing'};
+  const target=userId.toLowerCase(),data=await ports.readRow(target);
+  const profile=data===null?null:project(data);
+  if(profile&&profile.user_id!==target)throw unavailable();
+  const after=await ports.access();
+  if(after.status!=='authorized')return {status:after.status};
+  if(after.member.userId!==before.member.userId)return {status:'forbidden'};
+  return profile?{status:'authorized',profile}:{status:'missing'};
+ }catch{return {status:'unavailable'};}
 }
 
 /** Active members may browse without a profile. Never accept a caller's access grant. */
