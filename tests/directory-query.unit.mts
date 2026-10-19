@@ -57,3 +57,22 @@ test('directory discards results after membership revocation or session switch',
   assert.equal(result.status,'authorized');
  }
 });
+
+
+test('directory normalizes bounded literal search and rejects malformed terms before reading',async()=>{
+ let actual:unknown;
+ const p={...ports(),readRows:async(input:unknown)=>{actual=input;return [];}};
+ assert.equal((await listDirectoryProfiles({search:'  MiXeD\t  Name  ',after:id(1)},p)).status,'authorized');
+ assert.deepEqual(actual,{after:id(1),pageSize:20,search:'MiXeD Name'});
+ await listDirectoryProfiles({search:'\u00a0\u2003'},p);
+ assert.deepEqual(actual,{after:null,pageSize:20});
+ for(const search of ['%', '_', "O’Neil", 'KPAO', 'x'.repeat(80)]){
+  assert.equal((await listDirectoryProfiles({search},p)).status,'authorized');
+  assert.deepEqual(actual,{after:null,pageSize:20,search});
+ }
+ for(const search of [['a','b'],null,1,{},'x'.repeat(81),'bad\u0000name','\ud800']){
+  let reads=0;
+  assert.deepEqual(await listDirectoryProfiles({search},{...ports(),readRows:async()=>{reads++;return [];}}),{status:'invalid'});
+  assert.equal(reads,0);
+ }
+});
