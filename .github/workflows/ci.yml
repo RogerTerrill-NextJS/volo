@@ -41,6 +41,8 @@ jobs:
         run: npm run build
       - name: Profile photo image processing
         run: npm run test:profile-photos:unit
+      - name: Directory query security and pagination
+        run: npm run test:directory:unit
       - name: Production smoke tests
         run: npm test
       - name: Supabase request-scoped clients and cookie persistence

@@ -11,6 +11,7 @@ export async function startAccessFixture() {
   const invitations={rows:[{id:'30000000-0000-4000-8000-000000000001',version:2,recipient_email:'person+tag@example.invalid',status:'revoked',created_at:'2026-01-01T00:00:00Z',updated_at:'2026-01-02T00:00:00Z',auth_user_id:'private-invitation-authority-canary',invitation_send_attempts:[{invitation_version:2,outcome:'unknown',reconciled_outcome:null}]}],failure:null};
   const profiles={rows:new Map(),writes:[],failure:null};
   const photos={objects:new Map(),reads:[],failure:null};
+  const directory={rows:[],failure:null};
   const encode=value=>Buffer.from(JSON.stringify(value)).toString("base64url");
   const user=id=>({id,aud:"authenticated",role:"authenticated",email:"fictional@example.invalid",
     app_metadata:{},user_metadata:{role:"admin",canary:accessCanaries[1]},created_at:"2026-01-01T00:00:00Z"});
@@ -72,6 +73,12 @@ export async function startAccessFixture() {
       if(entry.membership==="null-row")data=[null];
       res.end(JSON.stringify(data));return;
     }
+    if(req.method==='POST'&&url.pathname==='/rest/v1/rpc/list_directory_profiles'){
+      calls.push({service:'directory',subject:entry?.id,method:req.method,payload:JSON.parse(body)});
+      if(!entry||entry.status!=='active'){failure('denied',req,res);return;}
+      if(failure(directory.failure,req,res))return;
+      res.end(JSON.stringify(directory.rows));return;
+    }
     if(req.method==='POST'&&url.pathname==='/rest/v1/rpc/claim_invitation_confirmation_transport'){res.setHeader('content-type','application/json');res.end(JSON.stringify({code:'denied'}));return;}
     if(url.pathname.startsWith('/storage/v1/object/profile-photos/')){
       const key=url.pathname.split('/profile-photos/')[1];photos.reads.push({subject:entry?.id,key});
@@ -102,7 +109,7 @@ export async function startAccessFixture() {
   });
   server.listen(0,"127.0.0.1");await once(server,"listening");
   const origin=`http://127.0.0.1:${server.address().port}`;
-  return {origin,calls,unexpected,cases,invitations,profiles,photos,async seed(label,options={}) {
+  return {origin,calls,unexpected,cases,invitations,profiles,photos,directory,async seed(label,options={}) {
     const id=`aaaaaaaa-aaaa-4aaa-8aaa-${String(++sequence).padStart(12,"0")}`;
     const entry={label,id,role:"member",status:"active",...options};cases.set(label,entry);
     const jar=new Map();
