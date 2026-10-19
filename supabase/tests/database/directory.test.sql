@@ -4,6 +4,7 @@ set local search_path = public, extensions;
 select no_plan();
 
 select has_function('public', 'list_directory_profiles', array['uuid','integer'], 'Directory query exists');
+select has_function('public', 'get_network_profile', array['uuid'], 'Targeted network profile query exists');
 insert into auth.users(id,email) values
  ('61000000-0000-4000-8000-000000000001','directory-admin@example.invalid'),
  ('61000000-0000-4000-8000-000000000002','directory-disabled@example.invalid'),
@@ -23,6 +24,7 @@ insert into public.profiles(user_id,display_name,home_airport,pilot_designation)
 
 set local role anon;
 select throws_ok('select * from public.list_directory_profiles()', '42501', null, 'Anonymous RPC denied');
+select throws_ok($$select * from public.get_network_profile('61000000-0000-4000-8000-000000000001')$$, '42501', null, 'Anonymous targeted profile RPC denied');
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
@@ -38,22 +40,38 @@ select results_eq($$select k from (select * from public.list_directory_profiles(
  $$select unnest(array['aircraft_access','bio','certificates','display_name','flying_interests','home_airport','photo_available','pilot_designation','ratings','user_id'])$$,
  'RPC exposes only explicit profile fields');
 select is((select count(*)::integer from public.memberships),1,'Membership RLS still exposes only viewer record');
+select results_eq($$select user_id from public.get_network_profile('61000000-0000-4000-8000-000000000003')$$,
+ $$values ('61000000-0000-4000-8000-000000000003'::uuid)$$,'Active viewer reads only the requested other pilot');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000001')),1,'Active admin can view own profile');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000002')),0,'Disabled target is indistinguishable from missing');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000004')),0,'Active target without profile is missing');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000005')),0,'Retained unadmitted profile is missing');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-999999999999')),0,'Unknown target is missing');
+select is((select count(*)::integer from public.get_network_profile(null)),0,'Null target cannot list profiles');
+select results_eq($$select jsonb_object_keys(to_jsonb(p)) k from public.get_network_profile('61000000-0000-4000-8000-000000000003') p order by k$$,
+ $$select unnest(array['aircraft_access','bio','certificates','display_name','flying_interests','home_airport','photo_available','pilot_designation','ratings','user_id'])$$,
+ 'Targeted RPC exposes only approved fields');
 select throws_ok('select * from public.list_directory_profiles(null,0)','22023',null,'Zero page size rejected');
 select throws_ok('select * from public.list_directory_profiles(null,51)','22023',null,'Oversized page rejected');
 select throws_ok('select * from public.list_directory_profiles(null,null)','22023',null,'Null page size rejected');
 select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-000000000004","role":"authenticated"}',true);
 select is((select count(*)::integer from public.list_directory_profiles('61000000-0000-4000-8000-000000000000')),2,'Active viewer without profile can browse');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000003')),1,'Viewer without profile can open another pilot');
 select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-000000000002","role":"authenticated","user_metadata":{"role":"admin","status":"active"}}',true);
 select is((select count(*)::integer from public.list_directory_profiles()),0,'Disabled viewer cannot bypass with metadata');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000001')),0,'Disabled viewer cannot read targeted profile with spoofed metadata');
 select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-000000000005","role":"authenticated","user_metadata":{"role":"admin","status":"active"}}',true);
 select is((select count(*)::integer from public.list_directory_profiles()),0,'Unadmitted viewer cannot bypass with metadata');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000001')),0,'Unadmitted viewer cannot read targeted profile');
 reset role;
 update public.memberships set status='disabled',disabled_at=now(),disabled_reason='Revoked' where user_id='61000000-0000-4000-8000-000000000003';
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 select is((select count(*)::integer from public.list_directory_profiles('61000000-0000-4000-8000-000000000001')),0,'Target revocation removes retained profile immediately');
+select is((select count(*)::integer from public.get_network_profile('61000000-0000-4000-8000-000000000003')),0,'Fresh target revocation removes direct profile access');
 reset role;
 select ok(not (select prosecdef from pg_proc where oid='public.list_directory_profiles(uuid,integer)'::regprocedure),'Profile query runs with caller RLS');
+select ok((select not prosecdef and provolatile='s' from pg_proc where oid='public.get_network_profile(uuid)'::regprocedure),'Targeted read preserves caller RLS and is read-only');
 select ok(not has_schema_privilege('anon','directory_private','usage'),'Anonymous clients cannot use eligibility schema');
 select ok(not has_function_privilege('anon','directory_private.active_profile_owner(uuid)','execute'),'Eligibility helper denies anonymous callers');
 select ok(not has_function_privilege('service_role','public.list_directory_profiles(uuid,integer)','execute'),'Directory RPC is intended for member sessions only');
@@ -68,6 +86,7 @@ insert into public.profiles(user_id,display_name,home_airport,pilot_designation)
  select ('62000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'Page Pilot','KPAO','licensed' from generate_series(1,52) n;
 set local role authenticated;
 select ok((select photo_available from public.list_directory_profiles('61000000-0000-4000-8000-000000000000',1) limit 1),'Existing photo pointer becomes boolean availability');
+select ok((select photo_available from public.get_network_profile('61000000-0000-4000-8000-000000000001')),'Targeted profile exposes photo availability without path');
 select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000')),21,'Default is twenty rows plus lookahead');
 select is((select count(*)::integer from public.list_directory_profiles('62000000-0000-4000-8000-000000000000',50)),51,'Maximum is fifty rows plus lookahead');
 select results_eq($$select user_id from public.list_directory_profiles('62000000-0000-4000-8000-000000000050',50)$$,

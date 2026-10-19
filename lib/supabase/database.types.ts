@@ -202,6 +202,11 @@ isOneToOne: false
 "create_invitation_confirmation_transport":
 { Args: { "p_ciphertext": string,"p_csrf_digest": string,"p_expires_at": string,"p_key_id": string,"p_lookup_digest": string,"p_nonce": string,"p_origin": string,"p_previous_digest"?: string,"p_tag": string }; Returns: Json
                            },
+"get_network_profile":
+{ Args: { "p_user_id": string }; Returns: {
+              "aircraft_access": string,"bio": string,"certificates": (string)[],"display_name": string,"flying_interests": string,"home_airport": string,"photo_available": boolean,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"user_id": string
+            }[]
+                           },
 "list_directory_profiles":
 { Args: { "p_after"?: string,"p_page_size"?: number }; Returns: {
               "aircraft_access": string,"bio": string,"certificates": (string)[],"display_name": string,"flying_interests": string,"home_airport": string,"photo_available": boolean,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"user_id": string
