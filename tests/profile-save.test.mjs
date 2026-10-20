@@ -26,6 +26,7 @@ test('profile Server Actions validate and save only the current active owner', {
       const result=await fixture.request('/',account.jar,{method:'POST',body:await encodeReply([null,form]),headers:{Accept:'text/x-component','Next-Action':ids[index],...headers}});
       assert.equal(result.response.status,200,result.body);
       assert.match(result.response.headers.get('cache-control'),/no-store/);
+      assert.doesNotMatch(result.body,/fictional@example\.invalid/,'Profile action responses must not serialize the Auth account email');
       return result.body;
     };
     assert.match(await invoke(),/"code":"saved"/);
@@ -60,6 +61,19 @@ test('profile Server Actions validate and save only the current active owner', {
     const invalid=await noWrite(()=>invoke(1,member,{display_name:'',home_airport:'!',bio:'a'.repeat(2001)}),'invalid_input');
     assert.match(invalid,/"fieldErrors":\{/);assert.match(invalid,/"display_name":/);assert.match(invalid,/"home_airport":/);assert.match(invalid,/"bio":/);
     for(const field of ['user_id','role','updated_at','photo_storage_path'])await noWrite(()=>invoke(1,other,{[field]:member.entry.id}),'invalid_input');
+    // VOLO-171: a member who can browse another profile still cannot select its
+    // owner or smuggle account authority into the public-profile update action.
+    const beforeTamper=structuredClone([...backend.rows]),beforeProfileRequests=fixture.backend.calls.filter(call=>call.service==='profiles').length;
+    for(const overrides of [{user_id:other.entry.id},{role:'admin'},{status:'active'},
+      {membership:JSON.stringify({user_id:member.entry.id,role:'admin',status:'active'})},
+      {user_metadata:JSON.stringify({role:'admin',status:'active'})},
+      {app_metadata:JSON.stringify({role:'admin'})}]){
+      await noWrite(()=>invoke(1,member,overrides),'invalid_input');
+    }
+    assert.deepEqual([...backend.rows],beforeTamper,'Tampering must preserve both owner and other pilot profiles');
+    assert.equal(fixture.backend.calls.filter(call=>call.service==='profiles').length,beforeProfileRequests,'Rejected authority fields must not reach profile storage');
+    assert.equal(member.entry.role,'member');assert.equal(member.entry.status,'active');
+    assert.ok(fixture.backend.calls.filter(call=>call.service==='membership').every(call=>call.method==='GET'),'Profile actions cannot write roles or membership');
     await noWrite(()=>invoke(1,member,{bio:' '.repeat(32768)}),'too_large');
     other.entry.status='disabled';await noWrite(()=>invoke(1,other),'forbidden');other.entry.status='active';
     await noWrite(()=>invoke(1,member,{}, {Origin:null}),'forbidden');
