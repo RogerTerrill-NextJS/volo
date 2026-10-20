@@ -7,6 +7,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {startLocalAuthStack,cleanupOwnedStack,evidenceDirectory,reservePort} from '../tests/helpers/local-auth-stack.mjs';
 import {signInSession,signInOwnedInvitationSession,invalidSession,emptySession} from '../tests/helpers/real-auth-session.mjs';
 import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
+import {verifyFlightRls} from '../tests/helpers/flight-rls-cases.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
 const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.','Provider/setup expiry and invitation age use backdated owned timestamps, not a 30-minute wall-clock wait.']};
@@ -29,6 +30,8 @@ try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
     const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
     stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal,applicationOrigin});
+    setupStage='flight-rls';await verifyFlightRls({stack,scenario});
+    if(!process.argv.includes('--flight-rls')){
     await scenario('invitation_only_admission_configuration',async()=>{
       const result=await stack.probePublicAdmission();
       check(result.settings.signupDisabled===true,'global public signup disabled');
@@ -688,6 +691,7 @@ try{
         return {accessLifetimeSeconds:120,waitBoundSeconds:180,scenarioBoundSeconds:240};
       });
       await scenario('credential_leaks',async()=>{await app.scanStatic(assertClean);assertClean(app.diagnostics());});
+    }
     }
   }
 }catch(error){
