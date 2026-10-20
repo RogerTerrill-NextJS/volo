@@ -9,7 +9,7 @@ test('directory renders guarded pilot cards, cursor navigation and recoverable s
  try{
   const viewer=await fixture.seed('directory-ui-reader'),admin=await fixture.seed('directory-ui-admin',{role:'admin'});
   const id=n=>`61000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
-  const row=n=>({user_id:id(n),display_name:`Pilot ${n}`,home_airport:'KPAO',pilot_designation:'licensed',certificates:['Private pilot'],ratings:['Instrument'],aircraft_access:'Club C172',flying_interests:'Day trips',bio:'Local flying',photo_available:false,email:'private-directory-email-canary',photo_storage_path:'private-directory-photo-canary'});
+  const row=n=>({user_id:id(n),display_name:`Pilot ${n}`,home_airport:'KPAO',pilot_designation:'licensed',certificates:['Private pilot'],ratings:['Instrument'],aircraft_access:'Club C172',flying_interests:'Day trips',bio:'Local flying',photo_available:false,email:'private-directory-email-canary',photo_storage_path:'private-directory-photo-canary',role:'private-directory-role-canary',status:'private-directory-status-canary',membership:{authority:'private-directory-membership-canary'}});
   const directory=fixture.backend.directory;
   directory.rows=Array.from({length:21},(_,i)=>row(i+1));
   directory.rows[0]={...row(1),display_name:'Pilot <One>'};
@@ -17,7 +17,7 @@ test('directory renders guarded pilot cards, cursor navigation and recoverable s
   const read=async(path='/directory',jar=viewer.jar,init={})=>{
    const page=await fixture.request(path,jar,init);
    for(const key of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(page.response.headers.get(key),/no-store/);
-   assert.doesNotMatch(page.body,/private-directory-email-canary|private-directory-photo-canary/);
+   assert.doesNotMatch(page.body,/private-directory-(?:email|photo|role|status|membership)-canary|fictional@example\.invalid/);
    return page;
   };
   let page=await read();
@@ -106,8 +106,8 @@ test('directory renders guarded pilot cards, cursor navigation and recoverable s
 
   // Page RSC requests are a separate read surface and must use the same guard.
   directory.rows=[row(1)];
-  async function readRsc(jar){
-   let path='/directory?_rsc=directory-check';
+  async function readRsc(jar,criteria=''){
+   let path='/directory?'+(criteria?criteria+'&':'')+'_rsc=directory-check';
    for(let attempt=0;attempt<3;attempt++){
     const reply=await read(path,jar,{headers:{RSC:'1'}});
     const location=reply.response.headers.get('location');
@@ -120,6 +120,27 @@ test('directory renders guarded pilot cards, cursor navigation and recoverable s
   let rsc=await readRsc(viewer.jar);assert.equal(rsc.response.status,200);assert.match(rsc.body,/Pilot 1/);
   viewer.entry.status='disabled';rsc=await readRsc(viewer.jar);assert.match(rsc.body,/Access denied/);assert.doesNotMatch(rsc.body,/Pilot 1/);viewer.entry.status='active';
   rsc=await readRsc(new Map());assert.match(rsc.response.headers.get('location')??rsc.body,/\/login\?reason=authentication-required/);assert.doesNotMatch(rsc.body,/Pilot 1/);
+  // VOLO-171: query-string variants must retain the same HTML/RSC privacy boundary.
+  for(const criteria of ['q=Pilot','q=Pilot&certificate=Private&rating=Instrument&aircraft=Club']){
+   const expectedPayload={p_page_size:20,p_search:'Pilot',...(criteria.includes('certificate=')?{p_certificate:'Private',p_rating:'Instrument',p_aircraft:'Club'}:{})};
+   rsc=await readRsc(viewer.jar,criteria);assert.equal(rsc.response.status,200);assert.match(rsc.body,/Pilot 1/);
+   assert.deepEqual(reads().at(-1).payload,expectedPayload);
+   assert.doesNotMatch(rsc.body,/\/admin\/invitations/);
+   const allowedReads=reads().length;
+   for(const denied of ['anonymous','disabled']){
+    viewer.entry.status=denied==='disabled'?'disabled':'active';
+    const jar=denied==='anonymous'?new Map():viewer.jar;
+    const html=await read('/directory?'+criteria,jar),flight=await readRsc(jar,criteria);
+    for(const response of [html,flight]){
+     assert.doesNotMatch(response.body,/Pilot 1/);
+     assert.match(response.response.headers.get('location')??response.body,denied==='anonymous'?/\/login\?reason=authentication-required/:/Access denied/);
+    }
+    assert.equal(reads().length,allowedReads,'Denied search/filter requests must not read the directory');
+   }
+   viewer.entry.status='active';
+  }
+  assert.equal(fixture.backend.profiles.writes.length,0,'Directory browsing cannot write profiles');
+  assert.ok(fixture.backend.calls.filter(call=>call.service==='membership').every(call=>call.method==='GET'),'Directory requests cannot edit membership');
   assert.deepEqual(fixture.backend.unexpected,[]);
  }finally{await fixture.close();}
 });

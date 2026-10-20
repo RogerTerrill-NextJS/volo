@@ -8,13 +8,13 @@ test('network profile opens the requested pilot read-only with private HTML/RSC 
   const viewer=await fixture.seed('network-viewer'),admin=await fixture.seed('network-admin',{role:'admin'});
   const target='6a000000-0000-4000-8000-000000000002',missing='6a000000-0000-4000-8000-000000000099';
   const route=`/directory/${target}`;
-  const profile={user_id:target,display_name:'Morgan <Ellis>',home_airport:'KPAO',pilot_designation:'licensed',certificates:['Private pilot'],ratings:['Instrument'],aircraft_access:'Club C172',flying_interests:'Coastal flying',bio:'Local flying biography',photo_available:true,email:'private-profile-email-canary',role:'private-profile-role-canary',photo_storage_path:'private-profile-path-canary'};
+  const profile={user_id:target,display_name:'Morgan <Ellis>',home_airport:'KPAO',pilot_designation:'licensed',certificates:['Private pilot'],ratings:['Instrument'],aircraft_access:'Club C172',flying_interests:'Coastal flying',bio:'Local flying biography',photo_available:true,email:'private-profile-email-canary',role:'private-profile-role-canary',photo_storage_path:'private-profile-path-canary',status:'private-profile-status-canary',membership:{authority:'private-profile-membership-canary'}};
   fixture.backend.directory.rows=[profile];
   const reads=()=>fixture.backend.calls.filter(call=>call.service==='network-profile');
   const read=async(path=route,jar=viewer.jar,init={})=>{
    const result=await fixture.request(path,jar,init);
    for(const key of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(result.response.headers.get(key),/no-store/);
-   assert.doesNotMatch(result.body,/private-profile-email-canary|private-profile-role-canary|private-profile-path-canary/);
+   assert.doesNotMatch(result.body,/private-profile-(?:email|role|path|status|membership)-canary|fictional@example\.invalid/);
    return result;
   };
   let page=await read();assert.equal(page.response.status,200);
@@ -25,6 +25,10 @@ test('network profile opens the requested pilot read-only with private HTML/RSC 
   assert.doesNotMatch(page.body,/name="display_name"|Save profile|Remove photo|Upload photo/);
   assert.deepEqual(reads().at(-1),{service:'network-profile',subject:viewer.entry.id,method:'POST',payload:{p_user_id:target}});
   await read(`${route}?user_id=${viewer.entry.id}`);assert.equal(reads().at(-1).payload.p_user_id,target,'Query strings cannot change the requested pilot');
+  page=await read(`${route}?user_id=${viewer.entry.id}&role=admin&status=active`);
+  assert.equal(page.response.status,200);assert.equal(reads().at(-1).payload.p_user_id,target);
+  assert.doesNotMatch(page.body,/href="\/admin\/invitations|Save profile|name="user_id"/);
+  assert.equal(viewer.entry.role,'member');
   page=await read(route,admin.jar);assert.match(page.body,/Morgan &lt;Ellis&gt;/);assert.doesNotMatch(page.body,/Save profile|Remove photo/);
   fixture.backend.directory.rows.push({...profile,user_id:viewer.entry.id,photo_available:false});
   page=await read(`/directory/${viewer.entry.id}`);assert.match(page.body,/No profile photo available/);assert.doesNotMatch(page.body,/Save profile|Remove photo/);
@@ -49,6 +53,7 @@ test('network profile opens the requested pilot read-only with private HTML/RSC 
   page=await rscRead(viewer.jar);assert.equal(page.response.status,200);assert.match(page.body,/Local flying biography/);
   viewer.entry.status='disabled';page=await rscRead(viewer.jar);assert.match(page.body,/Access denied/);assert.doesNotMatch(page.body,/Local flying biography/);
   page=await rscRead(new Map());assert.match(page.response.headers.get('location')??page.body,/\/login\?reason=authentication-required/);assert.doesNotMatch(page.body,/Local flying biography/);
-  assert.equal(fixture.backend.profiles.writes.length,0);assert.deepEqual(fixture.backend.unexpected,[]);
+  assert.equal(fixture.backend.profiles.writes.length,0);
+  assert.ok(fixture.backend.calls.filter(call=>call.service==='membership').every(call=>call.method==='GET'),'Network profile browsing cannot edit membership');assert.deepEqual(fixture.backend.unexpected,[]);
  }finally{await fixture.close();}
 });
