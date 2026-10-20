@@ -1,4 +1,5 @@
 import type {Database} from '../supabase/database.types';
+import {normalizeAirportIdentifier} from '../validation/airport.ts';
 
 export type ProfileFields = Pick<Database['public']['Tables']['profiles']['Insert'],
   'display_name'|'home_airport'|'pilot_designation'|'certificates'|'ratings'|'aircraft_access'|'flying_interests'|'bio'> & {
@@ -20,8 +21,8 @@ export function validateProfile(raw:unknown):ProfileValidation {
   const input=raw as Record<string,unknown>,fieldErrors:ProfileFieldErrors={};
   const name=validText(input.display_name)?input.display_name.trim():'';
   if(!name||length(name)>80)fieldErrors.display_name='Enter a display name of 1–80 characters.';
-  const airport=validText(input.home_airport)?input.home_airport.trim().toUpperCase():'';
-  if(!/^[A-Z0-9]{2,8}$/.test(airport))fieldErrors.home_airport='Enter a home airport identifier of 2–8 letters or numbers.';
+  const airport=normalizeAirportIdentifier(input.home_airport);
+  if(!airport)fieldErrors.home_airport='Enter a home airport identifier of 2–8 letters or numbers.';
   const designation=input.pilot_designation;
   if(designation!=='licensed')fieldErrors.pilot_designation='Confirm that you are a licensed pilot to create or update your profile.';
 
@@ -51,6 +52,6 @@ export function validateProfile(raw:unknown):ProfileValidation {
   }
   const certificates=labels('certificates'),ratings=labels('ratings');
   const aircraft_access=optional('aircraft_access',500),flying_interests=optional('flying_interests',500),bio=optional('bio',2000);
-  if(Object.keys(fieldErrors).length)return {ok:false,fieldErrors,message};
+  if(Object.keys(fieldErrors).length||!airport)return {ok:false,fieldErrors,message};
   return {ok:true,value:{display_name:name,home_airport:airport,pilot_designation:designation as ProfileFields['pilot_designation'],certificates,ratings,aircraft_access,flying_interests,bio}};
 }
