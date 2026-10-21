@@ -69,6 +69,55 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
    for(const account of Object.values(accounts))assert.ok(!text.includes(account.email));
    return {response,text};
   };
+  await scenario('flight_detail_session_authorization_and_safe_page_states',async()=>{
+   const route=id=>'/dashboard/flights/'+id;
+   const visible=await pageRead('member',route(ids.selected));
+   assert.ok(visible.text.includes('Owned feed C172'));
+   assert.ok(visible.text.includes('Posting pilot'));
+   assert.ok(visible.text.includes('Owned Create Pilot'));
+   assert.ok(visible.text.includes('/directory/'+accounts.admin.id));
+   assert.ok(visible.text.includes(day+' at 19:00'));
+   assert.ok(visible.text.includes('UTC-07:00'));
+   assert.ok(visible.text.includes('No notes provided'));
+   for(const [label,id] of [['member',ids.hidden],['noProfile',ids.selected],['admin',ids.own],['member',randomUUID()],['member','bad-id']]){
+    const missing=await pageRead(label,route(id));
+    assert.ok(missing.text.includes('Flight not found'));
+    assert.ok(!missing.text.includes('Owned feed C172'));
+    assert.ok(!missing.text.includes('private-feed-canary'));
+   }
+   for(const headers of [{},{RSC:'1'}]){
+    const hidden=await pageRead('member',route(ids.hidden),headers);
+    assert.ok(!hidden.text.includes('private-feed-canary'));
+    assert.ok(!hidden.text.includes('Owned feed C172'));
+   }
+   assert.equal((await pageRead(null,route(ids.selected))).response.status,307);
+   assert.ok((await pageRead('disabled',route(ids.selected))).text.includes('Access denied'));
+   await control('disable-after-read:'+accounts.member.id);
+   try{const revoked=await pageRead('member',route(ids.selected));assert.ok(revoked.text.includes('Access denied'));assert.ok(!revoked.text.includes('Owned feed C172'));}
+   finally{await control('off');await stack.setMembership(accounts.member.id,{role:'member',status:'active'});}
+   await control('outage');
+   try{const failed=await pageRead('member',route(ids.selected));assert.ok(failed.text.includes('Flight temporarily unavailable'));assert.ok(!failed.text.includes('private-feed-error-canary'));}
+   finally{await control('off');}
+  });
+  await scenario('flight_detail_notes_status_profile_fallback_and_recipient_revocation',async()=>{
+   const route='/dashboard/flights/'+ids.selected;
+   await checked(admin.from('flights').update({notes:'Detail notes\n<script>detail-xss-canary</script>'}).eq('id',ids.selected));
+   const notes=await pageRead('member',route);
+   assert.ok(notes.text.includes('Detail notes'));
+   assert.ok(notes.text.includes('&lt;script&gt;detail-xss-canary&lt;/script&gt;'));
+   assert.ok(!notes.text.includes('<script>detail-xss-canary</script>'));
+   await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});
+   try{const fallback=await pageRead('member',route);assert.ok(fallback.text.includes('Owned feed C172'));assert.ok(fallback.text.includes('Posting pilot information unavailable'));assert.ok(!fallback.text.includes('Owned Create Pilot'));}
+   finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
+   for(const [key,status] of [['cancelled','Cancelled'],['completed','Completed'],['past','Open']]){
+    const page=await pageRead('member','/dashboard/flights/'+ids[key]);assert.ok(page.text.includes('Owned feed C172'));assert.ok(page.text.includes(status));
+   }
+   await checked(admin.from('flight_recipients').delete().eq('flight_id',ids.selected).eq('user_id',accounts.member.id));
+   try{const removed=await pageRead('member',route);assert.ok(removed.text.includes('Flight not found'));assert.ok(!removed.text.includes('Detail notes'));}
+   finally{await checked(admin.from('flight_recipients').insert({flight_id:ids.selected,user_id:accounts.member.id}));}
+   const feed=await pageRead('member','/dashboard/flights?dateFrom='+day);
+   assert.ok(feed.text.includes('href="'+route+'"'),'Feed provides a real detail link');
+  });
   await scenario('flight_feed_page_filters_pagination_and_local_time',async()=>{
    const paging=[];
    for(let i=1;i<=21;i++){

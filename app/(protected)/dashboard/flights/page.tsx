@@ -67,6 +67,8 @@ export default async function FlightsPage({searchParams}:{searchParams:Promise<R
    <p id="flight-filter-help" className="text-sm text-zinc-600 dark:text-zinc-400">Match exact airport identifiers and every populated filter. Dates include both endpoints in each flight’s departure timezone.</p>
    <div className="flex flex-wrap gap-3">
     <button type="submit" className="min-h-11 rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 dark:bg-zinc-100 dark:text-zinc-900">Apply filters</button>
+    {/* A document navigation also clears unapplied drafts on the already-unfiltered URL. */}
+    {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
     <a href="/dashboard/flights" className={linkClass}>Clear filters</a>
    </div>
   </Form>

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type {FeedFlight} from '../../../../lib/flights/feed-query';
 import {formatFeedDeparture} from '../../../../lib/flights/feed-view';
 
@@ -7,7 +8,7 @@ export default function FlightCard({flight}:{flight:FeedFlight}){
   <article aria-labelledby={`flight-${flight.id}`} className="space-y-5 [overflow-wrap:anywhere]">
    <header className="space-y-3">
     <p className="w-fit rounded-full bg-zinc-100 px-3 py-1 text-sm font-medium dark:bg-zinc-900">{flight.visibility==='PRIVATE'?'Private':'Network'}</p>
-    <h2 id={`flight-${flight.id}`} className="text-xl font-semibold tracking-tight"><span className="sr-only">From </span>{flight.departure_airport}<span aria-hidden="true"> → </span><span className="sr-only"> to </span>{flight.destination_airport}</h2>
+    <h2 id={`flight-${flight.id}`} className="text-xl font-semibold tracking-tight"><Link href={`/dashboard/flights/${flight.id}`} prefetch={false} className="inline-flex min-h-11 flex-wrap items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"><span className="sr-only">From </span>{flight.departure_airport}<span aria-hidden="true"> → </span><span className="sr-only"> to </span>{flight.destination_airport}</Link></h2>
    </header>
    <dl className="space-y-4">
     <div><dt className="text-sm text-zinc-600 dark:text-zinc-400">Departure local time</dt><dd className="mt-1 font-medium">{departure?<time dateTime={flight.departure_at}>{departure.localDate} at {departure.localTime}<span className="mt-1 block text-sm font-normal">{departure.timeZone} ({departure.utcOffset})</span></time>:<span>Departure time unavailable</span>}</dd></div>

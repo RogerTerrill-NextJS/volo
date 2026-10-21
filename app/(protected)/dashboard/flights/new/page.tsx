@@ -21,7 +21,12 @@ export default async function NewFlightPage(){
    <h2 className="text-xl font-semibold">Complete your pilot profile first</h2>
    <p>You need a completed licensed-pilot profile to post a flight.</p>
    <Link href="/onboarding" prefetch={false} className="inline-block py-3 underline underline-offset-4">Complete profile</Link>
-  </section>:<div role="status" className="space-y-3"><p>Your profile could not be checked. Try again before posting.</p><a href="/dashboard/flights/new" className="inline-block py-3 underline underline-offset-4">Try again</a></div>}
+  </section>:<div role="status" className="space-y-3">
+   <p>Your profile could not be checked. Try again before posting.</p>
+   {/* Reload this URL to recheck the profile rather than reuse the current route. */}
+   {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+   <a href="/dashboard/flights/new" className="inline-block py-3 underline underline-offset-4">Try again</a>
+  </div>}
   <Link href="/dashboard" prefetch={false} className="w-fit py-3 underline underline-offset-4">Back to dashboard</Link>
  </AppShell>;
 }
