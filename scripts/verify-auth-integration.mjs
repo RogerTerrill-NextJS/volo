@@ -8,6 +8,7 @@ import {startLocalAuthStack,cleanupOwnedStack,evidenceDirectory,reservePort} fro
 import {signInSession,signInOwnedInvitationSession,invalidSession,emptySession} from '../tests/helpers/real-auth-session.mjs';
 import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
 import {verifyFlightRls} from '../tests/helpers/flight-rls-cases.mjs';
+import {verifyFlightCreation} from '../tests/helpers/flight-create-cases.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
 const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.','Provider/setup expiry and invitation age use backdated owned timestamps, not a 30-minute wall-clock wait.']};
@@ -30,6 +31,10 @@ try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
     const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
     stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal,applicationOrigin});
+    if(process.argv.includes('--flight-create')){
+      setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,flights:true});
+      setupStage='flight-create';await verifyFlightCreation({stack,app,scenario});
+    }else{
     setupStage='flight-rls';await verifyFlightRls({stack,scenario});
     if(!process.argv.includes('--flight-rls')){
     await scenario('invitation_only_admission_configuration',async()=>{
@@ -45,7 +50,8 @@ try{
       check(result.email.code==='signup_disabled','email signup rejected by admission policy');
       return 'Owned real Auth settings plus direct public email/anonymous/OAuth requests; no identity or session issued.';
     });
-    setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin});
+    setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,flights:true});
+    setupStage='flight-create';await verifyFlightCreation({stack,app,scenario});
     setupStage='accounts';const accounts={},users={};
     const fresh=async label=>{const session=await signInSession(stack,accounts[label]);sessions.push(session);return session;};
     const audit=async(response,subject)=>{
@@ -691,6 +697,7 @@ try{
         return {accessLifetimeSeconds:120,waitBoundSeconds:180,scenarioBoundSeconds:240};
       });
       await scenario('credential_leaks',async()=>{await app.scanStatic(assertClean);assertClean(app.diagnostics());});
+    }
     }
     }
   }

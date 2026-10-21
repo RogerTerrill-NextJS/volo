@@ -43,3 +43,13 @@ export function validateFlight(raw:unknown):FlightValidation {
   if(Object.keys(fieldErrors).length||!departure.ok||!departure_airport||!destination_airport)return {ok:false,fieldErrors,message:'Check the highlighted flight fields.'};
   return {ok:true,value:{departure_airport,destination_airport,...departure.value,aircraft_description:aircraft,pilot_places:places as number,notes,visibility:input.visibility as FlightFields['visibility']}};
 }
+
+/** Creation adds a future-departure requirement; edits retain shared content validation. */
+export function validateFlightForCreation(raw:unknown,now:number=Date.now()):FlightValidation {
+  const result=validateFlight(raw);
+  if(!result.ok)return result;
+  if(!Number.isFinite(now)||Date.parse(result.value.departure_at)<=now){
+    return {ok:false,fieldErrors:{departure_local_time:'Choose a future departure time.'},message:'Check the highlighted flight fields.'};
+  }
+  return result;
+}

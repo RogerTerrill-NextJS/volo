@@ -297,6 +297,10 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         requireOwned(id);if(!['member','admin'].includes(role)||!['active','disabled'].includes(status))throw new Error('Invalid membership fixture');
         await api(`/rest/v1/memberships?user_id=eq.${id}`,{method:'PATCH',body:membership(role,status)});
       },
+      async removeOwnedProfile(id){
+        requireOwned(id);
+        await ownedFixtureSql(`delete from public.profiles where user_id='${id}';`);
+      },
       async readMembership(id){requireOwned(id);return (await api(`/rest/v1/memberships?user_id=eq.${id}&select=*`))?.[0]??null;},
     };
   }catch{

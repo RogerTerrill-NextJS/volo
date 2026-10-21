@@ -11,7 +11,7 @@ import {promisify} from 'node:util';
 import {reservePort,validateLocalApiUrl,sanitizeDiagnostics,evidenceDirectory} from './local-auth-stack.mjs';
 
 const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
-export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false,photos=false}) {
+export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false,photos=false,flights=false}) {
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
   const directory=await mkdtemp(path.join(tmpdir(),'volo-real-auth-app-'));const effects=[];let server,recorder,output='',closePromise,fixtureStage='files';
   const put=async(name,value)=>{const file=path.join(directory,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,value);};
@@ -70,7 +70,17 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       if(password)globalThis.__voloPasswordWrites=(globalThis.__voloPasswordWrites??0)+1;
       const mode=globalThis.__voloCompletionMode;
       if(mode==='record-failure'&&url.pathname==='/rest/v1/rpc/record_invitation_password')return Response.json({code:'fixture_unavailable'},{status:503});
+      if(url.pathname==='/rest/v1/rpc/create_flight'){
+        globalThis.__voloFlightCreateCalls=(globalThis.__voloFlightCreateCalls??0)+1;
+        if(globalThis.__voloFlightCreateMode?.startsWith('disable:')){
+          const subject=globalThis.__voloFlightCreateMode.slice(8);
+          const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned creation race'})});
+          if(!changed.ok)throw new Error('Owned eligibility race setup rejected');
+        }
+      }
       const response=await original(input,{...init,redirect:'error'});
+      if(globalThis.__voloFlightCreateMode==='malformed'&&url.pathname==='/rest/v1/rpc/create_flight'){await response.text();return Response.json('private-flight-error-canary');}
+      if(globalThis.__voloFlightCreateMode==='lost'&&url.pathname==='/rest/v1/rpc/create_flight'){await response.text();throw new Error('Owned fixture discarded committed create response');}
       if(password&&!response.ok){const data=await response.clone().json();globalThis.__voloPasswordCode=data.code??data.error_code;}
       if(globalThis.__voloPhotoMode==='attach-lost'&&url.pathname==='/rest/v1/rpc/attach_profile_photo'){await response.text();throw new Error('Owned fixture discarded committed response');}
       if((mode==='password-lost'&&password)||(mode==='record-lost'&&url.pathname==='/rest/v1/rpc/record_invitation_password')||(mode==='redeem-lost'&&url.pathname==='/rest/v1/rpc/redeem_invitation')){await response.text();throw new Error('Owned fixture discarded committed response');}
@@ -106,6 +116,10 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/actions.ts',`'use server';import {handleActionMutation} from '../lib/auth/action-mutation';import {policy} from '../fixture-policy';export async function mutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy());}export async function adminMutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy(true));}`);
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
+    if(flights){
+      await put('app/dashboard/flight-create-fixture/page.tsx',`import {createFlight} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={createFlight} label="Create flight"/></main>}`);
+      await put('app/api/flight-create-control/route.ts',`type State=typeof globalThis & {__voloFlightCreateMode?:string;__voloFlightCreateCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloFlightCreateMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloFlightCreateCalls??0});}`);
+    }
     if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
     if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));
     fixtureStage='build';const build=await promisify(execFile)(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'build',directory,'--webpack'],{cwd:directory,env,signal,timeout:180000,maxBuffer:8*1024*1024});output+=build.stdout+build.stderr;signal?.throwIfAborted();
@@ -135,6 +149,17 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         if(transport==='native'){body=new FormData();for(const [key,value] of form.fields)body.append(key,value);for(const [key,value] of Object.entries(fields))body.set(key,value);}
         else {const data=new FormData();for(const [key,value] of form.fields)if(!key.startsWith('$ACTION_'))data.append(key,value);for(const [key,value] of Object.entries(fields))data.set(key,value);body=await encodeReply([null,data]);headers.set('Accept','text/x-component');headers.set('Next-Action',form.id);}
         return request('/admin/invitations',{session,method:'POST',headers,body});
+      },
+      async createFlight(fields,{session,transport='fetched',origin:requestOrigin=origin}={}){
+        const html=await (await request('/dashboard/flight-create-fixture',{session})).text();
+        const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
+        const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
+        const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
+        const form=new FormData();for(const [key,value] of Object.entries(fields))form.set(key,String(value));
+        let body;
+        if(transport==='native'){for(const [key,value] of reserved)form.append(key,value);body=form;}
+        else {body=await encodeReply([null,form]);headers.set('Accept','text/x-component');headers.set('Next-Action',actionId);}
+        return request('/dashboard/flight-create-fixture',{session,method:'POST',headers,body});
       },
       async scanStatic(check){async function scan(dir){for(const entry of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())await scan(file);else check(await readFile(file,'utf8'));}}await scan(path.join(directory,'.next/static'));},
       async mutate(transport,{session,origin:requestOrigin=origin,admin=false}={}) {
