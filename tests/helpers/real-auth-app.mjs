@@ -70,7 +70,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       if(password)globalThis.__voloPasswordWrites=(globalThis.__voloPasswordWrites??0)+1;
       const mode=globalThis.__voloCompletionMode;
       if(mode==='record-failure'&&url.pathname==='/rest/v1/rpc/record_invitation_password')return Response.json({code:'fixture_unavailable'},{status:503});
-      if(url.pathname==='/rest/v1/rpc/create_flight'){
+      if(['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){
         globalThis.__voloFlightCreateCalls=(globalThis.__voloFlightCreateCalls??0)+1;
         if(globalThis.__voloFlightCreateMode?.startsWith('disable:')){
           const subject=globalThis.__voloFlightCreateMode.slice(8);
@@ -79,8 +79,8 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
         }
       }
       const response=await original(input,{...init,redirect:'error'});
-      if(globalThis.__voloFlightCreateMode==='malformed'&&url.pathname==='/rest/v1/rpc/create_flight'){await response.text();return Response.json('private-flight-error-canary');}
-      if(globalThis.__voloFlightCreateMode==='lost'&&url.pathname==='/rest/v1/rpc/create_flight'){await response.text();throw new Error('Owned fixture discarded committed create response');}
+      if(globalThis.__voloFlightCreateMode==='malformed'&&['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){await response.text();return Response.json('private-flight-error-canary');}
+      if(globalThis.__voloFlightCreateMode==='lost'&&['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){await response.text();throw new Error('Owned fixture discarded committed create response');}
       if(password&&!response.ok){const data=await response.clone().json();globalThis.__voloPasswordCode=data.code??data.error_code;}
       if(globalThis.__voloPhotoMode==='attach-lost'&&url.pathname==='/rest/v1/rpc/attach_profile_photo'){await response.text();throw new Error('Owned fixture discarded committed response');}
       if((mode==='password-lost'&&password)||(mode==='record-lost'&&url.pathname==='/rest/v1/rpc/record_invitation_password')||(mode==='redeem-lost'&&url.pathname==='/rest/v1/rpc/redeem_invitation')){await response.text();throw new Error('Owned fixture discarded committed response');}
@@ -120,6 +120,8 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await cp(path.join(root,'app/(protected)/dashboard/flights'),path.join(directory,'app/(protected)/dashboard/flights'),{recursive:true});
       await put('app/dashboard/flight-create-fixture/page.tsx',`import {createFlight} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={createFlight} label="Create flight"/></main>}`);
       await put('app/api/flight-create-control/route.ts',`type State=typeof globalThis & {__voloFlightCreateMode?:string;__voloFlightCreateCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloFlightCreateMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloFlightCreateCalls??0});}`);
+      await put('app/dashboard/recipient-fixture/page.tsx',`import {addFlightRecipient,removeFlightRecipient} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={addFlightRecipient} label="Add"/><Form action={removeFlightRecipient} label="Remove"/></main>}`);
+      await put('app/api/recipient-candidates/route.ts',`import {listRecipientCandidates} from '../../../lib/flights/recipient-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const response=Response.json(await listRecipientCandidates());applyPrivateResponseHeaders(response.headers);return response;}`);
     }
     if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
     if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));
@@ -161,6 +163,18 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         let body;
         if(transport==='native'){for(const [key,value] of reserved)form.append(key,value);body=form;}
         else {body=await encodeReply([null,form]);headers.set('Accept','text/x-component');headers.set('Next-Action',actionId);}
+        return request(route,{session,method:'POST',headers,body});
+      },
+      async recipientAction(selected,fields,{session,transport='fetched',origin:requestOrigin=origin}={}){
+        const route='/dashboard/recipient-fixture';const html=await (await request(route,{session})).text();
+        const forms=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)];
+        const contents=forms[selected?0:1][1];
+        const reserved=[...contents.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
+        const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
+        const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
+        const form=new FormData();for(const [key,value] of Object.entries(fields))form.set(key,String(value));let body;
+        if(transport==='native'){for(const [key,value] of reserved)form.append(key,value);body=form;}
+        else{body=await encodeReply([null,form]);headers.set('Accept','text/x-component');headers.set('Next-Action',actionId);}
         return request(route,{session,method:'POST',headers,body});
       },
       async scanStatic(check){async function scan(dir){for(const entry of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())await scan(file);else check(await readFile(file,'utf8'));}}await scan(path.join(directory,'.next/static'));},
