@@ -157,7 +157,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
         const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
         const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
-        const form=new FormData();for(const [key,value] of Object.entries(fields))form.set(key,String(value));
+        const form=new FormData();for(const [key,value] of Object.entries(fields))if(value!==undefined)form.set(key,String(value));
         let body;
         if(transport==='native'){for(const [key,value] of reserved)form.append(key,value);body=form;}
         else {body=await encodeReply([null,form]);headers.set('Accept','text/x-component');headers.set('Next-Action',actionId);}

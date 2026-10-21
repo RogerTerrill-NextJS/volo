@@ -7,6 +7,27 @@ const inputClass='w-full min-w-0 rounded-lg border border-zinc-300 bg-transparen
 const permalink='/dashboard/flights/new';
 type Feedback={fieldErrors:FlightFormState['fieldErrors'];message:string};
 
+function VisibilityChoice({initial,error}:{initial?:string;error?:string}){
+ const [visibility,setVisibility]=useState(initial??'');
+ return <fieldset id="flight-visibility" tabIndex={-1} aria-invalid={error?true:undefined} aria-describedby={`flight-visibility-help${error?' flight-visibility-error':''}`} className="min-w-0 space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+  <legend className="px-1 text-sm font-medium">Who can see this flight? (required)</legend>
+  <p id="flight-visibility-help" className="text-sm text-zinc-600 dark:text-zinc-400">Choose one audience before publishing.</p>
+  <label className="flex min-h-11 items-start gap-3 py-2">
+   <input type="radio" name="visibility" value="NETWORK" required defaultChecked={initial==='NETWORK'} onChange={()=>setVisibility('NETWORK')} aria-describedby="flight-network-help" className="mt-1 h-5 w-5 shrink-0"/>
+   <span><span className="block font-medium">Network</span><span id="flight-network-help" className="text-sm text-zinc-600 dark:text-zinc-400">All active Volo members can see this flight.</span></span>
+  </label>
+  <label className="flex min-h-11 items-start gap-3 py-2">
+   <input type="radio" name="visibility" value="PRIVATE" required defaultChecked={initial==='PRIVATE'} onChange={()=>setVisibility('PRIVATE')} aria-describedby="flight-private-help" className="mt-1 h-5 w-5 shrink-0"/>
+   <span><span className="block font-medium">Private</span><span id="flight-private-help" className="text-sm text-zinc-600 dark:text-zinc-400">Only you can see this flight while no other pilots are selected.</span></span>
+  </label>
+  {visibility==='PRIVATE'&&<section aria-labelledby="flight-private-audience" className="space-y-1 rounded-lg bg-zinc-100 p-3 text-sm dark:bg-zinc-900">
+   <h2 id="flight-private-audience" className="font-medium">Private audience</h2>
+   <p>No other pilots have been selected. Only you can see this flight.</p>
+  </section>}
+  {error&&<p id="flight-visibility-error" className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+ </fieldset>;
+}
+
 export default function FlightForm({publish}:{publish:(previous:FlightFormState,form:FormData)=>Promise<FlightFormState>}){
  const [state,action,pending]=useActionState(publish,emptyFlightForm,permalink);
  const [local,setLocal]=useState<Feedback|null>(null);
@@ -44,12 +65,9 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
    {state.status==='denied'&&<a href="/onboarding" className="inline-block py-3 underline underline-offset-4">Complete your profile</a>}
   </div>
   {state.status!=='created'&&<form key={state.revision} action={action} onSubmit={submit} noValidate aria-busy={pending} className="space-y-6">
-   <input type="hidden" name="visibility" value="NETWORK"/>
    <fieldset disabled={pending||blocked} className="min-w-0 space-y-6 disabled:opacity-70">
     <legend className="sr-only">Flight details</legend>
-    <section aria-label="Post audience" className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-     <p className="font-medium">Visible to the Volo network</p><p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Active Volo members can see this flight. This form does not offer private posting yet.</p>
-    </section>
+    <VisibilityChoice initial={state.values.visibility} error={errors.visibility}/>
     {input('departure_airport','Departure airport','Airport identifier, 2–8 letters or numbers.')}
     {input('destination_airport','Destination airport','Airport identifier. It can be the same as your departure airport.')}
     <div className="grid min-w-0 gap-6 sm:grid-cols-2">
@@ -72,7 +90,7 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
      <textarea id="flight-notes" name="notes" rows={5} defaultValue={state.values.notes??''} aria-invalid={errors.notes?true:undefined} aria-describedby={description('notes')} className={inputClass}/>
      <p id="flight-notes-help" className="text-sm text-zinc-600 dark:text-zinc-400">Anything else joining pilots should know. Up to 2,000 characters.</p>{error('notes')}
     </div>
-    <button type="submit" disabled={pending||blocked} className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900">{pending?'Publishing flight…':'Publish flight to network'}</button>
+    <button type="submit" disabled={pending||blocked} className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900">{pending?'Publishing flight…':'Publish flight'}</button>
    </fieldset>
    <p role="status" className="text-sm empty:hidden">{pending?'Publishing your flight. Please wait.':''}</p>
   </form>}
