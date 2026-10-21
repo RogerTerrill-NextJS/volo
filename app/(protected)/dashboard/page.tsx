@@ -26,6 +26,7 @@ export default async function DashboardPage() {
           you get started.
         </p>
       </header>
+      {profile==='complete'&&<Link href="/dashboard/flights/new" prefetch={false} className="w-fit rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 dark:bg-zinc-100 dark:text-zinc-900">Post a flight</Link>}
       {profile==='missing'&&<section aria-labelledby="profile-heading" className="rounded-2xl border border-zinc-200 p-6 dark:border-zinc-800">
         <h2 id="profile-heading" className="text-xl font-semibold">Complete your pilot profile</h2>
         <p className="mt-3 text-zinc-600 dark:text-zinc-400">Complete your pilot profile before posting or requesting a flight. You can keep browsing and complete your profile later.</p>

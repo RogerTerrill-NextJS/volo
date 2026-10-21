@@ -91,6 +91,42 @@ export async function verifyFlightCreation({stack,app,scenario}){
       assert.equal((await rows()).length,before.length+1,'Response loss can follow one committed flight');
       assert.equal(await calls(),beforeCalls+1,'Write must not retry automatically');
     });
+    await scenario('flight_form_page_gates_and_native_validation_recovery',async()=>{
+      const anonymous=await app.request('/dashboard/flights/new');assert.equal(anonymous.status,307);
+      for(const header of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(anonymous.headers.get(header)??'',/no-store/);
+      for(const label of ['noProfile','adminNoProfile','disabled']){
+        const html=await (await app.request('/dashboard/flights/new',{session:sessions[label]})).text();
+        assert.ok(!html.includes('Publish flight to network'),'Ineligible visitors cannot see a posting form');
+        if(label!=='disabled')assert.ok(html.includes('Complete your pilot profile first'));
+      }
+      const before=await rows(),beforeCalls=await calls();
+      const {text}=await invoke('member',{departure_local_date:'2030-11-03',departure_local_time:'01:30',departure_timezone:'America/Los_Angeles'},{page:true,transport:'native'});
+      assert.ok(text.includes('This local time occurs twice.'));
+      assert.ok(text.includes('value="2030-11-03"'),'Native validation failure retains editable date');
+      assert.ok(text.includes('flight-departure_occurrence-error'));
+      assert.ok(text.includes('aria-invalid="true"'));assert.ok(text.includes('role="alert"'));
+      assert.deepEqual(await rows(),before);assert.equal(await calls(),beforeCalls);
+    });
+    await scenario('flight_form_native_and_fetched_publish_result',async()=>{
+      for(const transport of ['native','fetched']){
+        const before=await rows(),beforeCalls=await calls();const {text}=await invoke('member',{visibility:'PRIVATE'},{page:true,transport});
+        assert.ok(text.includes('Flight published to the Volo network.'));
+        if(transport==='native'){assert.ok(text.includes('Flight reference:'));assert.ok(!text.includes('Publish flight to network'),'Confirmed native result removes the submit form');}
+        const added=(await rows()).filter(row=>!before.some(old=>old.id===row.id));
+        assert.equal(added.length,1);assert.equal(added[0].owner_id,accounts.member.id);assert.equal(added[0].visibility,'NETWORK','This form has a fixed network audience');
+        assert.equal(await calls(),beforeCalls+1);
+      }
+    });
+    await scenario('flight_form_uncertain_result_retains_values_and_blocks_submit',async()=>{
+      const before=await rows(),beforeCalls=await calls();await mode('lost');
+      try{
+        const {text}=await invoke('member',{notes:'Owned uncertain form notes'},{page:true,transport:'native'});
+        assert.ok(text.includes('Verify your flights before trying again.'));assert.ok(text.includes('Owned uncertain form notes'));
+        assert.match(text,/<fieldset[^>]*disabled/,'An unconfirmed result blocks immediate resubmission');
+        assert.ok(!text.includes('Flight published to the Volo network.'));
+      }finally{await mode('off');}
+      assert.equal((await rows()).length,before.length+1);assert.equal(await calls(),beforeCalls+1);
+    });
   }finally{
     await checked(admin.from('flights').delete().in('owner_id',Object.values(accounts).map(a=>a.id)));
     for(const account of Object.values(accounts))await stack.removeOwnedProfile(account.id);

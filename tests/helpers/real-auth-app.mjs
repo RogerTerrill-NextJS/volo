@@ -117,6 +117,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
     if(flights){
+      await cp(path.join(root,'app/(protected)/dashboard/flights'),path.join(directory,'app/(protected)/dashboard/flights'),{recursive:true});
       await put('app/dashboard/flight-create-fixture/page.tsx',`import {createFlight} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={createFlight} label="Create flight"/></main>}`);
       await put('app/api/flight-create-control/route.ts',`type State=typeof globalThis & {__voloFlightCreateMode?:string;__voloFlightCreateCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloFlightCreateMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloFlightCreateCalls??0});}`);
     }
@@ -150,8 +151,9 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         else {const data=new FormData();for(const [key,value] of form.fields)if(!key.startsWith('$ACTION_'))data.append(key,value);for(const [key,value] of Object.entries(fields))data.set(key,value);body=await encodeReply([null,data]);headers.set('Accept','text/x-component');headers.set('Next-Action',form.id);}
         return request('/admin/invitations',{session,method:'POST',headers,body});
       },
-      async createFlight(fields,{session,transport='fetched',origin:requestOrigin=origin}={}){
-        const html=await (await request('/dashboard/flight-create-fixture',{session})).text();
+      async createFlight(fields,{session,transport='fetched',origin:requestOrigin=origin,page=false}={}){
+        const route=page?'/dashboard/flights/new':'/dashboard/flight-create-fixture';
+        const html=await (await request(route,{session})).text();
         const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
         const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
         const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
@@ -159,7 +161,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         let body;
         if(transport==='native'){for(const [key,value] of reserved)form.append(key,value);body=form;}
         else {body=await encodeReply([null,form]);headers.set('Accept','text/x-component');headers.set('Next-Action',actionId);}
-        return request('/dashboard/flight-create-fixture',{session,method:'POST',headers,body});
+        return request(route,{session,method:'POST',headers,body});
       },
       async scanStatic(check){async function scan(dir){for(const entry of await readdir(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory())await scan(file);else check(await readFile(file,'utf8'));}}await scan(path.join(directory,'.next/static'));},
       async mutate(transport,{session,origin:requestOrigin=origin,admin=false}={}) {
