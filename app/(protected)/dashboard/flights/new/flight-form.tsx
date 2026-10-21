@@ -1,35 +1,35 @@
 'use client';
 import {useActionState,useEffect,useRef,useState,type FormEvent} from 'react';
 import {emptyFlightForm,type FlightFormState} from '../../../../../lib/flights/form-state';
-import {validateFlightForCreation,type FlightField} from '../../../../../lib/flights/validation';
+import type {FlightField} from '../../../../../lib/flights/validation';
+import {validateFlightWithRecipients} from '../../../../../lib/flights/recipients';
+import RecipientPicker,{type SelectedPilot} from './recipient-picker';
 
 const inputClass='w-full min-w-0 rounded-lg border border-zinc-300 bg-transparent px-3 py-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-zinc-700';
 const permalink='/dashboard/flights/new';
 type Feedback={fieldErrors:FlightFormState['fieldErrors'];message:string};
 
-function VisibilityChoice({initial,error}:{initial?:string;error?:string}){
- const [visibility,setVisibility]=useState(initial??'');
+function VisibilityChoice({visibility,onChange,error}:{visibility:string;onChange:(value:string)=>void;error?:string}){
  return <fieldset id="flight-visibility" tabIndex={-1} aria-invalid={error?true:undefined} aria-describedby={`flight-visibility-help${error?' flight-visibility-error':''}`} className="min-w-0 space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
   <legend className="px-1 text-sm font-medium">Who can see this flight? (required)</legend>
   <p id="flight-visibility-help" className="text-sm text-zinc-600 dark:text-zinc-400">Choose one audience before publishing.</p>
   <label className="flex min-h-11 items-start gap-3 py-2">
-   <input type="radio" name="visibility" value="NETWORK" required defaultChecked={initial==='NETWORK'} onChange={()=>setVisibility('NETWORK')} aria-describedby="flight-network-help" className="mt-1 h-5 w-5 shrink-0"/>
+   <input type="radio" name="visibility" value="NETWORK" required checked={visibility==='NETWORK'} onChange={()=>onChange('NETWORK')} aria-describedby="flight-network-help" className="mt-1 h-5 w-5 shrink-0"/>
    <span><span className="block font-medium">Network</span><span id="flight-network-help" className="text-sm text-zinc-600 dark:text-zinc-400">All active Volo members can see this flight.</span></span>
   </label>
   <label className="flex min-h-11 items-start gap-3 py-2">
-   <input type="radio" name="visibility" value="PRIVATE" required defaultChecked={initial==='PRIVATE'} onChange={()=>setVisibility('PRIVATE')} aria-describedby="flight-private-help" className="mt-1 h-5 w-5 shrink-0"/>
-   <span><span className="block font-medium">Private</span><span id="flight-private-help" className="text-sm text-zinc-600 dark:text-zinc-400">Only you can see this flight while no other pilots are selected.</span></span>
+   <input type="radio" name="visibility" value="PRIVATE" required checked={visibility==='PRIVATE'} onChange={()=>onChange('PRIVATE')} aria-describedby="flight-private-help" className="mt-1 h-5 w-5 shrink-0"/>
+   <span><span className="block font-medium">Private</span><span id="flight-private-help" className="text-sm text-zinc-600 dark:text-zinc-400">Only you and your selected pilots can see this flight.</span></span>
   </label>
-  {visibility==='PRIVATE'&&<section aria-labelledby="flight-private-audience" className="space-y-1 rounded-lg bg-zinc-100 p-3 text-sm dark:bg-zinc-900">
-   <h2 id="flight-private-audience" className="font-medium">Private audience</h2>
-   <p>No other pilots have been selected. Only you can see this flight.</p>
-  </section>}
   {error&&<p id="flight-visibility-error" className="text-sm text-red-700 dark:text-red-400">{error}</p>}
  </fieldset>;
 }
 
 export default function FlightForm({publish}:{publish:(previous:FlightFormState,form:FormData)=>Promise<FlightFormState>}){
  const [state,action,pending]=useActionState(publish,emptyFlightForm,permalink);
+ const [audience,setAudience]=useState<{revision:number;visibility:string;selected:SelectedPilot[]}>({revision:state.revision,visibility:state.values.visibility??'',selected:state.recipientIds.map(user_id=>({user_id,display_name:`Selected pilot ${user_id}`,home_airport:''}))});
+ // Keep only server-returned IDs after validation, with labels from our existing query results.
+ if(audience.revision!==state.revision)setAudience({revision:state.revision,visibility:state.values.visibility??'',selected:state.recipientIds.map(user_id=>audience.selected.find(pilot=>pilot.user_id===user_id)??{user_id,display_name:`Selected pilot ${user_id}`,home_airport:''})});
  const [local,setLocal]=useState<Feedback|null>(null);
  const feedback=useRef<HTMLDivElement>(null),submitting=useRef(false);
  const errors=local?.fieldErrors??state.fieldErrors,message=local?.message??state.message;
@@ -40,7 +40,7 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
   if(pending||submitting.current||blocked){event.preventDefault();return;}
   const fields=new FormData(event.currentTarget);
   const raw=Object.fromEntries([...fields].filter(([key])=>!key.startsWith('$ACTION_')));
-  const validated=validateFlightForCreation(raw);
+  const validated=validateFlightWithRecipients(raw,Date.now(),true);
   if(!validated.ok){event.preventDefault();setLocal(validated);return;}
   submitting.current=true;setLocal(null);
  }
@@ -67,7 +67,8 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
   {state.status!=='created'&&<form key={state.revision} action={action} onSubmit={submit} noValidate aria-busy={pending} className="space-y-6">
    <fieldset disabled={pending||blocked} className="min-w-0 space-y-6 disabled:opacity-70">
     <legend className="sr-only">Flight details</legend>
-    <VisibilityChoice initial={state.values.visibility} error={errors.visibility}/>
+    <VisibilityChoice visibility={audience.visibility} onChange={visibility=>{setAudience({...audience,visibility,selected:visibility==='PRIVATE'?audience.selected:[]});setLocal(null);}} error={errors.visibility}/>
+    {audience.visibility==='PRIVATE'&&<RecipientPicker selected={audience.selected} onChange={selected=>{setAudience({...audience,selected});setLocal(null);}} error={errors.recipient_ids}/>}
     {input('departure_airport','Departure airport','Airport identifier, 2–8 letters or numbers.')}
     {input('destination_airport','Destination airport','Airport identifier. It can be the same as your departure airport.')}
     <div className="grid min-w-0 gap-6 sm:grid-cols-2">

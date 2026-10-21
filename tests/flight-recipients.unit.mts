@@ -19,3 +19,12 @@ test('nonempty selection requires PRIVATE while existing owner-only creation sta
   const denied=validateFlightWithRecipients(raw,0);assert.equal(denied.ok,false);assert.ok(!JSON.stringify(denied).includes('private-canary'));
  }
 });
+test('posting form requires a recipient for PRIVATE while rejecting NETWORK carryover',()=>{
+ for(const recipient_ids of [undefined,'[]']){
+  const result=validateFlightWithRecipients({...flight,recipient_ids},0,true);
+  assert.equal(result.ok,false);if(!result.ok)assert.ok(result.fieldErrors.recipient_ids);
+ }
+ assert.equal(validateFlightWithRecipients({...flight,recipient_ids:JSON.stringify([B])},0,true).ok,true);
+ assert.equal(validateFlightWithRecipients({...flight,visibility:'NETWORK'},0,true).ok,true);
+ assert.equal(validateFlightWithRecipients({...flight,visibility:'NETWORK',recipient_ids:JSON.stringify([B])},0,true).ok,false);
+});
