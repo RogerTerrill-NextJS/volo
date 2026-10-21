@@ -101,7 +101,7 @@ export async function verifyFlightCreation({stack,app,scenario}){
         if(label!=='disabled')assert.ok(html.includes('Complete your pilot profile first'));
       }
       const before=await rows(),beforeCalls=await calls();
-      const {text}=await invoke('member',{visibility:'PRIVATE',departure_local_date:'2030-11-03',departure_local_time:'01:30',departure_timezone:'America/Los_Angeles'},{page:true,transport:'native'});
+      const {text}=await invoke('member',{visibility:'PRIVATE',recipient_ids:JSON.stringify([accounts.noProfile.id]),departure_local_date:'2030-11-03',departure_local_time:'01:30',departure_timezone:'America/Los_Angeles'},{page:true,transport:'native'});
       assert.ok(text.includes('This local time occurs twice.'));
       assert.ok(text.includes('value="2030-11-03"'),'Native validation failure retains editable date');
       assert.ok(text.includes('flight-departure_occurrence-error'));
@@ -112,14 +112,17 @@ export async function verifyFlightCreation({stack,app,scenario}){
     });
     await scenario('flight_form_native_and_fetched_publish_result',async()=>{
       for(const transport of ['native','fetched'])for(const visibility of ['NETWORK','PRIVATE']){
-        const before=await rows(),beforeCalls=await calls();const {text}=await invoke('member',{visibility},{page:true,transport});
-        assert.ok(text.includes(visibility==='NETWORK'?'Flight published to the Volo network.':'Private flight published. Only you can see it; no other pilots have been selected.'));
+        const before=await rows(),beforeCalls=await calls();const {text}=await invoke('member',{visibility,...(visibility==='PRIVATE'?{recipient_ids:JSON.stringify([accounts.noProfile.id])}:{})},{page:true,transport});
+        assert.ok(text.includes(visibility==='NETWORK'?'Flight published to the Volo network.':'Private flight published to your selected pilots.'));
         if(transport==='native'){assert.ok(text.includes('Flight reference:'));assert.ok(!text.includes('name="visibility"'),'Confirmed native result removes the submit form');}
         const added=(await rows()).filter(row=>!before.some(old=>old.id===row.id));
         assert.equal(added.length,1);assert.equal(added[0].owner_id,accounts.member.id);assert.equal(added[0].visibility,visibility,'Posting preserves the explicit audience');
         const ownerRead=await checked(clients.member.from('flights').select('id').eq('id',added[0].id));assert.equal(ownerRead.length,1);
         const unrelated=await checked(clients.admin.from('flights').select('id').eq('id',added[0].id));assert.equal(unrelated.length,visibility==='NETWORK'?1:0,'Unrelated active admin has no private bypass');
-        if(visibility==='PRIVATE')assert.deepEqual(await checked(admin.from('flight_recipients').select('user_id').eq('flight_id',added[0].id)),[]);
+        if(visibility==='PRIVATE'){
+          assert.deepEqual(await checked(admin.from('flight_recipients').select('user_id').eq('flight_id',added[0].id)),[{user_id:accounts.noProfile.id}]);
+          assert.equal((await checked(clients.noProfile.from('flights').select('id').eq('id',added[0].id))).length,1,'Selected active pilot can read');
+        }
         assert.equal(await calls(),beforeCalls+1);
       }
     });
@@ -128,10 +131,26 @@ export async function verifyFlightCreation({stack,app,scenario}){
       const radios=[...html.matchAll(/<input\b[^>]*>/g)].filter(match=>match[0].includes('name="visibility"'));
       assert.equal(radios.length,2);assert.ok(radios.every(match=>match[0].includes('type="radio"')&&!match[0].includes('checked')),'No silent public default');
       for(const transport of ['native','fetched'])for(const visibility of [undefined,'','GROUP','private','private-canary']){
-        const before=await rows(),beforeCalls=await calls();const {text}=await invoke('member',{visibility},{page:true,transport});
+        const before=await rows(),beforeCalls=await calls();const {text}=await invoke('member',{visibility,...(visibility==='PRIVATE'?{recipient_ids:JSON.stringify([accounts.noProfile.id])}:{})},{page:true,transport});
         assert.ok(text.includes('Choose NETWORK or PRIVATE visibility.'));assert.ok(!text.includes('private-canary'));
         assert.deepEqual(await rows(),before);assert.equal(await calls(),beforeCalls,'Invalid visibility never reaches creation RPC');
       }
+    });
+    await scenario('flight_picker_private_requires_selection_and_recovers_invalid_selection',async()=>{
+      for(const transport of ['native','fetched'])for(const recipient_ids of [undefined,'[]',JSON.stringify([accounts.disabled.id])]){
+        const before=await rows(),beforeCalls=await calls();
+        const {text}=await invoke('member',{visibility:'PRIVATE',recipient_ids},{page:true,transport});
+        assert.ok(text.includes(recipient_ids?.includes(accounts.disabled.id)?'Some selected pilots are no longer eligible.':'Select at least one pilot for a private flight.'));
+        if(transport==='native'){
+          assert.ok(text.includes('flight-recipient-error'));
+          if(recipient_ids?.includes(accounts.disabled.id))assert.ok(text.includes(accounts.disabled.id),'Valid IDs survive a server validation failure');
+        }
+        assert.deepEqual(await rows(),before,'No invalid private flight is published');
+        assert.equal(await calls(),beforeCalls+(recipient_ids?.includes(accounts.disabled.id)?1:0));
+      }
+      const before=await rows(),beforeCalls=await calls();
+      const {text}=await invoke('member',{recipient_ids:JSON.stringify([accounts.admin.id])},{page:true});
+      assert.ok(text.includes('Choose valid recipients for a PRIVATE flight.'));assert.deepEqual(await rows(),before);assert.equal(await calls(),beforeCalls,'NETWORK rejects stale recipient payload');
     });
     await scenario('flight_form_uncertain_result_retains_values_and_blocks_submit',async()=>{
       const before=await rows(),beforeCalls=await calls();await mode('lost');

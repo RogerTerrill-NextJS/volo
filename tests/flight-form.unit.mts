@@ -35,3 +35,16 @@ test('visibility feedback preserves only approved modes and confirms the chosen 
   assert.equal(invalid.values.visibility,undefined);assert.ok(invalid.fieldErrors.visibility);assert.ok(!JSON.stringify(invalid).includes(mode||'private-canary'));
  }
 });
+test('validation recovery retains bounded recipient IDs with picker feedback and never submitted labels',()=>{
+ const id='18000000-0000-4000-8000-000000000001';
+ const form=new FormData();form.set('visibility','PRIVATE');form.set('recipient_ids',JSON.stringify([id]));form.set('recipient_names','private-canary');
+ const state=flightFormResult(emptyFlightForm,form,{code:'invalid_input',fieldErrors:{recipient_ids:'Choose valid pilots.'}});
+ assert.deepEqual(state.recipientIds,[id]);assert.ok(state.fieldErrors.recipient_ids);assert.equal(state.fieldErrors.visibility,undefined);
+ assert.ok(!JSON.stringify(state).includes('private-canary'));
+ form.set('visibility','NETWORK');
+ assert.deepEqual(flightFormResult(state,form,{code:'invalid_input'}).recipientIds,[]);
+ form.set('visibility','PRIVATE');form.set('recipient_ids','["private-canary"]');
+ assert.deepEqual(flightFormResult(state,form,{code:'invalid_input'}).recipientIds,[]);
+ form.set('recipient_ids',JSON.stringify([id]));
+ assert.deepEqual(flightFormResult(state,form,{code:'created',flightId:id,recipientCount:1}).recipientIds,[]);
+});
