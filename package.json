@@ -16,7 +16,7 @@
     "test:auth:integration": "node scripts/verify-auth-integration.mjs",
     "test:flights:rls": "node scripts/verify-auth-integration.mjs --flight-rls",
     "test:flights:create": "node scripts/verify-auth-integration.mjs --flight-create",
-    "test:flights:unit": "node --conditions=react-server --test --test-reporter=dot tests/flight-time.unit.mts tests/flight-validation.unit.mts tests/flight-creation.unit.mts tests/flight-form.unit.mts tests/profile-validation.unit.mts",
+    "test:flights:unit": "node --conditions=react-server --test --test-reporter=dot tests/flight-time.unit.mts tests/flight-validation.unit.mts tests/flight-creation.unit.mts tests/flight-form.unit.mts tests/flight-recipients.unit.mts tests/recipient-query.unit.mts tests/profile-validation.unit.mts",
     "test:clients": "node scripts/verify-supabase-clients.mjs",
     "test:proxy:unit": "node --conditions=react-server --test tests/supabase-proxy.unit.mts",
     "test:proxy": "npm run test:proxy:unit && node scripts/verify-supabase-proxy.mjs",

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {createClient} from '@supabase/supabase-js';
 import {signInSession} from './real-auth-session.mjs';
 import {validateLocalApiUrl} from './local-auth-stack.mjs';
+import {verifyRecipientSelection} from './recipient-cases.mjs';
 
 export async function verifyFlightCreation({stack,app,scenario}){
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
@@ -142,7 +143,10 @@ export async function verifyFlightCreation({stack,app,scenario}){
       }finally{await mode('off');}
       assert.equal((await rows()).length,before.length+1);assert.equal(await calls(),beforeCalls+1);
     });
+    await verifyRecipientSelection({stack,app,scenario,accounts,sessions,clients,admin,fields});
   }finally{
+    const ownedFlights=await rows();
+    if(ownedFlights.length)await checked(admin.from('flight_recipients').delete().in('flight_id',ownedFlights.map(row=>row.id)));
     await checked(admin.from('flights').delete().in('owner_id',Object.values(accounts).map(a=>a.id)));
     for(const account of Object.values(accounts))await stack.removeOwnedProfile(account.id);
     for(const client of Object.values(clients))await client.auth.stopAutoRefresh();

@@ -220,6 +220,9 @@ isOneToOne: false
 "bind_invitation_send_subject":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_subject_id": string }; Returns: Json
                            },
+"change_flight_recipient":
+{ Args: { "p_flight_id": string,"p_recipient_id": string,"p_selected": boolean }; Returns: string
+                           },
 "claim_invitation_confirmation_transport":
 { Args: { "p_csrf_digest": string,"p_lookup_digest": string,"p_origin": string }; Returns: Json
                            },
@@ -248,6 +251,9 @@ isOneToOne: false
                            },
 "create_invitation_confirmation_transport":
 { Args: { "p_ciphertext": string,"p_csrf_digest": string,"p_expires_at": string,"p_key_id": string,"p_lookup_digest": string,"p_nonce": string,"p_origin": string,"p_previous_digest"?: string,"p_tag": string }; Returns: Json
+                           },
+"create_private_flight":
+{ Args: { "p_aircraft_description": string,"p_departure_airport": string,"p_departure_at": string,"p_departure_timezone": string,"p_destination_airport": string,"p_notes": string,"p_pilot_places": number,"p_recipient_ids": (string)[] }; Returns: string
                            },
 "get_network_profile":
 { Args: { "p_user_id": string }; Returns: {
