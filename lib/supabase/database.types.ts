@@ -243,6 +243,9 @@ isOneToOne: false
 "count_profile_photo_cleanup":
 { Args: { "cleanup_owner"?: string }; Returns: number
                            },
+"create_flight":
+{ Args: { "p_aircraft_description": string,"p_departure_airport": string,"p_departure_at": string,"p_departure_timezone": string,"p_destination_airport": string,"p_notes": string,"p_pilot_places": number,"p_visibility": Database["public"]['Enums']["flight_visibility"] }; Returns: string
+                           },
 "create_invitation_confirmation_transport":
 { Args: { "p_ciphertext": string,"p_csrf_digest": string,"p_expires_at": string,"p_key_id": string,"p_lookup_digest": string,"p_nonce": string,"p_origin": string,"p_previous_digest"?: string,"p_tag": string }; Returns: Json
                            },

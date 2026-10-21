@@ -1,0 +1,99 @@
+import assert from 'node:assert/strict';
+import {createClient} from '@supabase/supabase-js';
+import {signInSession} from './real-auth-session.mjs';
+import {validateLocalApiUrl} from './local-auth-stack.mjs';
+
+export async function verifyFlightCreation({stack,app,scenario}){
+  validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
+  const localFetch=(input,init)=>{const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);assert.equal(url.origin,stack.apiUrl);return fetch(input,{...init,redirect:'error',signal:init?.signal??AbortSignal.timeout(10000)});};
+  const options={auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:localFetch}};
+  const admin=createClient(stack.apiUrl,stack.serverSecret,options),accounts={},sessions={},clients={};
+  const checked=async query=>{const result=await query.retry(false);assert.equal(result.error,null,'Owned creation fixture database operation');return result.data;};
+  const rows=()=>checked(admin.from('flights').select('id,owner_id,status,visibility,notes,departure_at').in('owner_id',Object.values(accounts).map(a=>a.id)).order('id'));
+  const calls=async()=>{const r=await app.request('/api/flight-create-control');assert.equal(r.status,200);return (await r.json()).calls;};
+  const mode=async value=>{assert.equal((await app.request('/api/flight-create-control',{method:'POST',body:value})).status,200);};
+  const date=new Date(Date.now()+2*86400000).toISOString().slice(0,10);
+  const fields={departure_airport:' kpao ',destination_airport:'KPAO',departure_local_date:date,departure_local_time:'12:00',departure_timezone:'UTC',aircraft_description:' Owned C172 ',pilot_places:'2',visibility:'NETWORK'};
+  async function invoke(label,overrides={},settings={}){
+    const response=await app.createFlight({...fields,...overrides},{session:sessions[label],...settings});
+    for(const header of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(header)??'',/no-store/,`Creation response stays private (${label??'anonymous'}, ${header}, HTTP ${response.status})`);
+    const text=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(text);
+    for(const session of Object.values(sessions))session.assertNoCredentialLeaks(text);
+    for(const account of Object.values(accounts))assert.ok(!text.includes(account.email),'Action never serializes private account email');
+    return {response,text};
+  }
+  async function deny(label,code,overrides={},settings={}){
+    const before=await rows(),beforeCalls=await calls();const result=await invoke(label,overrides,settings);
+    if(result.response.status===500&&settings.origin){assert.match(app.diagnostics(),/Invalid Server Actions request/);}
+    else assert.ok(result.text.includes('"code":"'+code+'"'),'Guarded creation returns '+code);
+    assert.deepEqual(await rows(),before,'Denied action creates no flight');assert.equal(await calls(),beforeCalls,'Denied action never calls creation RPC');
+  }
+  try{
+    for(const [label,role,status,profile] of [['member','member','active',true],['admin','admin','active',true],['disabled','member','disabled',true],['absent',null,'active',false],['noProfile','member','active',false],['adminNoProfile','admin','active',false]]){
+      accounts[label]=await stack.createAccount({label:'create-'+label.toLowerCase(),role,status});
+      if(profile)await checked(admin.from('profiles').insert({user_id:accounts[label].id,display_name:'Owned Create Pilot',home_airport:'KPAO',pilot_designation:'licensed'}));
+      sessions[label]=await signInSession(stack,accounts[label]);
+      clients[label]=createClient(stack.apiUrl,stack.publicKey,options);
+      const signin=await clients[label].auth.signInWithPassword({email:accounts[label].email,password:accounts[label].password});assert.equal(signin.error,null);
+    }
+    await scenario('flight_create_native_and_fetched_owner_derived',async()=>{
+      for(const [label,transport,visibility] of [['member','native','NETWORK'],['member','fetched','PRIVATE'],['admin','fetched','NETWORK']]){
+        const before=await rows(),beforeCalls=await calls();const {text,response}=await invoke(label,{visibility},{transport});
+        assert.equal(response.status,200);assert.ok(text.includes('"code":"created"'),'Successful action confirms creation');
+        const flightId=text.match(/"flightId":"([a-f0-9-]{36})"/)?.[1];assert.ok(flightId,'Action returns only confirmed flight UUID');
+        const after=await rows();assert.equal(after.length,before.length+1);assert.equal(await calls(),beforeCalls+1);
+        const row=after.find(r=>r.id===flightId);assert.ok(row);assert.equal(row.owner_id,accounts[label].id);assert.equal(row.status,'open');assert.equal(row.visibility,visibility);assert.equal(row.notes,null);
+      }
+    });
+    await scenario('flight_create_current_access_profile_and_origin_guards',async()=>{
+      await deny(null,'unauthenticated');await deny(null,'unauthenticated',{}, {transport:'native'});
+      for(const label of ['disabled','absent'])await deny(label,'forbidden');
+      for(const label of ['noProfile','adminNoProfile'])await deny(label,'profile_required');
+      for(const origin of [null,'https://foreign.example.invalid'])await deny('member','forbidden',{}, {origin});
+    });
+    await scenario('flight_create_input_bounds_protected_fields_and_past_time',async()=>{
+      for(const field of ['owner_id','id','status','created_at','departure_at','recipients','role'])await deny('member','invalid_input',{[field]:'private-canary'});
+      await deny('member','invalid_input',{departure_local_date:'2000-01-01'});
+      await deny('member','invalid_input',{pilot_places:'0'});
+      await deny('member','too_large',{notes:'N'.repeat(17000)});
+    });
+    const args={p_departure_airport:'KPAO',p_destination_airport:'KPAO',p_departure_at:new Date(Date.now()+86400000).toISOString(),p_departure_timezone:'UTC',p_aircraft_description:'C172',p_pilot_places:1,p_notes:'',p_visibility:'PRIVATE'};
+    await scenario('flight_create_direct_rpc_keeps_database_eligibility',async()=>{
+      const before=await rows();
+      for(const label of ['disabled','absent','noProfile','adminNoProfile']){const result=await clients[label].rpc('create_flight',args).retry(false);assert.equal(result.error?.code,'42501','Direct RPC cannot bypass eligibility');}
+      const spoof=await clients.member.rpc('create_flight',{...args,p_owner_id:accounts.admin.id}).retry(false);assert.equal(spoof.error?.code,'PGRST202','RPC accepts no caller-selected owner');
+      const anonymous=await createClient(stack.apiUrl,stack.publicKey,options).rpc('create_flight',args).retry(false);assert.equal(anonymous.error?.code,'42501');
+      assert.deepEqual(await rows(),before);
+      const result=await clients.member.rpc('create_flight',args).retry(false);assert.equal(result.error,null);assert.match(result.data,/^[0-9a-f-]{36}$/);
+      assert.equal((await rows()).find(r=>r.id===result.data)?.owner_id,accounts.member.id);
+      const retained=sessions.member.cookieHeader();await stack.setMembership(accounts.member.id,{role:'member',status:'disabled'});
+      const denied=await clients.member.rpc('create_flight',args).retry(false);assert.equal(denied.error?.code,'42501');assert.equal(sessions.member.cookieHeader(),retained);
+      await stack.setMembership(accounts.member.id,{role:'member',status:'active'});
+    });
+    await scenario('flight_create_database_rechecks_after_server_prechecks',async()=>{
+      const before=await rows(),beforeCalls=await calls();await mode('disable:'+accounts.member.id);
+      try{const {text}=await invoke('member');assert.ok(text.includes('"code":"forbidden"'));}
+      finally{await mode('off');await stack.setMembership(accounts.member.id,{role:'member',status:'active'});}
+      assert.deepEqual(await rows(),before,'Revocation after application checks causes no insert');
+      assert.equal(await calls(),beforeCalls+1,'Final database check handles the raced eligibility change');
+    });
+    await scenario('flight_create_invalid_confirmation_is_not_success',async()=>{
+      const before=await rows(),beforeCalls=await calls();await mode('malformed');
+      try{const {text}=await invoke('member');assert.ok(text.includes('"code":"unavailable"'));assert.ok(!text.includes('private-flight-error-canary'));}
+      finally{await mode('off');}
+      assert.equal((await rows()).length,before.length+1,'Malformed confirmation may follow a committed flight');
+      assert.equal(await calls(),beforeCalls+1,'Malformed confirmation does not trigger another insert');
+    });
+    await scenario('flight_create_lost_response_is_unconfirmed_without_retry',async()=>{
+      const before=await rows(),beforeCalls=await calls();await mode('lost');
+      try{const {text}=await invoke('member');assert.ok(text.includes('"code":"unavailable"'));assert.ok(!text.includes('"code":"created"'));}
+      finally{await mode('off');}
+      assert.equal((await rows()).length,before.length+1,'Response loss can follow one committed flight');
+      assert.equal(await calls(),beforeCalls+1,'Write must not retry automatically');
+    });
+  }finally{
+    await checked(admin.from('flights').delete().in('owner_id',Object.values(accounts).map(a=>a.id)));
+    for(const account of Object.values(accounts))await stack.removeOwnedProfile(account.id);
+    for(const client of Object.values(clients))await client.auth.stopAutoRefresh();
+  }
+}
