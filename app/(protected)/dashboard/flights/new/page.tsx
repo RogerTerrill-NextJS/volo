@@ -15,7 +15,7 @@ export default async function NewFlightPage(){
  return <AppShell isAdmin={access.member.role==='admin'}>
   <header className="max-w-xl space-y-3">
    <h1 className="text-3xl font-semibold tracking-tight">Post a flight</h1>
-   <p className="text-zinc-600 dark:text-zinc-400">Share an upcoming flight with the Volo network. Use the local departure date, time and timezone.</p>
+   <p className="text-zinc-600 dark:text-zinc-400">Post an upcoming flight and choose who can see it. Use the local departure date, time and timezone.</p>
   </header>
   {profile==='complete'?<FlightForm publish={publishFlight}/>:profile==='missing'?<section className="space-y-3">
    <h2 className="text-xl font-semibold">Complete your pilot profile first</h2>
