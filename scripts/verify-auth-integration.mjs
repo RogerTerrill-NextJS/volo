@@ -31,9 +31,9 @@ try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
     const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
     stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal,applicationOrigin});
-    if(process.argv.includes('--flight-create')){
+    if(process.argv.includes('--flight-create')||process.argv.includes('--flight-feed')){
       setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,flights:true});
-      setupStage='flight-create';await verifyFlightCreation({stack,app,scenario});
+      setupStage='flight-create';await verifyFlightCreation({stack,app,scenario,feedOnly:process.argv.includes('--flight-feed')});
     }else{
     setupStage='flight-rls';await verifyFlightRls({stack,scenario});
     if(!process.argv.includes('--flight-rls')){
