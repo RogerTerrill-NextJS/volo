@@ -64,6 +64,17 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
         if(globalThis.__voloLoginMode==='outage')return Response.json({code:'fixture_unavailable'},{status:503});
         if(globalThis.__voloLoginMode==='malformed')return Response.json({user:{id:'invalid'}},{status:200});
       }
+      if(url.pathname==='/rest/v1/flights'&&(!init?.method||init.method==='GET')){
+        globalThis.__voloFlightFeedCalls=(globalThis.__voloFlightFeedCalls??0)+1;
+        if(globalThis.__voloFlightFeedMode==='outage')return Response.json({code:'private-feed-error-canary'},{status:503});
+        if(globalThis.__voloFlightFeedMode?.startsWith('disable-after-read:')){
+          const response=await original(input,{...init,redirect:'error'}),body=await response.text();
+          const subject=globalThis.__voloFlightFeedMode.slice(19);
+          const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned feed race'})});
+          if(!changed.ok)throw new Error('Owned feed race rejected');
+          return new Response(body,{status:response.status,headers:response.headers});
+        }
+      }
       if(globalThis.__voloFailSetup&&url.pathname==='/rest/v1/rpc/record_verified_invitation_setup')return Response.json({code:'fixture_store_unavailable'},{status:503});
       if((url.pathname==='/auth/v1/user'&&init?.method!=='PUT')||url.pathname==='/auth/v1/token')globalThis.__voloCompletionAuthReads=(globalThis.__voloCompletionAuthReads??0)+1;
       const password=url.pathname==='/auth/v1/user'&&init?.method==='PUT';
@@ -120,6 +131,8 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await cp(path.join(root,'app/(protected)/dashboard/flights'),path.join(directory,'app/(protected)/dashboard/flights'),{recursive:true});
       await put('app/dashboard/flight-create-fixture/page.tsx',`import {createFlight} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={createFlight} label="Create flight"/></main>}`);
       await put('app/api/flight-create-control/route.ts',`type State=typeof globalThis & {__voloFlightCreateMode?:string;__voloFlightCreateCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloFlightCreateMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloFlightCreateCalls??0});}`);
+      await put('app/api/flight-feed-fixture/route.ts',`import {listUpcomingFlights} from '../../../lib/flights/feed-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function POST(request:Request){const response=Response.json(await listUpcomingFlights(await request.json()));applyPrivateResponseHeaders(response.headers);return response;}`);
+      await put('app/api/flight-feed-control/route.ts',`type State=typeof globalThis & {__voloFlightFeedMode?:string;__voloFlightFeedCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','outage'].includes(mode)&&!/^disable-after-read:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloFlightFeedMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloFlightFeedCalls??0});}`);
       await put('app/dashboard/recipient-fixture/page.tsx',`import {addFlightRecipient,removeFlightRecipient} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={addFlightRecipient} label="Add"/><Form action={removeFlightRecipient} label="Remove"/></main>}`);
       await put('app/api/recipient-candidates/route.ts',`import {listRecipientCandidates} from '../../../lib/flights/recipient-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const response=Response.json(await listRecipientCandidates());applyPrivateResponseHeaders(response.headers);return response;}`);
     }
