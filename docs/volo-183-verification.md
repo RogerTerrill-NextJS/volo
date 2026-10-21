@@ -72,7 +72,7 @@ rerun completed successfully.
 - `lib/flights/detail-query.ts`.
 - `app/(protected)/dashboard/flights/[flightId]/page.tsx`, `flight-details.tsx`,
   `not-found.tsx`, `error.tsx`.
-- `app/(protected)/dashboard/flights/flight-card.tsx`.
+- `app/(protected)/dashboard/flights/flight-card.tsx`, `page.tsx`, `new/page.tsx`.
 - `tests/flight-detail.unit.mts`, `tests/helpers/flight-feed-cases.mjs`.
 - `package.json` and this document.
 
@@ -82,3 +82,16 @@ are left to CI under the focused-test policy. Hosted Netlify preview verificatio
 and production release verification remain separate and have not been performed.
 No founder decision remains for this approved scope. Unrelated `AGENTS.md` and
 `docs/audits/` changes are excluded.
+
+## CI lint correction
+
+The first PR validation run failed at lint, before build/tests. Adding the dynamic
+flight detail route made Next.js's internal-route lint rule flag two existing native
+links in the feed and creation pages. Focused lint reproduced both errors locally.
+These links intentionally perform document navigation: Clear filters discards
+unapplied drafts even on the unfiltered URL, and creation retry performs a fresh
+profile check. They retain that behavior with documented, single-line lint
+exceptions; the global rule remains enabled. No runtime behavior or tests changed.
+
+After the correction, repository-wide ESLint, TypeScript and diff checks passed.
+The change adds only comments and formatting; existing reload behavior is preserved.
