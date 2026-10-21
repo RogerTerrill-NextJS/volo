@@ -10,6 +10,7 @@ export default function AppShell({ children,isAdmin=false }: { children: React.R
           <Link href="/dashboard" prefetch={false} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
             Dashboard
           </Link>
+          <Link href="/dashboard/flights" prefetch={false} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">Upcoming flights</Link>
           <Link href="/directory" prefetch={false} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
             Pilot directory
           </Link>

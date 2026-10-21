@@ -60,6 +60,42 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
    try{assert.deepEqual(await call('member'),{status:'forbidden'},'Membership changed during the read discards all rows');}finally{await control('off');await stack.setMembership(accounts.member.id,{role:'member',status:'active'});}
    await control('outage');try{assert.deepEqual(await call('member'),{status:'unavailable'});}finally{await control('off');}
   });
+  const pageRead=async(label,path,headers={})=>{
+   const response=await app.request(path,{session:sessions[label],headers});
+   for(const h of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(h)??'',/no-store/);
+   const raw=await response.text();stack.assertNoCredentialLeaks(raw);for(const session of Object.values(sessions))session.assertNoCredentialLeaks(raw);
+   // React separates adjacent SSR text nodes with comments; assert the visible copy.
+   const text=raw.replace(/<!--[\s\S]*?-->/g,'');
+   for(const account of Object.values(accounts))assert.ok(!text.includes(account.email));
+   return {response,text};
+  };
+  await scenario('flight_feed_page_filters_pagination_and_local_time',async()=>{
+   const paging=[];
+   for(let i=1;i<=21;i++){
+    ids['page'+i]=randomUUID();
+    paging.push(fixture('page'+i,{departure_airport:'KSQL',destination_airport:'KSFO',departure_at:nextDay+`T12:00:${String(i).padStart(2,'0')}.000001Z`,departure_timezone:'UTC',aircraft_description:'Owned page C172 '+String(i).padStart(2,'0')}));
+   }
+   await checked(admin.from('flights').insert(paging));
+   const route='/dashboard/flights?departureAirport=ksql&destinationAirport=ksfo&dateFrom='+nextDay+'&dateTo='+nextDay;
+   const {text}=await pageRead('member',route);assert.ok(text.includes('20 flights on this page'),'First page reports 20 rendered flights');assert.ok(text.includes('Owned page C172 01'));assert.ok(!text.includes('Owned page C172 21'));
+   assert.ok(text.includes('Joining-pilot capacity'));assert.ok(!text.includes('places available'));
+   const next=text.match(/href="([^"]+)"[^>]*>Next page/)?.[1]?.replaceAll('&amp;','&');assert.ok(next,'Actual page has a continuation link');
+   const url=new URL(next,app.origin);for(const [key,want] of [['departureAirport','KSQL'],['destinationAirport','KSFO'],['dateFrom',nextDay],['dateTo',nextDay]])assert.equal(url.searchParams.get(key),want);
+   const second=await pageRead('member',url.pathname+url.search);assert.ok(second.text.includes('1 flight on this page'));assert.ok(second.text.includes('Owned page C172 21'));assert.ok(!second.text.includes('Owned page C172 01'));assert.ok(second.text.includes('Back to first page'));
+   const local=await pageRead('member','/dashboard/flights?dateFrom='+day+'&dateTo='+day);assert.ok(local.text.includes(day+' at 17:30'),'Departure uses local date/time in rendered copy');assert.ok(local.text.includes('America/Los_Angeles'));assert.ok(local.text.includes('UTC-07:00'));assert.ok(!local.text.includes(ids.hidden),'Unrelated PRIVATE flight never enters HTML or serialized payload');
+   const rsc=await pageRead('noProfile','/dashboard/flights?dateFrom='+day,{RSC:'1'});assert.ok(!rsc.text.includes(ids.hidden));assert.ok(!rsc.text.includes(ids.selected));
+  });
+  await scenario('flight_feed_page_access_empty_invalid_and_retry_states',async()=>{
+   const anonymous=await pageRead(null,'/dashboard/flights');assert.equal(anonymous.response.status,307);
+   const denied=await pageRead('disabled','/dashboard/flights');assert.ok(denied.text.includes('Access denied'));assert.ok(!denied.text.includes('Owned page C172'));
+   const empty=await pageRead('member','/dashboard/flights?departureAirport=ZZZZ');assert.ok(empty.text.includes('No flights match these filters'));assert.ok(empty.text.includes('Clear filters'));
+   for(const query of ['departureAirport=KPAO&departureAirport=KSQL','dateFrom=2030-06-31','after=bad'])assert.ok((await pageRead('member','/dashboard/flights?'+query)).text.includes('Check your flight filters or page link'));
+   await control('outage');try{
+    const failed=await pageRead('member','/dashboard/flights?departureAirport=KSQL');assert.ok(failed.text.includes('Flights temporarily unavailable'));assert.ok(failed.text.includes('Try again'));assert.ok(!failed.text.includes('private-feed-error-canary'));
+   }finally{await control('off');}
+   assert.ok((await pageRead('member','/dashboard/flights?departureAirport=KSQL')).text.includes('Owned page C172'),'Retry recovers without clearing filters');
+  });
+
  }finally{
   await control('off');
   await checked(admin.from('flight_recipients').delete().in('flight_id',Object.values(ids)));

@@ -5,7 +5,7 @@ import {validateLocalApiUrl} from './local-auth-stack.mjs';
 import {verifyRecipientSelection} from './recipient-cases.mjs';
 import {verifyUpcomingFlightFeed} from './flight-feed-cases.mjs';
 
-export async function verifyFlightCreation({stack,app,scenario}){
+export async function verifyFlightCreation({stack,app,scenario,feedOnly=false}){
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
   const localFetch=(input,init)=>{const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);assert.equal(url.origin,stack.apiUrl);return fetch(input,{...init,redirect:'error',signal:init?.signal??AbortSignal.timeout(10000)});};
   const options={auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:localFetch}};
@@ -38,6 +38,7 @@ export async function verifyFlightCreation({stack,app,scenario}){
       clients[label]=createClient(stack.apiUrl,stack.publicKey,options);
       const signin=await clients[label].auth.signInWithPassword({email:accounts[label].email,password:accounts[label].password});assert.equal(signin.error,null);
     }
+    if(!feedOnly){
     await scenario('flight_create_native_and_fetched_owner_derived',async()=>{
       for(const [label,transport,visibility] of [['member','native','NETWORK'],['member','fetched','PRIVATE'],['admin','fetched','NETWORK']]){
         const before=await rows(),beforeCalls=await calls();const {text,response}=await invoke(label,{visibility},{transport});
@@ -164,6 +165,7 @@ export async function verifyFlightCreation({stack,app,scenario}){
       assert.equal((await rows()).length,before.length+1);assert.equal(await calls(),beforeCalls+1);
     });
     await verifyRecipientSelection({stack,app,scenario,accounts,sessions,clients,admin,fields});
+    }
     await verifyUpcomingFlightFeed({stack,app,scenario,accounts,sessions,admin});
   }finally{
     const ownedFlights=await rows();

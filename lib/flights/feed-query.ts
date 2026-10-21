@@ -26,7 +26,7 @@ function timestamp(value:unknown):string|null{
  if(!match||!date(match[1])||Number(match[2])>23||Number(match[3])>59||Number(match[4])>59)return null;
  return `${match[1]}T${match[2]}:${match[3]}:${match[4]}.${(match[5]??'').padEnd(6,'0')}Z`;
 }
-function criteria(input:Record<string,unknown>):FlightFeedCriteria|null{
+export function normalizeFlightFeedCriteria(input:Record<string,unknown>):FlightFeedCriteria|null{
  const result:FlightFeedCriteria={};
  for(const key of ['departureAirport','destinationAirport','dateFrom','dateTo'] as const){
   const raw=input[key];if(raw===undefined)continue;
@@ -41,14 +41,14 @@ function criteria(input:Record<string,unknown>):FlightFeedCriteria|null{
 }
 function pageInput(raw:unknown,now:string):FlightFeedPage|null{
  if(!object(raw)||Object.keys(raw).some(key=>![...criteriaKeys,'pageSize','after'].includes(key)))return null;
- const filters=criteria(raw),pageSize=raw.pageSize===undefined?20:raw.pageSize;
+ const filters=normalizeFlightFeedCriteria(raw),pageSize=raw.pageSize===undefined?20:raw.pageSize;
  if(!filters||typeof pageSize!=='number'||!Number.isInteger(pageSize)||pageSize<1||pageSize>50)return null;
  let after:Position|null=null;
  if(raw.after!==undefined&&raw.after!==null){
   if(typeof raw.after!=='string'||raw.after.length>2048)return null;
   let cursor:unknown;try{cursor=JSON.parse(raw.after);}catch{return null;}
   if(!object(cursor)||Object.keys(cursor).length!==3||!object(cursor.criteria)||Object.keys(cursor.criteria).some(key=>!criteriaKeys.includes(key)))return null;
-  const cursorCriteria=criteria(cursor.criteria),departureAt=timestamp(cursor.departureAt);
+  const cursorCriteria=normalizeFlightFeedCriteria(cursor.criteria),departureAt=timestamp(cursor.departureAt);
   if(!cursorCriteria||JSON.stringify(cursorCriteria)!==JSON.stringify(filters)||!departureAt||typeof cursor.id!=='string'||!uuid.test(cursor.id))return null;
   after={departureAt,id:cursor.id.toLowerCase()};
  }
