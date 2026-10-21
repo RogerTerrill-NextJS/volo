@@ -3,6 +3,7 @@ import {createClient} from '@supabase/supabase-js';
 import {signInSession} from './real-auth-session.mjs';
 import {validateLocalApiUrl} from './local-auth-stack.mjs';
 import {verifyRecipientSelection} from './recipient-cases.mjs';
+import {verifyUpcomingFlightFeed} from './flight-feed-cases.mjs';
 
 export async function verifyFlightCreation({stack,app,scenario}){
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
@@ -163,6 +164,7 @@ export async function verifyFlightCreation({stack,app,scenario}){
       assert.equal((await rows()).length,before.length+1);assert.equal(await calls(),beforeCalls+1);
     });
     await verifyRecipientSelection({stack,app,scenario,accounts,sessions,clients,admin,fields});
+    await verifyUpcomingFlightFeed({stack,app,scenario,accounts,sessions,admin});
   }finally{
     const ownedFlights=await rows();
     if(ownedFlights.length)await checked(admin.from('flight_recipients').delete().in('flight_id',ownedFlights.map(row=>row.id)));
