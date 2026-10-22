@@ -7,7 +7,7 @@ export type FlightFeedCriteria={departureAirport?:string;destinationAirport?:str
 type Position={departureAt:string;id:string};
 export type FlightFeedPage={criteria:FlightFeedCriteria;after:Position|null;pageSize:number;now:string};
 export type FlightFeedPorts={access:()=>Promise<AccessResult>;now:()=>number;readRows:(page:FlightFeedPage)=>Promise<unknown>};
-export type FeedFlight=Pick<Database['public']['Tables']['flights']['Row'],'id'|'owner_id'|'departure_airport'|'destination_airport'|'departure_at'|'departure_timezone'|'departure_local_date'|'aircraft_description'|'pilot_places'|'visibility'>;
+export type FeedFlight=Pick<Database['public']['Tables']['flights']['Row'],'id'|'owner_id'|'departure_airport'|'destination_airport'|'departure_at'|'departure_timezone'|'departure_local_date'|'aircraft_description'|'pilot_places'|'visibility'> & {isOwn:boolean};
 export type FlightFeedResult={status:'authorized';rows:FeedFlight[];nextCursor:string|null}|{status:'unauthenticated'|'forbidden'|'unavailable'|'invalid'};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const columns='id,owner_id,departure_airport,destination_airport,departure_at,departure_timezone,departure_local_date,aircraft_description,pilot_places,visibility,status';
@@ -54,9 +54,9 @@ function pageInput(raw:unknown,now:string):FlightFeedPage|null{
  }
  return {criteria:filters,after,pageSize,now};
 }
-const position=(row:FeedFlight):Position=>({departureAt:row.departure_at,id:row.id});
+const position=(row:Pick<FeedFlight,'departure_at'|'id'>):Position=>({departureAt:row.departure_at,id:row.id});
 const compare=(a:Position,b:Position)=>a.departureAt===b.departureAt?a.id.localeCompare(b.id):a.departureAt<b.departureAt?-1:1;
-function project(raw:unknown,page:FlightFeedPage):FeedFlight{
+function project(raw:unknown,page:FlightFeedPage):Omit<FeedFlight,'isOwn'>{
  if(!object(raw))throw unavailable();
  const instant=timestamp(raw.departure_at);
  if(!instant||instant<=page.now||raw.status!=='open'||typeof raw.id!=='string'||!uuid.test(raw.id)||typeof raw.owner_id!=='string'||!uuid.test(raw.owner_id)
@@ -100,6 +100,6 @@ export async function listUpcomingFlights(input:unknown={},ports:FlightFeedPorts
   const after=await ports.access();if(after.status!=='authorized')return {status:after.status};
   if(before.member.userId!==after.member.userId)return {status:'forbidden'};
   const visible=rows.slice(0,page.pageSize);
-  return {status:'authorized',rows:visible,nextCursor:rows.length>page.pageSize?JSON.stringify({...position(visible[visible.length-1]),criteria:page.criteria}):null};
+  return {status:'authorized',rows:visible.map(row=>({...row,isOwn:row.owner_id===after.member.userId})),nextCursor:rows.length>page.pageSize?JSON.stringify({...position(visible[visible.length-1]),criteria:page.criteria}):null};
  }catch{return {status:'unavailable'};}
 }

@@ -17,7 +17,7 @@ test('detail denies inactive viewers and invalid IDs before flight or pilot read
 test('detail whitelists permitted flight fields, preserves notes and does not require upcoming/open',async()=>{
  for(const status of ['open','cancelled','completed']){
   const result=await getFlightDetail(id.toUpperCase(),ports({...row,status,email:'account-canary',recipients:['private-canary'],created_at:'internal-canary'}));
-  assert.deepEqual(result,{status:'authorized',flight:{...row,status,departure_at:'2028-06-02T00:30:00.000001Z'},pilot:null});
+  assert.deepEqual(result,{status:'authorized',flight:{...row,status,isOwn:false,departure_at:'2028-06-02T00:30:00.000001Z'},pilot:null});
  }
  assert.equal((await getFlightDetail(id,ports({...row,departure_at:'2000-01-01T00:00:00Z',departure_local_date:'1999-12-31'}))).status,'authorized');
 });
@@ -32,7 +32,7 @@ test('optional pilot failures preserve flight while authorization failures disca
  for(const status of ['missing','unavailable'] as const)assert.equal((await getFlightDetail(id,{...ports(),readPilot:async()=>({status})})).status,'authorized');
  for(const status of ['unauthenticated','forbidden'] as const)assert.deepEqual(await getFlightDetail(id,{...ports(),readPilot:async()=>({status})}),{status});
  const pilot={user_id:owner,display_name:'Posting pilot',home_airport:'KPAO',pilot_designation:'licensed' as const,certificates:[],ratings:[],aircraft_access:null,flying_interests:null,bio:null,photoAvailable:false};
- assert.deepEqual(await getFlightDetail(id,{...ports(),readPilot:async()=>({status:'authorized',profile:pilot})}),{status:'authorized',flight:{...row,departure_at:'2028-06-02T00:30:00.000001Z'},pilot});
+ assert.deepEqual(await getFlightDetail(id,{...ports(),readPilot:async()=>({status:'authorized',profile:pilot})}),{status:'authorized',flight:{...row,isOwn:false,departure_at:'2028-06-02T00:30:00.000001Z'},pilot});
 });
 
 test('revocation or viewer identity change during flight/profile reads discards details',async()=>{
@@ -43,4 +43,12 @@ test('revocation or viewer identity change during flight/profile reads discards 
  }
  let revoked=false;
  assert.deepEqual(await getFlightDetail(id,{...ports(),access:async()=>revoked?{status:'forbidden'}:member,readPilot:async()=>{revoked=true;return {status:'missing'};}}),{status:'forbidden'});
+});
+
+test('detail ownership reflects the verified owner, including admins without an ownership bypass',async()=>{
+ for(const role of ['member','admin'] as const)for(const own of [false,true]){
+  const result=await getFlightDetail(id,{...ports({...row,isOwn:!own,user_metadata:{userId:owner},role:'admin'}),access:async()=>({status:'authorized',member:{userId:own?owner:id,role}})});
+  assert.equal(result.status,'authorized');if(result.status!=='authorized')return;
+  assert.equal(result.flight.isOwn,own);
+ }
 });

@@ -13,7 +13,7 @@ const columns='id,owner_id,departure_airport,destination_airport,departure_at,de
 const unavailable=()=>new Error('Flight detail unavailable.');
 const text=(value:unknown):value is string=>typeof value==='string'&&value.isWellFormed()&&!value.includes('\u0000');
 
-function project(input:unknown,target:string):DetailFlight{
+function project(input:unknown,target:string):Omit<DetailFlight,'isOwn'>{
  if(!input||typeof input!=='object'||Array.isArray(input))throw unavailable();
  const row=input as Record<string,unknown>;
  if(typeof row.id!=='string'||row.id.toLowerCase()!==target||typeof row.owner_id!=='string'||!uuid.test(row.owner_id)
@@ -57,6 +57,6 @@ export async function getFlightDetail(id:unknown,ports:FlightDetailPorts=createF
   if(pilot.status==='unauthenticated'||pilot.status==='forbidden')return {status:pilot.status};
   const after=await ports.access();if(after.status!=='authorized')return {status:after.status};
   if(after.member.userId!==before.member.userId)return {status:'forbidden'};
-  return {status:'authorized',flight,pilot:pilot.status==='authorized'?pilot.profile:null};
+  return {status:'authorized',flight:{...flight,isOwn:flight.owner_id===after.member.userId},pilot:pilot.status==='authorized'?pilot.profile:null};
  }catch{return {status:'unavailable'};}
 }

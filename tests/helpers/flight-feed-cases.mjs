@@ -31,7 +31,7 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
    const other=await call('noProfile');assert.equal(other.status,'authorized');assert.ok(other.rows.some(r=>r.id===ids.own));assert.ok(!other.rows.some(r=>r.id===ids.selected||r.id===ids.hidden));
    const ordinaryAdmin=await call('admin');assert.ok(!ordinaryAdmin.rows.some(r=>r.id===ids.own),'Admin has no unrelated PRIVATE bypass');
    assert.ok(ordinaryAdmin.rows.some(r=>r.id===ids.hidden),'An owner retains their PRIVATE read');
-   assert.deepEqual(Object.keys(member.rows.find(r=>r.id===ids.a)).sort(),['id','owner_id','departure_airport','destination_airport','departure_at','departure_timezone','departure_local_date','aircraft_description','pilot_places','visibility'].sort());
+   assert.deepEqual(Object.keys(member.rows.find(r=>r.id===ids.a)).sort(),['id','owner_id','departure_airport','destination_airport','departure_at','departure_timezone','departure_local_date','aircraft_description','pilot_places','visibility','isOwn'].sort());
    for(const [label,status] of [[null,'unauthenticated'],['disabled','forbidden'],['absent','forbidden']])assert.deepEqual(await call(label),{status});
   });
   await scenario('flight_feed_combined_filters_stable_pages_and_local_dates',async()=>{
@@ -69,6 +69,18 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
    for(const account of Object.values(accounts))assert.ok(!text.includes(account.email));
    return {response,text};
   };
+  await scenario('flight_ownership_indicator_uses_verified_viewer_in_feed_and_detail',async()=>{
+   for(const [label,ownId,foreignId] of [['member',ids.own,ids.selected],['admin',ids.hidden,ids.c]]){
+    const feed=await pageRead(label,'/dashboard/flights?dateFrom='+day+'&dateTo='+day);
+    const card=id=>feed.text.match(new RegExp('<article[^>]*aria-labelledby="flight-'+id+'"[^>]*>([\\s\\S]*?)</article>'))?.[1];
+    assert.ok(card(ownId),'Owned flight card is present');
+    assert.ok(card(ownId).includes('Your flight'),'Only an owned card receives the text indicator');
+    assert.ok(card(foreignId),'Permitted other-owner card is present');
+    assert.ok(!card(foreignId).includes('Your flight'),'Visibility or admin role does not imply ownership');
+    const own=await pageRead(label,'/dashboard/flights/'+ownId);assert.ok(own.text.includes('Your flight'));
+    const other=await pageRead(label,'/dashboard/flights/'+foreignId);assert.ok(!other.text.includes('Your flight'));
+   }
+  });
   await scenario('flight_detail_session_authorization_and_safe_page_states',async()=>{
    const route=id=>'/dashboard/flights/'+id;
    const visible=await pageRead('member',route(ids.selected));
