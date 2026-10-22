@@ -61,13 +61,23 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
    await control('outage');try{assert.deepEqual(await call('member'),{status:'unavailable'});}finally{await control('off');}
   });
   const pageRead=async(label,path,headers={})=>{
-   const response=await app.request(path,{session:sessions[label],headers});
-   for(const h of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(h)??'',/no-store/);
-   const raw=await response.text();stack.assertNoCredentialLeaks(raw);for(const session of Object.values(sessions))session.assertNoCredentialLeaks(raw);
-   // React separates adjacent SSR text nodes with comments; assert the visible copy.
-   const text=raw.replace(/<!--[\s\S]*?-->/g,'');
-   for(const account of Object.values(accounts))assert.ok(!text.includes(account.email));
-   return {response,text};
+   for(let attempt=0;attempt<3;attempt++){
+    const response=await app.request(path,{session:sessions[label],headers});
+    for(const h of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(h)??'',/no-store/);
+    const raw=await response.text();stack.assertNoCredentialLeaks(raw);for(const session of Object.values(sessions))session.assertNoCredentialLeaks(raw);
+    // React separates adjacent SSR text nodes with comments; assert the visible copy.
+    const text=raw.replace(/<!--[\s\S]*?-->/g,'');
+    for(const account of Object.values(accounts))assert.ok(!text.includes(account.email));
+    // Match the shared Auth fixture's bounded RSC negotiation. Do not follow
+    // login redirects or treat the negotiation's empty body as a protected read.
+    if(headers.RSC&&response.status===307&&response.headers.has('location')){
+     const target=new URL(response.headers.get('location'),app.origin);
+     assert.equal(target.origin,app.origin,'RSC negotiation stays on the owned app');
+     if(target.pathname===new URL(path,app.origin).pathname&&target.searchParams.has('_rsc')){path=target.pathname+target.search;continue;}
+    }
+    return {response,text};
+   }
+   assert.fail('Flight page RSC negotiation did not settle');
   };
   await scenario('flight_ownership_indicator_uses_verified_viewer_in_feed_and_detail',async()=>{
    for(const [label,ownId,foreignId] of [['member',ids.own,ids.selected],['admin',ids.hidden,ids.c]]){
@@ -162,6 +172,87 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
     const failed=await pageRead('member','/dashboard/flights?departureAirport=KSQL');assert.ok(failed.text.includes('Flights temporarily unavailable'));assert.ok(failed.text.includes('Try again'));assert.ok(!failed.text.includes('private-feed-error-canary'));
    }finally{await control('off');}
    assert.ok((await pageRead('member','/dashboard/flights?departureAirport=KSQL')).text.includes('Owned page C172'),'Retry recovers without clearing filters');
+  });
+
+  // Exercise production pages with the same actors/sessions as the policy and
+  // recipient-action fixtures. Distinct markers catch leaks in HTML and RSC.
+  const visibilityKeys=['visibilityNetwork','visibilityPrivate','visibilityOther'];
+  const markers=Object.fromEntries(visibilityKeys.map(key=>[key,'VOLO186-'+key]));
+  const listing='/dashboard/flights?departureAirport=KSQL&destinationAirport=KSJC&dateFrom='+nextDay+'&dateTo='+nextDay;
+  const assertPageVisibility=async(label,visibleKeys,gate='authorized')=>{
+   for(const headers of [{},{RSC:'1'}]){
+    for(const key of [null,...visibilityKeys]){
+     const {response,text}=await pageRead(label,key?'/dashboard/flights/'+ids[key]:listing,headers);
+     const context=`${label??'anonymous'} ${headers.RSC?'RSC':'HTML'} ${key??'listing'}`;
+     if(gate==='anonymous'){
+      if(headers.RSC){
+       assert.equal(response.status,200,`${context}: streamed redirect status ${response.status}`);
+       assert.match(response.headers.get('content-type')??'',/text\/x-component/);
+       assert.ok(text.includes('NEXT_REDIRECT;replace;/login?reason=authentication-required;307;'),`${context}: fixed streamed login redirect`);
+      }else{
+       assert.equal(response.status,307,`${context}: redirect status ${response.status}`);
+       assert.equal(new URL(response.headers.get('location'),app.origin).href,app.origin+'/login?reason=authentication-required',`${context}: unexpected login destination ${response.headers.get('location')}`);
+      }
+     }else{
+      // Next's notFound() is HTTP404 for document reads; streamed RSC uses
+      // HTTP200 with the not-found boundary. Both must omit the protected data.
+      const expectedStatus=gate==='authorized'&&key&&!visibleKeys.includes(key)&&!headers.RSC?404:200;
+      assert.equal(response.status,expectedStatus,`${context}: page status ${response.status}`);
+      assert.match(response.headers.get('content-type')??'',headers.RSC?/text\/x-component/:/text\/html/,`${context}: representation type`);
+      if(gate==='denied')assert.ok(text.includes('Access denied'));
+      else if(key&&!visibleKeys.includes(key))assert.ok(text.includes('Flight not found'));
+     }
+     for(const candidate of visibilityKeys){
+      const expected=gate==='authorized'&&visibleKeys.includes(candidate)&&(!key||key===candidate);
+      assert.equal(text.includes(markers[candidate]),expected,`${label??'anonymous'} ${headers.RSC?'RSC':'HTML'} ${key??'listing'} visibility of ${candidate}`);
+      if(!key&&!expected)assert.ok(!text.includes(ids[candidate]),'Hidden flight identifiers stay out of the listing payload');
+     }
+    }
+   }
+  };
+  await scenario('flight_visibility_actual_pages_reuse_policy_actor_matrix',async()=>{
+   for(const key of visibilityKeys)ids[key]=randomUUID();
+   await checked(admin.from('flights').insert(visibilityKeys.map(key=>fixture(key,{
+    departure_airport:'KSQL',destination_airport:'KSJC',departure_timezone:'UTC',
+    visibility:key==='visibilityNetwork'?'NETWORK':'PRIVATE',aircraft_description:markers[key],
+   }))));
+   await checked(admin.from('flight_recipients').insert(['visibilityPrivate','visibilityOther'].map(key=>({flight_id:ids[key],user_id:accounts.admin.id}))));
+   await assertPageVisibility('member',visibilityKeys); // Owner.
+   await assertPageVisibility('admin',visibilityKeys); // Selected recipient.
+   for(const label of ['noProfile','adminNoProfile'])await assertPageVisibility(label,['visibilityNetwork']);
+   for(const label of ['disabled','absent'])await assertPageVisibility(label,[],'denied');
+   await assertPageVisibility(null,[],'anonymous');
+  });
+  await scenario('flight_visibility_recipient_actions_revoke_and_restore_retained_page_sessions',async()=>{
+   const change=async(selected,transport)=>{
+    const response=await app.recipientAction(selected,{flight_id:ids.visibilityPrivate,recipient_id:accounts.admin.id},{session:sessions.member,transport});
+    assert.equal(response.status,200);
+    for(const header of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(header)??'',/no-store/);
+    const body=(await response.text()).replaceAll('&quot;','"');
+    stack.assertNoCredentialLeaks(body);
+    for(const session of Object.values(sessions))session.assertNoCredentialLeaks(body);
+    for(const account of Object.values(accounts))assert.ok(!body.includes(account.email));
+    assert.ok(body.includes('"code":"updated"'),'Real guarded recipient action confirms success');
+   };
+   // No re-login or cookie reset between warm reads and either mutation transport.
+   for(const transport of ['native','fetched']){
+    await change(false,transport);
+    await assertPageVisibility('admin',['visibilityNetwork','visibilityOther']);
+    await assertPageVisibility('member',visibilityKeys);
+    await change(true,transport);
+    await assertPageVisibility('admin',visibilityKeys);
+   }
+   // A retained selection cannot bypass disabled membership; reactivation can
+   // restore that selection, but must never resurrect a removed selection.
+   await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});
+   try{await assertPageVisibility('admin',[],'denied');}
+   finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
+   await assertPageVisibility('admin',visibilityKeys);
+   await change(false,'fetched');
+   await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});
+   try{await assertPageVisibility('admin',[],'denied');}
+   finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
+   await assertPageVisibility('admin',['visibilityNetwork','visibilityOther']);
   });
 
  }finally{
