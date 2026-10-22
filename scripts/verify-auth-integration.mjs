@@ -9,6 +9,7 @@ import {signInSession,signInOwnedInvitationSession,invalidSession,emptySession} 
 import {startRealAuthApp} from '../tests/helpers/real-auth-app.mjs';
 import {verifyFlightRls} from '../tests/helpers/flight-rls-cases.mjs';
 import {verifyFlightCreation} from '../tests/helpers/flight-create-cases.mjs';
+import {verifyFlightInterest} from '../tests/helpers/flight-interest-cases.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
 const summary={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),versions:{node:process.version,next:'16.3.8',supabaseCli:'2.119.0'},scenarios:[],limitations:['Local fixture headers do not prove Netlify CDN storage behavior (VOLO-120).','Hosted authenticated writes and browser history are not exercised.','Provider/setup expiry and invitation age use backdated owned timestamps, not a 30-minute wall-clock wait.']};
@@ -31,7 +32,10 @@ try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
     const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
     stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal,applicationOrigin});
-    if(process.argv.includes('--flight-create')||process.argv.includes('--flight-feed')){
+    if(process.argv.includes('--flight-interest')){
+      setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,interest:true});
+      setupStage='flight-interest';await verifyFlightInterest({stack,app,scenario});
+    }else if(process.argv.includes('--flight-create')||process.argv.includes('--flight-feed')){
       setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,flights:true});
       setupStage='flight-create';await verifyFlightCreation({stack,app,scenario,feedOnly:process.argv.includes('--flight-feed')});
     }else{
@@ -50,8 +54,9 @@ try{
       check(result.email.code==='signup_disabled','email signup rejected by admission policy');
       return 'Owned real Auth settings plus direct public email/anonymous/OAuth requests; no identity or session issued.';
     });
-    setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,flights:true});
+    setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,flights:true,interest:true});
     setupStage='flight-create';await verifyFlightCreation({stack,app,scenario});
+    setupStage='flight-interest';await verifyFlightInterest({stack,app,scenario});
     setupStage='accounts';const accounts={},users={};
     const fresh=async label=>{const session=await signInSession(stack,accounts[label]);sessions.push(session);return session;};
     const audit=async(response,subject)=>{
