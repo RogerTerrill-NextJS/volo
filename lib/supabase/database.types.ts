@@ -30,6 +30,31 @@ isOneToOne: false
       referencedColumns: ["user_id"]
     }
                   ]
+                },"flight_requests": {
+                  Row: {
+                    "created_at": string,"flight_id": string,"id": string,"introductory_note": string | null,"requester_id": string,"status": Database["public"]['Enums']["flight_request_status"],"status_changed_at": string,"updated_at": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"flight_id": string,"id"?: string,"introductory_note"?: string | null,"requester_id": string,"status"?: Database["public"]['Enums']["flight_request_status"],"status_changed_at"?: string,"updated_at"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"flight_id"?: string,"id"?: string,"introductory_note"?: string | null,"requester_id"?: string,"status"?: Database["public"]['Enums']["flight_request_status"],"status_changed_at"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "flight_requests_flight_id_fkey"
+      columns: ["flight_id"]
+isOneToOne: false
+      referencedRelation: "flights"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "flight_requests_requester_id_fkey"
+      columns: ["requester_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    }
+                  ]
                 },"flights": {
                   Row: {
                     "aircraft_description": string,"created_at": string,"departure_airport": string,"departure_at": string,"departure_local_date": string,"departure_timezone": string,"destination_airport": string,"id": string,"notes": string | null,"owner_id": string,"pilot_places": number,"status": Database["public"]['Enums']["flight_status"],"updated_at": string,"visibility": Database["public"]['Enums']["flight_visibility"]
@@ -321,7 +346,7 @@ isOneToOne: false
                            }
           }
           Enums: {
-            "flight_status": "open"|"cancelled"|"completed","flight_visibility": "NETWORK"|"PRIVATE","invitation_send_kind": "initial"|"resend","invitation_send_outcome": "started"|"accepted"|"rejected"|"unknown","invitation_send_resolution": "accepted"|"rejected","invitation_status": "pending_issuance"|"issued"|"setup_verified"|"password_established"|"redeemed"|"revoked"|"superseded","member_role": "member"|"admin","membership_status": "active"|"disabled","pilot_designation": "student"|"licensed"
+            "flight_request_status": "pending"|"accepted"|"declined"|"withdrawn"|"cancelled","flight_status": "open"|"cancelled"|"completed","flight_visibility": "NETWORK"|"PRIVATE","invitation_send_kind": "initial"|"resend","invitation_send_outcome": "started"|"accepted"|"rejected"|"unknown","invitation_send_resolution": "accepted"|"rejected","invitation_status": "pending_issuance"|"issued"|"setup_verified"|"password_established"|"redeemed"|"revoked"|"superseded","member_role": "member"|"admin","membership_status": "active"|"disabled","pilot_designation": "student"|"licensed"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -437,7 +462,7 @@ export type CompositeTypes<
 export const Constants = {
   "public": {
           Enums: {
-            "flight_status": ["open", "cancelled", "completed"],"flight_visibility": ["NETWORK", "PRIVATE"],"invitation_send_kind": ["initial", "resend"],"invitation_send_outcome": ["started", "accepted", "rejected", "unknown"],"invitation_send_resolution": ["accepted", "rejected"],"invitation_status": ["pending_issuance", "issued", "setup_verified", "password_established", "redeemed", "revoked", "superseded"],"member_role": ["member", "admin"],"membership_status": ["active", "disabled"],"pilot_designation": ["student", "licensed"]
+            "flight_request_status": ["pending", "accepted", "declined", "withdrawn", "cancelled"],"flight_status": ["open", "cancelled", "completed"],"flight_visibility": ["NETWORK", "PRIVATE"],"invitation_send_kind": ["initial", "resend"],"invitation_send_outcome": ["started", "accepted", "rejected", "unknown"],"invitation_send_resolution": ["accepted", "rejected"],"invitation_status": ["pending_issuance", "issued", "setup_verified", "password_established", "redeemed", "revoked", "superseded"],"member_role": ["member", "admin"],"membership_status": ["active", "disabled"],"pilot_designation": ["student", "licensed"]
           }
         }
 } as const
