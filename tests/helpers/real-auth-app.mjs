@@ -11,7 +11,7 @@ import {promisify} from 'node:util';
 import {reservePort,validateLocalApiUrl,sanitizeDiagnostics,evidenceDirectory} from './local-auth-stack.mjs';
 
 const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
-export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false,photos=false,flights=false}) {
+export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false,photos=false,flights=false,interest=false}) {
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
   const directory=await mkdtemp(path.join(tmpdir(),'volo-real-auth-app-'));const effects=[];let server,recorder,output='',closePromise,fixtureStage='files';
   const put=async(name,value)=>{const file=path.join(directory,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,value);};
@@ -90,9 +90,22 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned eligibility race setup rejected');
         }
       }
+      if(url.pathname==='/rest/v1/rpc/submit_flight_interest'){
+        globalThis.__voloInterestCalls=(globalThis.__voloInterestCalls??0)+1;
+        const mode=globalThis.__voloInterestMode;
+        if(mode?.startsWith('disable:')||mode?.startsWith('full:')){
+          const disable=mode.startsWith('disable:'),id=mode.slice(disable?8:5);
+          const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/')}+(disable?'memberships?user_id=eq.':'flight_requests?id=eq.')+id,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify(disable?{status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned interest race'}:{status:'accepted'})});
+          if(!changed.ok)throw new Error('Owned interest race setup rejected');
+        }
+      }
       const response=await original(input,{...init,redirect:'error'});
       if(globalThis.__voloFlightCreateMode==='malformed'&&['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){await response.text();return Response.json('private-flight-error-canary');}
       if(globalThis.__voloFlightCreateMode==='lost'&&['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){await response.text();throw new Error('Owned fixture discarded committed create response');}
+      if(url.pathname==='/rest/v1/rpc/submit_flight_interest'){
+        if(globalThis.__voloInterestMode==='malformed'){await response.text();return Response.json({code:'submitted',requestId:'private-interest-error-canary',status:'pending'});}
+        if(globalThis.__voloInterestMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed interest response');}
+      }
       if(password&&!response.ok){const data=await response.clone().json();globalThis.__voloPasswordCode=data.code??data.error_code;}
       if(globalThis.__voloPhotoMode==='attach-lost'&&url.pathname==='/rest/v1/rpc/attach_profile_photo'){await response.text();throw new Error('Owned fixture discarded committed response');}
       if((mode==='password-lost'&&password)||(mode==='record-lost'&&url.pathname==='/rest/v1/rpc/record_invitation_password')||(mode==='redeem-lost'&&url.pathname==='/rest/v1/rpc/redeem_invitation')){await response.text();throw new Error('Owned fixture discarded committed response');}
@@ -138,6 +151,10 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/dashboard/recipient-fixture/page.tsx',`import {addFlightRecipient,removeFlightRecipient} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={addFlightRecipient} label="Add"/><Form action={removeFlightRecipient} label="Remove"/></main>}`);
       await put('app/api/recipient-candidates/route.ts',`import {listRecipientCandidates} from '../../../lib/flights/recipient-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const response=Response.json(await listRecipientCandidates());applyPrivateResponseHeaders(response.headers);return response;}`);
     }
+    if(interest){
+      await put('app/dashboard/interest-fixture/page.tsx',`import {submitFlightInterest} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={submitFlightInterest} label="Interested fixture"/></main>}`);
+      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^(disable|full):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
+    }
     if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
     if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));
     fixtureStage='build';const build=await promisify(execFile)(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'build',directory,'--webpack'],{cwd:directory,env,signal,timeout:180000,maxBuffer:8*1024*1024});output+=build.stdout+build.stderr;signal?.throwIfAborted();
@@ -148,6 +165,17 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       const destination=new URL(route,origin);if(destination.origin!==origin)throw new Error('Fixture request must stay local');
       const headers=new Headers(additional);if(session)headers.set('Cookie',session.cookieHeader());
       const response=await fetch(destination,{method,headers,body,redirect:'manual',signal:AbortSignal.any([AbortSignal.timeout(15000),...(signal?[signal]:[])])});session?.applyResponse(response);return response;
+    };
+    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin}={})=>{
+        const html=await (await request(route,{session})).text();
+        const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
+        const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
+        const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
+        const form=new FormData();for(const [key,value] of Object.entries(fields))if(value!==undefined)form.set(key,String(value));
+        let body;
+        if(transport==='native'){for(const [key,value] of reserved)form.append(key,value);body=form;}
+        else {body=await encodeReply([null,form]);headers.set('Accept','text/x-component');headers.set('Next-Action',actionId);}
+        return request(route,{session,method:'POST',headers,body});
     };
     fixtureStage='action-metadata';const html=await (await request('/forms')).text();
     const forms=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].map(match=>[...match[1].matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];}));
@@ -168,18 +196,10 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         else {const data=new FormData();for(const [key,value] of form.fields)if(!key.startsWith('$ACTION_'))data.append(key,value);for(const [key,value] of Object.entries(fields))data.set(key,value);body=await encodeReply([null,data]);headers.set('Accept','text/x-component');headers.set('Next-Action',form.id);}
         return request('/admin/invitations',{session,method:'POST',headers,body});
       },
-      async createFlight(fields,{session,transport='fetched',origin:requestOrigin=origin,page=false}={}){
-        const route=page?'/dashboard/flights/new':'/dashboard/flight-create-fixture';
-        const html=await (await request(route,{session})).text();
-        const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
-        const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
-        const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
-        const form=new FormData();for(const [key,value] of Object.entries(fields))if(value!==undefined)form.set(key,String(value));
-        let body;
-        if(transport==='native'){for(const [key,value] of reserved)form.append(key,value);body=form;}
-        else {body=await encodeReply([null,form]);headers.set('Accept','text/x-component');headers.set('Next-Action',actionId);}
-        return request(route,{session,method:'POST',headers,body});
+      createFlight(fields,{page=false,...settings}={}){
+        return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
+      submitInterest(fields,settings={}){return invokeFlightAction('/dashboard/interest-fixture',fields,settings);},
       async recipientAction(selected,fields,{session,transport='fetched',origin:requestOrigin=origin}={}){
         const route='/dashboard/recipient-fixture';const html=await (await request(route,{session})).text();
         const forms=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)];

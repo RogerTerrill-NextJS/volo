@@ -343,6 +343,9 @@ isOneToOne: false
                            },
 "reserve_profile_photo":
 { Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"submit_flight_interest":
+{ Args: { "p_flight_id": string,"p_introductory_note"?: string }; Returns: Json
                            }
           }
           Enums: {
