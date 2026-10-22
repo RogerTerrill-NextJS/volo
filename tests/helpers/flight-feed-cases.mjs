@@ -62,7 +62,12 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
   });
   const pageRead=async(label,path,headers={})=>{
    for(let attempt=0;attempt<3;attempt++){
-    const response=await app.request(path,{session:sessions[label],headers});
+    const session=sessions[label];
+    // The fixture JWT lasts 120s and the SDK refreshes inside 90s. Keep
+    // headroom so a multi-check read cannot cross that window mid-render.
+    // Refresh the owned cookie jar; never re-login or change membership.
+    if(session&&session.expiresAt*1000-Date.now()<110000)await session.refresh();
+    const response=await app.request(path,{session,headers});
     for(const h of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(h)??'',/no-store/);
     const raw=await response.text();stack.assertNoCredentialLeaks(raw);for(const session of Object.values(sessions))session.assertNoCredentialLeaks(raw);
     // React separates adjacent SSR text nodes with comments; assert the visible copy.
@@ -125,24 +130,24 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
    const route='/dashboard/flights/'+ids.selected;
    await checked(admin.from('flights').update({notes:'Detail notes\n<script>detail-xss-canary</script>'}).eq('id',ids.selected));
    const notes=await pageRead('member',route);
-   assert.ok(notes.text.includes('Detail notes'));
-   assert.ok(notes.text.includes('&lt;script&gt;detail-xss-canary&lt;/script&gt;'));
-   assert.ok(!notes.text.includes('<script>detail-xss-canary</script>'));
+   assert.ok(notes.text.includes('Detail notes'),'Authorized detail retains fixture notes');
+   assert.ok(notes.text.includes('&lt;script&gt;detail-xss-canary&lt;/script&gt;'),'Detail HTML escapes script-like notes');
+   assert.ok(!notes.text.includes('<script>detail-xss-canary</script>'),'Detail never emits executable fixture notes');
    await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});
-   try{const fallback=await pageRead('member',route);assert.ok(fallback.text.includes('Owned feed C172'));assert.ok(fallback.text.includes('Posting pilot information unavailable'));assert.ok(!fallback.text.includes('Owned Create Pilot'));}
+   try{const fallback=await pageRead('member',route);assert.ok(fallback.text.includes('Owned feed C172'),'Disabled posting pilot does not remove permitted flight');assert.ok(fallback.text.includes('Posting pilot information unavailable'),'Disabled posting pilot uses public-profile fallback');assert.ok(!fallback.text.includes('Owned Create Pilot'),'Disabled posting pilot profile stays hidden');}
    finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
    for(const [key,heading] of [['cancelled','Cancelled flight'],['completed','Completed flight'],['past','Past departure']]){
-    const page=await pageRead('member','/dashboard/flights/'+ids[key]);assert.ok(page.text.includes('Owned feed C172'));assert.ok(page.text.includes(heading));assert.ok(page.text.includes('no longer upcoming')||page.text.includes('not listed in upcoming flights'));
+    const page=await pageRead('member','/dashboard/flights/'+ids[key]);assert.ok(page.text.includes('Owned feed C172'),`${key}: authorized lifecycle detail remains visible`);assert.ok(page.text.includes(heading),`${key}: lifecycle heading rendered`);assert.ok(page.text.includes('no longer upcoming')||page.text.includes('not listed in upcoming flights'),`${key}: lifecycle notice rendered`);
     if(key==='past')assert.ok(!page.text.includes(' · Open'),'An elapsed open record is not presented as an upcoming open flight');
    }
    assert.ok(!notes.text.includes('id="flight-lifecycle"'),'Upcoming open details have no historical notice');
    const upcoming=await pageRead('member','/dashboard/flights');
    for(const key of ['past','cancelled','completed'])assert.ok(!upcoming.text.includes('/dashboard/flights/'+ids[key]),'Past and terminal records stay outside default upcoming results');
    await checked(admin.from('flights').update({departure_at:'2000-01-01T00:00:00Z',visibility:'PRIVATE'}).eq('id',ids.cancelled));
-   const ownCancelled=await pageRead('member','/dashboard/flights/'+ids.cancelled);assert.ok(ownCancelled.text.includes('Cancelled flight'));assert.ok(!ownCancelled.text.includes('Past departure'),'Stored cancellation takes precedence over elapsed departure');
-   const unrelatedCancelled=await pageRead('admin','/dashboard/flights/'+ids.cancelled);assert.ok(unrelatedCancelled.text.includes('Flight not found'));assert.ok(!unrelatedCancelled.text.includes('Cancelled flight'),'Terminal status grants no PRIVATE history bypass');
+   const ownCancelled=await pageRead('member','/dashboard/flights/'+ids.cancelled);assert.ok(ownCancelled.text.includes('Cancelled flight'),'Owner retains cancelled PRIVATE detail');assert.ok(!ownCancelled.text.includes('Past departure'),'Stored cancellation takes precedence over elapsed departure');
+   const unrelatedCancelled=await pageRead('admin','/dashboard/flights/'+ids.cancelled);assert.ok(unrelatedCancelled.text.includes('Flight not found'),'Unrelated admin receives safe missing cancelled PRIVATE detail');assert.ok(!unrelatedCancelled.text.includes('Cancelled flight'),'Terminal status grants no PRIVATE history bypass');
    await checked(admin.from('flight_recipients').delete().eq('flight_id',ids.selected).eq('user_id',accounts.member.id));
-   try{const removed=await pageRead('member',route);assert.ok(removed.text.includes('Flight not found'));assert.ok(!removed.text.includes('Detail notes'));}
+   try{const removed=await pageRead('member',route);assert.ok(removed.text.includes('Flight not found'),'Removed recipient receives safe missing detail');assert.ok(!removed.text.includes('Detail notes'),'Removed recipient cannot read prior flight notes');}
    finally{await checked(admin.from('flight_recipients').insert({flight_id:ids.selected,user_id:accounts.member.id}));}
    const feed=await pageRead('member','/dashboard/flights?dateFrom='+day);
    assert.ok(feed.text.includes('href="'+route+'"'),'Feed provides a real detail link');

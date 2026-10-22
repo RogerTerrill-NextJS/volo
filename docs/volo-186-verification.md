@@ -67,6 +67,40 @@ Initial test-development failures are described above; the final focused run is
 green. Full historical Auth/creation/RLS suites and unrelated units were not run.
 The compiled fixture builds the real flight pages and invokes their real actions.
 
+### CI timing correction
+
+The combined CI runner exposed a short-token timing issue that the initial
+feed-only run missed. The owned fixture JWT lasts 120 seconds, so it enters the
+SDK's 90-second refresh window after only 30 seconds. A multi-check page render
+can cross that boundary after proxy verification; the production read-only access
+check correctly fails closed if it must refresh without persisting cookies.
+
+A controlled local probe used the existing read-delay control with a retained
+session: 91 seconds remained before the read, 89 afterward, and the lifecycle page
+returned unavailable instead of notes. An ordinary combined local run also failed
+later on a NETWORK listing marker, confirming that assertion location varied with
+timing. No security expectation was relaxed.
+
+The flight page test reader now explicitly refreshes its owned cookie jar when
+less than 110 seconds remain, giving the read headroom before the SDK window.
+This keeps the same Auth session and never signs in again, resets cookies, or
+changes membership/recipient state. Both the initial read and any RSC negotiation
+receive preparation. Expiry/refresh behavior remains covered by the existing Auth
+scenarios; these flight scenarios verify current membership and visibility.
+Lifecycle assertions now include safe labels so sanitized CI output identifies
+the failed behavior without exposing response bodies or credentials.
+
+Post-fix controlled probe: the same jar refreshed before the read (120 seconds
+remaining before, 118 after), and the lifecycle detail rendered successfully.
+All 29 combined creation/recipient/feed/detail scenarios then passed, including
+both VOLO-186 cases; the owned app/database cleanup completed with exit 0.
+Focused ESLint, syntax and diff checks passed. Independent read-only review found
+no actionable issues. This local probe invokes the same `verifyFlightCreation`
+combined path as `--flight-create`, with the boundary aged before page preparation
+and the existing read-delay control enabled for that one read. The unmodified
+combined path had failed before the fix. Hosted CI confirmation follows the push;
+the full historical Auth suite was not run locally for this correction.
+
 ## Limits and remaining work
 
 VOLO-63/64 own request-action visibility when requests exist. VOLO-172's approved
