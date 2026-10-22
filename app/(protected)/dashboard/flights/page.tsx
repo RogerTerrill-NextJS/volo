@@ -20,7 +20,7 @@ async function FlightListing({search}:{search:ReturnType<typeof readFlightFeedSe
  if(result.status!=='authorized'){
  if(result.status==='unauthenticated')redirect('/login?reason=authentication-required');
  if(result.status==='forbidden')return <section role="alert" className="space-y-3"><h2 className="text-xl font-semibold">Access denied</h2><p>Your account does not currently have access to this workspace.</p></section>;
- if(result.status==='invalid')return <section aria-labelledby="flight-state-heading" className="space-y-3">
+ if(result.status==='invalid')return <section role="alert" aria-labelledby="flight-state-heading" className="space-y-3">
   <h2 id="flight-state-heading" className="text-xl font-semibold">Check your flight filters or page link</h2>
   <p>Use airport identifiers of 2–8 letters or numbers and a valid date range with the start on or before the end. Each filter can have one value.</p>
   <Link href={firstPage} prefetch={false} className={linkClass}>Back to first page</Link>
@@ -61,7 +61,7 @@ export default async function FlightsPage({searchParams}:{searchParams:Promise<R
     <legend className="mb-3 text-lg font-semibold">Filter flights</legend>
     {([['departureAirport','Departure airport'],['destinationAirport','Destination airport'],['dateFrom','Departure date from'],['dateTo','Departure date through']] as const).map(([field,label])=><div key={field} className="min-w-0 space-y-2">
      <label htmlFor={`feed-${field}`} className="block text-sm font-medium">{label}</label>
-     <input key={JSON.stringify([search.input,field])} id={`feed-${field}`} name={field} type={field.endsWith('Airport')?'text':'date'} maxLength={field.endsWith('Airport')?32:undefined} autoCapitalize={field.endsWith('Airport')?'characters':undefined} autoComplete="off" defaultValue={search.values[field]} className={inputClass}/>
+     <input key={JSON.stringify([search.input,field])} id={`feed-${field}`} name={field} type={field.endsWith('Airport')?'text':'date'} maxLength={field.endsWith('Airport')?32:undefined} autoCapitalize={field.endsWith('Airport')?'characters':undefined} autoComplete="off" defaultValue={search.values[field]} className={`${inputClass} scheme-light dark:scheme-dark`}/>
     </div>)}
    </fieldset>
    <p id="flight-filter-help" className="text-sm text-zinc-600 dark:text-zinc-400">Match exact airport identifiers and every populated filter. Dates include both endpoints in each flight’s departure timezone.</p>

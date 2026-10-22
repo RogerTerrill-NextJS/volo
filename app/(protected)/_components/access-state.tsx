@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+const linkClass="inline-flex min-h-11 items-center rounded-lg px-2 py-2 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4";
+
 export default function AccessState({ status,retryHref='/dashboard' }: { status: "forbidden" | "unavailable";retryHref?:string }) {
   const unavailable = status === "unavailable";
   return (
@@ -12,13 +14,13 @@ export default function AccessState({ status,retryHref='/dashboard' }: { status:
           ? "We cannot verify your access right now. Please try again."
           : "Your account does not currently have access to this workspace."}
       </p>
-      <nav aria-label="Access options" className="flex gap-6 text-sm font-medium">
+      <nav aria-label="Access options" className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium">
         {unavailable && (
-          <a href={retryHref} className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
+          <a href={retryHref} className={linkClass}>
             Try again
           </a>
         )}
-        <Link href="/" className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">
+        <Link href="/" className={linkClass}>
           Back to home
         </Link>
       </nav>
