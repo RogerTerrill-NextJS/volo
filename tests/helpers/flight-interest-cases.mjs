@@ -115,6 +115,76 @@ export async function verifyFlightInterest({stack,app,scenario}){
     expectCode(await invoke('pilot',id),'already_requested');
    }
   });
+  const page=async(id,label='pilot')=>{
+   const response=await app.request('/dashboard/flights/'+id,{session:sessions[label]});
+   for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
+   const body=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(body);
+   for(const session of Object.values(sessions))session.assertNoCredentialLeaks(body);
+   assert.ok(!body.includes('private-interest-error-canary'));
+   return {response,body};
+  };
+  const pageAction=async(id,fields={},settings={})=>{
+   const response=await app.interestPageAction(id,fields,{session:sessions.pilot,transport:'native',...settings});
+   for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
+   const body=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(body);
+   for(const session of Object.values(sessions))session.assertNoCredentialLeaks(body);
+   assert.ok(!body.includes('private-interest-error-canary'));return body;
+  };
+  const hasForm=body=>/<textarea[^>]*name="introductory_note"/.test(body);
+  await checkScenario('interest_detail_native_submission_and_pending_reload',async()=>{
+   const id=await newFlight();const initial=await page(id);assert.equal(initial.response.status,200);assert.ok(hasForm(initial.body));
+   assert.match(initial.body,/Introduction \(optional\)/);assert.match(initial.body,/Up to 500 characters/);
+   const result=await pageAction(id,{introductory_note:'Hello from the detail page'});assert.match(result,/Request pending/);
+   assert.ok(!hasForm((await page(id)).body),'Pending reload has no repeat-submit form');
+   const records=(await rows()).filter(r=>r.flight_id===id);assert.equal(records.length,1);assert.equal(records[0].introductory_note,'Hello from the detail page');assert.equal(records[0].requester_id,accounts.pilot.id);
+  });
+  await checkScenario('interest_detail_own_unavailable_and_profile_required_states',async()=>{
+   const id=await newFlight();assert.ok(!hasForm((await page(id,'owner')).body),'Owner cannot request own flight');
+   const profile=await page(id,'adminNoProfile');assert.ok(!hasForm(profile.body));assert.match(profile.body,/Complete your pilot profile/);
+   assert.match(profile.body,/<a[^>]*href="\/onboarding"[^>]*>Complete your pilot profile<\/a>/);
+   const edit=await app.request('/onboarding',{session:sessions.adminNoProfile});assert.equal(edit.status,200);assert.match(await edit.text(),/display_name/);
+   for(const extra of [{status:'cancelled'},{status:'completed'},{departure_at:'2000-01-01T00:00Z'}]){
+    const body=(await page(await newFlight(extra))).body;assert.ok(!hasForm(body));assert.match(body,/unavailable for new interest/);
+   }
+  });
+  await checkScenario('interest_detail_validation_resubmission_and_terminal_feedback',async()=>{
+   const id=await newFlight();const invalid=await pageAction(id,{introductory_note:'N'.repeat(501)});
+   assert.match(invalid,/Check your introduction/);assert.ok(hasForm(invalid));assert.equal((await rows()).filter(r=>r.flight_id===id).length,0);
+   const submitted=await pageAction(id,{introductory_note:'Fetched detail hello'},{transport:'fetched'});assert.match(submitted,/Request pending/);
+   const record=(await rows()).find(r=>r.flight_id===id);
+   await checked(admin.from('flight_requests').update({status:'withdrawn'}).eq('id',record.id));
+   assert.match((await page(id)).body,/Submit interest again/);
+   assert.match(await pageAction(id,{introductory_note:'Second introduction'}),/Request pending/);
+   assert.equal((await rows()).find(r=>r.flight_id===id).id,record.id);
+   await checked(admin.from('flight_requests').update({status:'accepted'}).eq('id',record.id));
+   const accepted=(await page(id)).body;assert.match(accepted,/Your request has been accepted/);assert.ok(!hasForm(accepted));
+   await checked(admin.from('flight_requests').update({status:'cancelled'}).eq('id',record.id));
+   const closed=(await page(id)).body;assert.match(closed,/closed and cannot be submitted again/);assert.ok(!hasForm(closed));
+  });
+  await checkScenario('interest_detail_full_and_uncertain_results_prevent_repeat_submission',async()=>{
+   const full=await newFlight();expectCode(await invoke('other',full),'submitted');
+   await checked(admin.from('flight_requests').update({status:'accepted'}).eq('flight_id',full));
+   assert.match(await pageAction(full),/unavailable for new interest/);assert.equal((await rows()).filter(r=>r.flight_id===full).length,1);
+   const id=await newFlight(),beforeCalls=await calls();await mode('lost');let uncertain;
+   try{uncertain=await pageAction(id,{introductory_note:'Keep this introduction'});}finally{await mode('off');}
+   assert.match(uncertain,/Unable to confirm your request/);assert.match(uncertain,/Keep this introduction/);assert.match(uncertain,/<fieldset[^>]*disabled/);assert.match(uncertain,/Check request status/);
+   assert.equal(await calls(),beforeCalls+1);const reloaded=(await page(id)).body;assert.match(reloaded,/Request pending/);assert.ok(!hasForm(reloaded));
+  });
+  await checkScenario('interest_detail_private_bypass_and_removed_history_never_expose_flight',async()=>{
+   const id=await newFlight({visibility:'PRIVATE',notes:'private-detail-interest-canary'}),source=await newFlight();
+   await checked(admin.from('flight_recipients').insert({flight_id:id,user_id:accounts.pilot.id}));
+   const denied=(await page(id,'other')).body;assert.ok(!hasForm(denied));assert.ok(!denied.includes('private-detail-interest-canary'));
+   const bypass=await pageAction(id,{}, {session:sessions.other,fromFlightId:source});assert.ok(!bypass.includes('private-detail-interest-canary'));assert.equal((await rows()).filter(r=>r.flight_id===id).length,0);
+   assert.match(await pageAction(id,{introductory_note:'Selected private pilot'}),/Request pending/);
+   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:id,p_recipient_id:accounts.pilot.id,p_selected:false}));
+   const removed=(await page(id)).body;assert.ok(!hasForm(removed));assert.ok(!removed.includes('private-detail-interest-canary'));
+   const history=await checked(clients.pilot.from('flight_requests').select('status').eq('flight_id',id));assert.deepEqual(history,[{status:'cancelled'}]);
+  });
+  await checkScenario('interest_detail_status_outage_fails_closed_with_reload_recovery',async()=>{
+   const id=await newFlight();await mode('read-outage');
+   try{const body=(await page(id)).body;assert.match(body,/Request status temporarily unavailable/);assert.ok(!hasForm(body));assert.match(body,/Check request status/);}finally{await mode('off');}
+   assert.ok(hasForm((await page(id)).body));
+  });
  }finally{
   await mode('off');
   if(flights.length){
