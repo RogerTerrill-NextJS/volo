@@ -12,7 +12,7 @@ export default function FlightDetails({flight,pilot,ownerActions,joinerActions}:
  const status={open:'Open',cancelled:'Cancelled',completed:'Completed'}[flight.status];
  return <article aria-labelledby="flight-route" className="min-w-0 space-y-8 rounded-2xl border border-zinc-200 bg-white p-5 [overflow-wrap:anywhere] sm:p-8 dark:border-zinc-800 dark:bg-zinc-950">
   <header className="space-y-3">
-   <p className="text-sm font-medium">{flight.visibility==='PRIVATE'?'Private':'Network'} · {status}</p>
+   <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{flight.visibility==='PRIVATE'?'Private':'Network'} · {status}</p>{flight.isOwn&&<span className="w-fit rounded-full border border-zinc-400 px-3 py-1 text-sm font-semibold dark:border-zinc-600">Your flight</span>}</div>
    <h1 id="flight-route" className="text-3xl font-semibold tracking-tight"><span className="sr-only">From </span>{flight.departure_airport}<span aria-hidden="true"> → </span><span className="sr-only"> to </span>{flight.destination_airport}</h1>
   </header>
   <dl className="grid gap-6 sm:grid-cols-2">

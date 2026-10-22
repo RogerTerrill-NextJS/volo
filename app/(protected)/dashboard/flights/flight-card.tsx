@@ -7,7 +7,7 @@ export default function FlightCard({flight}:{flight:FeedFlight}){
  return <li className="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-950">
   <article aria-labelledby={`flight-${flight.id}`} className="space-y-5 [overflow-wrap:anywhere]">
    <header className="space-y-3">
-    <p className="w-fit rounded-full bg-zinc-100 px-3 py-1 text-sm font-medium dark:bg-zinc-900">{flight.visibility==='PRIVATE'?'Private':'Network'}</p>
+    <div className="flex flex-wrap items-center gap-2"><p className="w-fit rounded-full bg-zinc-100 px-3 py-1 text-sm font-medium dark:bg-zinc-900">{flight.visibility==='PRIVATE'?'Private':'Network'}</p>{flight.isOwn&&<span className="w-fit rounded-full border border-zinc-400 px-3 py-1 text-sm font-semibold dark:border-zinc-600">Your flight</span>}</div>
     <h2 id={`flight-${flight.id}`} className="text-xl font-semibold tracking-tight"><Link href={`/dashboard/flights/${flight.id}`} prefetch={false} className="inline-flex min-h-11 flex-wrap items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"><span className="sr-only">From </span>{flight.departure_airport}<span aria-hidden="true"> → </span><span className="sr-only"> to </span>{flight.destination_airport}</Link></h2>
    </header>
    <dl className="space-y-4">

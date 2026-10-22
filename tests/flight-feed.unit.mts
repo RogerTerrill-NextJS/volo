@@ -41,7 +41,7 @@ test('feed cursor retains microseconds, breaks tied timestamps by ID and binds n
 test('feed projects only card fields without recipient lists, notes, private account data or invented availability',async()=>{
  const result=await listUpcomingFlights({},ports([{...row(),notes:'private-canary',email:'private-canary',recipients:['private-canary'],role:'admin'}]));
  assert.equal(result.status,'authorized');if(result.status!=='authorized')return;
- assert.deepEqual(result.rows,[{id:id(1),owner_id:id(90),departure_airport:'KPAO',destination_airport:'KSQL',departure_at:'2030-06-01T18:00:00.000001Z',departure_timezone:'America/Los_Angeles',departure_local_date:'2030-06-01',aircraft_description:'C172',pilot_places:2,visibility:'NETWORK'}]);
+ assert.deepEqual(result.rows,[{id:id(1),owner_id:id(90),departure_airport:'KPAO',destination_airport:'KSQL',departure_at:'2030-06-01T18:00:00.000001Z',departure_timezone:'America/Los_Angeles',departure_local_date:'2030-06-01',aircraft_description:'C172',pilot_places:2,visibility:'NETWORK',isOwn:false}]);
  assert.ok(!JSON.stringify(result).includes('private-canary'));
 });
 test('feed fails closed on corrupt rows, past/terminal data, invalid ordering and broken filters',async()=>{
@@ -61,4 +61,13 @@ test('feed uses the current instant on every page and preserves microsecond depa
  if(first.status==='authorized'){clock=now+86400000;assert.deepEqual(await listUpcomingFlights({pageSize:1,after:first.nextCursor},p),{status:'authorized',rows:[],nextCursor:null});}
  assert.deepEqual(seen,['2030-06-01T00:00:00.000000Z','2030-06-02T00:00:00.000000Z']);
  assert.deepEqual(await listUpcomingFlights({}, {...ports(),now:()=>NaN}),{status:'unavailable'});
+});
+
+test('feed ownership is derived from the verified viewer, never role or supplied ownership metadata',async()=>{
+ for(const role of ['member','admin'] as const)for(const own of [false,true]){
+  const viewer=own?id(90):id(99);
+  const result=await listUpcomingFlights({}, {...ports([{...row(),isOwn:!own,user_metadata:{userId:id(90)},role:'admin'}]),access:async()=>({status:'authorized',member:{userId:viewer,role}})});
+  assert.equal(result.status,'authorized');if(result.status!=='authorized')return;
+  assert.equal(result.rows[0].isOwn,own);
+ }
 });
