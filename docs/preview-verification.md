@@ -1,6 +1,6 @@
 # Deploy Preview routing verification
 
-Current checks updated for VOLO-154; historical VOLO-109 evidence is below.
+Current checks updated for VOLO-237; historical VOLO-109 evidence is below.
 Pre-release checks use Netlify Deploy Previews;
 VOLO has no separate staging environment.
 
@@ -21,7 +21,7 @@ it does not access Supabase or write application data.
 
 | Check | Expected result |
 | --- | --- |
-| `GET /` | 200, HTML with dashboard navigation |
+| Anonymous `GET /` | 307 to fixed `/login?reason=authentication-required`; private/no-store |
 | `GET /login` | 200, native email/password form and home link; private/no-store |
 | Anonymous `GET /dashboard` | Redirect to fixed `/login?reason=authentication-required`, no incoming query forwarded; no Workspace overview; private/no-store |
 | Repeated anonymous `GET /dashboard?verification=volo-109` | Same safe login destination without forwarded query or workspace content |
@@ -35,18 +35,20 @@ it does not access Supabase or write application data.
 Dashboard denial is checked without executing browser JavaScript; redirects can
 be HTTP redirects or the framework's streamed/RSC protocol. The dashboard is
 dynamic and checks verified identity/current membership on each server request.
-The homepage is public/static; the public login form is dynamic/private.
+The homepage is dynamic/private and checks current access: active members reach
+`/dashboard/flights?source=home`; anonymous visitors reach the fixed login URL.
+Inactive/unadmitted users receive Access denied, and service failures fail closed.
+The publicly reachable login form is also dynamic/private.
 `/api/health` is the dynamic Route Handler served by the OpenNext server function.
-There is currently no valid multi-level UI page below `/dashboard`; the nested
-API path and unknown deeper UI paths cover the routes available today. Add valid
-deeper page cases when those pages are implemented.
+Flight feed, creation and detail pages now provide valid nested dashboard routes;
+feature verification records cover those authenticated flows.
 
 ## Browser checks
 
 1. Open the preview's `/dashboard?verification=volo-116` anonymously. Confirm
    `/login`, the email/password form, and no workspace overview.
 2. Reload. Confirm `/login` remains usable with no redirect loop.
-3. Follow Back to home, then Open dashboard. Confirm navigation reaches login.
+3. Follow Back to home. Confirm the root returns to login without a redirect loop.
 4. Use browser Back and Forward. Confirm the URL and visible page agree.
 5. Check browser console errors and save the login-state screenshot.
 

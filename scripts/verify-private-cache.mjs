@@ -20,6 +20,44 @@ const absorb=(reply,jar)=>{
 };
 try {
   const {A,B}=fixture.accounts;
+  // Actual homepage: redirects are decisions, not cacheable grants.
+  for(const headers of [{},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){
+    for(const account of [null,A,B,null,A]){
+      const {reply,hit}=await cache.request('home'+JSON.stringify(headers),()=>fixture.request('/?next=https://foreign.invalid&token=homepage-query-canary',account?.jar,headers));
+      assert.equal(hit,false);policy(reply);
+      const expected=account?'/dashboard/flights?source=home':'/login?reason=authentication-required';
+      // Next can omit dynamic content entirely during a static prefetch.
+      if(headers['Next-Router-Prefetch']&&reply.status===200&&!reply.body.includes('NEXT_REDIRECT')){
+        assert.equal(reply.headers.get('location'),null);
+        assert.ok(!reply.body.includes(A.entry.id)&&!reply.body.includes(B.entry.id));continue;
+      }
+      if(headers.RSC&&reply.status===200)assert.ok(reply.body.includes('NEXT_REDIRECT;replace;'+expected+';307;'),'RSC carries the fixed redirect instruction');
+      else assert.equal(reply.status,307);
+      const location=new URL(reply.headers.get('location')??expected,fixture.origin);
+      assert.equal(location.origin,fixture.origin);
+      assert.equal(location.pathname,account?'/dashboard/flights':'/login');
+      assert.equal(location.search,account?'?source=home':'?reason=authentication-required');
+      // Next may serialize the original request URL; only the redirect target must be fixed.
+      assert.doesNotMatch(reply.body,/NEXT_REDIRECT;[^;]*;[^;]*homepage-query-canary/);
+    }
+  }
+  for(const mode of ['disabled','absent','membership-outage','auth-outage']){
+    const old={status:A.entry.status,membership:A.entry.membership,auth:A.entry.auth};
+    if(mode==='disabled')A.entry.status='disabled';
+    if(mode==='absent')A.entry.membership='absent';
+    if(mode==='membership-outage')A.entry.membership='down';
+    if(mode==='auth-outage')A.entry.auth='down';
+    try{
+      const reply=await fixture.request('/',A.jar);policy(reply);
+      assert.equal(reply.headers.get('location'),null);
+      assert.match(reply.body,mode.endsWith('outage')?/unavailable|Unable to verify/i:/Access denied/);
+    }finally{Object.assign(A.entry,old);}
+  }
+  const first=await fixture.request('/');
+  const loginDestination=new URL(first.headers.get('location'),fixture.origin);
+  const landing=await fixture.request(loginDestination.pathname+loginDestination.search);assert.equal(landing.status,200);assert.equal(landing.headers.get('location'),null);
+  console.log('PASS: homepage routes anonymous/active viewers, denies inactive/unadmitted viewers, fails closed on outages and strips incoming query parameters');
+
   for(const route of ["/dashboard/cache-check","/api/cache-check"]){
     const variants=route.startsWith("/dashboard")?[{}, {RSC:"1"},{RSC:"1","Next-Router-Prefetch":"1"}]:[{}];
     for(const headers of variants)for(const throughCache of [false,true])for(const account of [A,B,null,A]){
@@ -66,10 +104,10 @@ try {
   await unsafe.request("same",()=>weaken(A));const replay=await unsafe.request("same",()=>weaken(B));
   assert.equal(replay.hit,true);assert.throws(()=>assert.ok(replay.reply.body.includes(B.entry.id)),assert.AssertionError);
   const manifest=JSON.parse(await readFile(path.join(fixture.directory,".next/prerender-manifest.json"),"utf8"));
-  for(const route of Object.keys(manifest.routes))assert.ok(!route.startsWith("/dashboard")&&route!=='/login');
+  for(const route of Object.keys(manifest.routes))assert.ok(!route.startsWith("/dashboard")&&route!=='/login'&&route!=='/');
   const login=await fixture.request('/login');policy(login);assert.equal(login.headers.getSetCookie().length,0);
-  for(const route of ["/"]){const reply=await fixture.request(route);assert.doesNotMatch(reply.headers.get("cache-control")??"",/private|no-store/);assert.equal(reply.headers.get("cdn-cache-control"),null);}
-  const home=await fixture.request("/");const asset=home.body.match(/(?:src|href)="([^"?]*\/_next\/static\/[^"?]+\.js)/)?.[1];assert.ok(asset);
+  const health=await fixture.request("/api/health");assert.equal(health.status,200);assert.equal(health.headers.get("cdn-cache-control"),null);
+  const asset=login.body.match(/(?:src|href)="([^"?]*\/_next\/static\/[^"?]+\.js)/)?.[1];assert.ok(asset);
   const before=fixture.backend.calls.length;const staticReply=await fixture.request(asset,A.jar);assert.match(staticReply.headers.get("cache-control"),/public.*immutable/);assert.equal(fixture.backend.calls.length,before);assert.equal(staticReply.headers.getSetCookie().length,0);
   async function scan(directory){for(const entry of await readdir(directory,{withFileTypes:true})){const file=path.join(directory,entry.name);if(entry.isDirectory())await scan(file);else fixture.clean(await readFile(file,"utf8"));}}
   await scan(path.join(fixture.directory,".next/static"));fixture.clean(fixture.output);assert.deepEqual(fixture.backend.unexpected,[]);

@@ -59,23 +59,33 @@ async function request(route,headers={},method="GET",privatePath=false){
     }else assert.equal(response.status,200);
     if(headers.RSC && response.status===307){
       const next=new URL(response.headers.get("location"),origin);assert.equal(next.origin,origin);
-      if(next.pathname==="/dashboard" && next.searchParams.has("_rsc")){route=next.pathname+next.search;continue;}
+      if(next.pathname===new URL(route,origin).pathname && next.searchParams.has("_rsc")){route=next.pathname+next.search;continue;}
     }
     if(privatePath && response.headers.has("location"))assert.equal(new URL(response.headers.get("location"),origin).href,origin+"/login?reason=authentication-required");
     return {response,body};
   }
   assert.fail("RSC negotiation did not settle");
 }
-const home=await request("/");
-const asset=home.body.match(/(?:src|href)="([^"?]*\/_next\/static\/[^"?]+\.js)/)?.[1];assert.ok(asset);
+const login=await request('/login');
+assert.match(login.response.headers.get('cache-control')??'',/private.*no-store/);
+const asset=login.body.match(/(?:src|href)="([^"?]*\/_next\/static\/[^"?]+\.js)/)?.[1];assert.ok(asset);
 for(let repeat=0;repeat<3;repeat++){
-  for(const headers of [{},{RSC:"1"},{RSC:"1","Next-Router-Prefetch":"1"}])await request("/dashboard",headers,"GET",true);
-  await request("/dashboard",{},"HEAD",true);
+  for(const route of ['/','/?next=https://foreign.invalid&token=homepage-query-canary','/dashboard']){
+    for(const headers of [{},{RSC:'1'},{RSC:'1','Next-Router-Prefetch':'1'}]){
+      const result=await request(route,headers,'GET',true);
+      if(new URL(route,origin).pathname==='/'){
+        if(headers['Next-Router-Prefetch']&&result.response.status===200&&!result.body.includes('NEXT_REDIRECT'))continue;
+        if(headers.RSC&&result.response.status===200)assert.ok(result.body.includes('NEXT_REDIRECT;replace;/login?reason=authentication-required;307;'));
+        else {assert.equal(result.response.status,307);assert.equal(new URL(result.response.headers.get('location'),origin).href,origin+'/login?reason=authentication-required');}
+      }
+    }
+    await request(route,{},'HEAD',true);
+  }
   const login=await request('/login');assert.match(login.response.headers.get('cache-control')??'',/private.*no-store/);assert.equal(login.response.headers.getSetCookie().length,0);
-  for(const route of ["/",asset]){
+  for(const route of ['/api/health',asset]){
     const {response}=await request(route);
-    assert.doesNotMatch(response.headers.get("cache-control")??"",/private|no-store/);
-    if(route===asset)assert.match(response.headers.get("cache-control")??"",/public.*immutable/);
+    assert.doesNotMatch(response.headers.get('cache-control')??'',/private|no-store/);
+    if(route===asset)assert.match(response.headers.get('cache-control')??'',/public.*immutable/);
   }
 }
 if(inconclusive){

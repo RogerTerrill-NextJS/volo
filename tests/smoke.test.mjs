@@ -61,10 +61,12 @@ after(() => {
   server?.kill();
 });
 
-test("homepage provides navigation to the dashboard", async () => {
-  const response = await fetch(`${baseUrl}/`, { signal: AbortSignal.timeout(5000) });
-  assert.equal(response.status, 200);
-  assert.match(await response.text(), /href="\/dashboard"/);
+test("homepage redirects anonymous visitors to fixed sign-in with private cache policy", async () => {
+  const response=await fetch(`${baseUrl}/?next=https://foreign.invalid&token=homepage-canary`,{redirect:'manual',signal:AbortSignal.timeout(5000)});
+  assert.equal(response.status,307);
+  assert.equal(new URL(response.headers.get('location'),baseUrl).href,baseUrl+'/login?reason=authentication-required');
+  protectedPolicy(response);
+  assert.doesNotMatch(await response.text(),/NEXT_REDIRECT;[^;]*;[^;]*homepage-canary|To get started/);
 });
 
 test("public login provides the agreed destination and navigation home", async () => {

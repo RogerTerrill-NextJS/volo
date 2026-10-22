@@ -32,7 +32,10 @@ test("real SDK Proxy isolates refreshes, preserves replacements and rejects outa
     assert.match(anonymous.response.headers.get("cache-control")!, /private/);
     for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]) assert.equal(anonymous.response.headers.get(field),"no-store");
     for(const jar of [new Map<string,string>(),new Map([[key+"-code-verifier","pending"]])]) {
-      const publicResult=await refreshSupabaseSession(request(jar,"/"));
+      const home=await refreshSupabaseSession(request(jar,"/"));
+      assert.match(home.response.headers.get("cache-control")!,/private.*no-store/);
+      for(const field of ["cdn-cache-control","netlify-cdn-cache-control"])assert.equal(home.response.headers.get(field),"no-store");
+      const publicResult=await refreshSupabaseSession(request(jar,"/public-fixture"));
       assert.equal(publicResult.response.headers.get("cache-control"),null);
       assert.equal(publicResult.response.headers.get("cdn-cache-control"),null);
     }
