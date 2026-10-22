@@ -121,9 +121,16 @@ export async function verifyUpcomingFlightFeed({stack,app,scenario,accounts,sess
    await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});
    try{const fallback=await pageRead('member',route);assert.ok(fallback.text.includes('Owned feed C172'));assert.ok(fallback.text.includes('Posting pilot information unavailable'));assert.ok(!fallback.text.includes('Owned Create Pilot'));}
    finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
-   for(const [key,status] of [['cancelled','Cancelled'],['completed','Completed'],['past','Open']]){
-    const page=await pageRead('member','/dashboard/flights/'+ids[key]);assert.ok(page.text.includes('Owned feed C172'));assert.ok(page.text.includes(status));
+   for(const [key,heading] of [['cancelled','Cancelled flight'],['completed','Completed flight'],['past','Past departure']]){
+    const page=await pageRead('member','/dashboard/flights/'+ids[key]);assert.ok(page.text.includes('Owned feed C172'));assert.ok(page.text.includes(heading));assert.ok(page.text.includes('no longer upcoming')||page.text.includes('not listed in upcoming flights'));
+    if(key==='past')assert.ok(!page.text.includes(' · Open'),'An elapsed open record is not presented as an upcoming open flight');
    }
+   assert.ok(!notes.text.includes('id="flight-lifecycle"'),'Upcoming open details have no historical notice');
+   const upcoming=await pageRead('member','/dashboard/flights');
+   for(const key of ['past','cancelled','completed'])assert.ok(!upcoming.text.includes('/dashboard/flights/'+ids[key]),'Past and terminal records stay outside default upcoming results');
+   await checked(admin.from('flights').update({departure_at:'2000-01-01T00:00:00Z',visibility:'PRIVATE'}).eq('id',ids.cancelled));
+   const ownCancelled=await pageRead('member','/dashboard/flights/'+ids.cancelled);assert.ok(ownCancelled.text.includes('Cancelled flight'));assert.ok(!ownCancelled.text.includes('Past departure'),'Stored cancellation takes precedence over elapsed departure');
+   const unrelatedCancelled=await pageRead('admin','/dashboard/flights/'+ids.cancelled);assert.ok(unrelatedCancelled.text.includes('Flight not found'));assert.ok(!unrelatedCancelled.text.includes('Cancelled flight'),'Terminal status grants no PRIVATE history bypass');
    await checked(admin.from('flight_recipients').delete().eq('flight_id',ids.selected).eq('user_id',accounts.member.id));
    try{const removed=await pageRead('member',route);assert.ok(removed.text.includes('Flight not found'));assert.ok(!removed.text.includes('Detail notes'));}
    finally{await checked(admin.from('flight_recipients').insert({flight_id:ids.selected,user_id:accounts.member.id}));}

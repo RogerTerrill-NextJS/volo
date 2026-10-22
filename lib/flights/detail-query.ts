@@ -5,15 +5,15 @@ import type {FeedFlight} from './feed-query.ts';
 import {formatFeedDeparture} from './feed-view.ts';
 import {normalizeAirportIdentifier} from '../validation/airport.ts';
 
-export type DetailFlight=FeedFlight & {notes:string|null;status:'open'|'cancelled'|'completed'};
-export type FlightDetailPorts={access:()=>Promise<AccessResult>;readRow:(id:string)=>Promise<unknown>;readPilot:(id:string)=>Promise<NetworkProfileResult>};
+export type DetailFlight=FeedFlight & {isPast:boolean;notes:string|null;status:'open'|'cancelled'|'completed'};
+export type FlightDetailPorts={now:()=>number;access:()=>Promise<AccessResult>;readRow:(id:string)=>Promise<unknown>;readPilot:(id:string)=>Promise<NetworkProfileResult>};
 export type FlightDetailResult={status:'authorized';flight:DetailFlight;pilot:DirectoryProfile|null}|{status:'unauthenticated'|'forbidden'|'unavailable'|'missing'};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const columns='id,owner_id,departure_airport,destination_airport,departure_at,departure_timezone,departure_local_date,aircraft_description,pilot_places,visibility,status,notes';
 const unavailable=()=>new Error('Flight detail unavailable.');
 const text=(value:unknown):value is string=>typeof value==='string'&&value.isWellFormed()&&!value.includes('\u0000');
 
-function project(input:unknown,target:string):Omit<DetailFlight,'isOwn'>{
+function project(input:unknown,target:string):Omit<DetailFlight,'isOwn'|'isPast'>{
  if(!input||typeof input!=='object'||Array.isArray(input))throw unavailable();
  const row=input as Record<string,unknown>;
  if(typeof row.id!=='string'||row.id.toLowerCase()!==target||typeof row.owner_id!=='string'||!uuid.test(row.owner_id)
@@ -34,7 +34,7 @@ function project(input:unknown,target:string):Omit<DetailFlight,'isOwn'>{
 
 /** Session credentials preserve RLS; no privileged client or recipient/membership joins. */
 export function createFlightDetailPorts():FlightDetailPorts{
- return {access:async()=>(await import('../auth/access.ts')).getAccess(),readPilot:async id=>(await import('../profiles/directory-query.ts')).getNetworkProfile(id),async readRow(id){
+ return {now:()=>Date.now(),access:async()=>(await import('../auth/access.ts')).getAccess(),readPilot:async id=>(await import('../profiles/directory-query.ts')).getNetworkProfile(id),async readRow(id){
   const {flightMutationClient}=await import('./client.ts');
   const client=await flightMutationClient();
   const result=await client.from('flights').select(columns).eq('id',id).retry(false).maybeSingle();
@@ -57,6 +57,9 @@ export async function getFlightDetail(id:unknown,ports:FlightDetailPorts=createF
   if(pilot.status==='unauthenticated'||pilot.status==='forbidden')return {status:pilot.status};
   const after=await ports.access();if(after.status!=='authorized')return {status:after.status};
   if(after.member.userId!==before.member.userId)return {status:'forbidden'};
-  return {status:'authorized',flight:{...flight,isOwn:flight.owner_id===after.member.userId},pilot:pilot.status==='authorized'?pilot.profile:null};
+  // Pad the server millisecond clock to PostgreSQL precision; never round the stored instant.
+  const now=new Date(ports.now()).toISOString().replace(/Z$/,'000Z');
+  if(!/^\d{4}-/.test(now))throw unavailable();
+  return {status:'authorized',flight:{...flight,isPast:flight.departure_at<=now,isOwn:flight.owner_id===after.member.userId},pilot:pilot.status==='authorized'?pilot.profile:null};
  }catch{return {status:'unavailable'};}
 }

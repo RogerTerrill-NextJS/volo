@@ -9,12 +9,19 @@ const linkClass='inline-flex min-h-11 w-fit items-center underline underline-off
 /** Action slots remain empty until their tickets provide fresh authorization and behavior. */
 export default function FlightDetails({flight,pilot,ownerActions,joinerActions}:{flight:DetailFlight;pilot:DirectoryProfile|null;ownerActions?:ReactNode;joinerActions?:ReactNode}){
  const departure=formatFeedDeparture(flight.departure_at,flight.departure_timezone);
- const status={open:'Open',cancelled:'Cancelled',completed:'Completed'}[flight.status];
+ const status=flight.status==='open'&&flight.isPast?'Past departure':{open:'Open',cancelled:'Cancelled',completed:'Completed'}[flight.status];
+ const notice=flight.status==='cancelled'?{heading:'Cancelled flight',message:'This flight has been cancelled and is not listed in upcoming flights.'}
+  :flight.status==='completed'?{heading:'Completed flight',message:'This flight is marked as completed and is not listed in upcoming flights.'}
+  :flight.isPast?{heading:'Past departure',message:'The scheduled departure time has passed. This flight is no longer upcoming.'}:null;
  return <article aria-labelledby="flight-route" className="min-w-0 space-y-8 rounded-2xl border border-zinc-200 bg-white p-5 [overflow-wrap:anywhere] sm:p-8 dark:border-zinc-800 dark:bg-zinc-950">
   <header className="space-y-3">
    <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-medium">{flight.visibility==='PRIVATE'?'Private':'Network'} · {status}</p>{flight.isOwn&&<span className="w-fit rounded-full border border-zinc-400 px-3 py-1 text-sm font-semibold dark:border-zinc-600">Your flight</span>}</div>
    <h1 id="flight-route" className="text-3xl font-semibold tracking-tight"><span className="sr-only">From </span>{flight.departure_airport}<span aria-hidden="true"> → </span><span className="sr-only"> to </span>{flight.destination_airport}</h1>
   </header>
+  {notice&&<section aria-labelledby="flight-lifecycle" className="space-y-2 rounded-xl border border-zinc-300 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-900">
+   <h2 id="flight-lifecycle" className="text-lg font-semibold">{notice.heading}</h2>
+   <p>{notice.message}</p>
+  </section>}
   <dl className="grid gap-6 sm:grid-cols-2">
    <div><dt className="text-sm text-zinc-600 dark:text-zinc-400">Departure local time</dt><dd className="mt-1 font-medium">{departure?<time dateTime={flight.departure_at}>{departure.localDate} at {departure.localTime}<span className="mt-1 block text-sm font-normal">{departure.timeZone} ({departure.utcOffset})</span></time>:'Departure time unavailable'}</dd></div>
    <div><dt className="text-sm text-zinc-600 dark:text-zinc-400">Aircraft</dt><dd className="mt-1">{flight.aircraft_description}</dd></div>
