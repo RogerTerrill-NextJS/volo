@@ -46,7 +46,6 @@ export async function startCacheFixture() {
     for(const name of ["lib","app","proxy.ts","tsconfig.json","next.config.ts"])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
     await put("package.json",JSON.stringify({private:true,type:"module"}));
     await put("app/layout.tsx","export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}");
-    await put("app/page.tsx",'import Link from "next/link"; export default function Page(){return <main><h1>Public cache fixture</h1><Link href="/dashboard/cache-check" prefetch={false}>Private page</Link><br/><Link href="/fixture-controls" prefetch={false}>Fixture controls</Link></main>}');
     await put("app/(protected)/dashboard/cache-check/page.tsx",`import Link from 'next/link';import {getPageAccess} from '../../../../lib/auth/page-access';import AccessState from '../../_components/access-state';import AppShell from '../../_components/app-shell';
       export default async function Page(){const access=await getPageAccess();if(access.status!=='authorized')return <AccessState status={access.status}/>;
       return <AppShell><p>{'subject:'+access.member.userId}</p><Link href='/' prefetch={false}>Public page</Link><br/><Link href='/fixture-controls' prefetch={false}>Fixture controls</Link></AppShell>;}`);

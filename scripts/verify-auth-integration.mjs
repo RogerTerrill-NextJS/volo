@@ -666,8 +666,9 @@ try{
       });
       await scenario('private_cache',async()=>{
         for(const session of [users.A,users.B,users.disabled,undefined]){privatePolicy(await read('/api/subject',{session}));const result=await page(session);privatePolicy(result.response);}
-        const publicResponse=await read('/');check(publicResponse.status===200,'public control');check(!/no-store/.test(publicResponse.headers.get('cache-control')??''),'public cacheability');
-        const html=await publicResponse.text(),asset=html.match(/(?:src|href)="([^" ]*\/_next\/static\/[^" ]+)"/)?.[1];check(Boolean(asset),'static control asset');const staticResponse=await read(asset);check(staticResponse.status===200,'static control status');check(/max-age|immutable/.test(staticResponse.headers.get('cache-control')??''),'static cacheability');
+        privatePolicy(await read('/'));
+        const publicResponse=await read('/api/health');check(publicResponse.status===200,'public control');check(!/no-store/.test(publicResponse.headers.get('cache-control')??''),'public cacheability');
+        const html=await (await read('/login')).text(),asset=html.match(/(?:src|href)="([^" ]*\/_next\/static\/[^" ]+)"/)?.[1];check(Boolean(asset),'static control asset');const staticResponse=await read(asset);check(staticResponse.status===200,'static control status');check(/max-age|immutable/.test(staticResponse.headers.get('cache-control')??''),'static cacheability');
       });
       await scenario('retained_credentials_after_logout',async()=>{
         const session=await fresh('A'),retained=session.clone();sessions.push(retained);await session.signOut();const observations=await retained.probeRetainedCredentials();
