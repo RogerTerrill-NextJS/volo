@@ -33,7 +33,7 @@ try{
     const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
     stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal,applicationOrigin});
     if(process.argv.includes('--flight-interest')){
-      setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,interest:true});
+      setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,interest:true,flights:true});
       setupStage='flight-interest';await verifyFlightInterest({stack,app,scenario});
     }else if(process.argv.includes('--flight-create')||process.argv.includes('--flight-feed')){
       setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,flights:true});

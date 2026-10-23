@@ -90,6 +90,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned eligibility race setup rejected');
         }
       }
+      if(url.pathname==='/rest/v1/flight_requests'&&(!init?.method||init.method==='GET')&&globalThis.__voloInterestMode==='read-outage')return Response.json({code:'private-interest-error-canary'},{status:503});
       if(url.pathname==='/rest/v1/rpc/submit_flight_interest'){
         globalThis.__voloInterestCalls=(globalThis.__voloInterestCalls??0)+1;
         const mode=globalThis.__voloInterestMode;
@@ -152,8 +153,9 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/api/recipient-candidates/route.ts',`import {listRecipientCandidates} from '../../../lib/flights/recipient-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const response=Response.json(await listRecipientCandidates());applyPrivateResponseHeaders(response.headers);return response;}`);
     }
     if(interest){
+      await cp(path.join(root,'app/(protected)/onboarding'),path.join(directory,'app/(protected)/onboarding'),{recursive:true});
       await put('app/dashboard/interest-fixture/page.tsx',`import {submitFlightInterest} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={submitFlightInterest} label="Interested fixture"/></main>}`);
-      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^(disable|full):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
+      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage'].includes(mode)&&!/^(disable|full):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
     }
     if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
     if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));
@@ -166,7 +168,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       const headers=new Headers(additional);if(session)headers.set('Cookie',session.cookieHeader());
       const response=await fetch(destination,{method,headers,body,redirect:'manual',signal:AbortSignal.any([AbortSignal.timeout(15000),...(signal?[signal]:[])])});session?.applyResponse(response);return response;
     };
-    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin}={})=>{
+    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route}={})=>{
         const html=await (await request(route,{session})).text();
         const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
         const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
@@ -175,7 +177,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         let body;
         if(transport==='native'){for(const [key,value] of reserved)form.append(key,value);body=form;}
         else {body=await encodeReply([null,form]);headers.set('Accept','text/x-component');headers.set('Next-Action',actionId);}
-        return request(route,{session,method:'POST',headers,body});
+        return request(postRoute,{session,method:'POST',headers,body});
     };
     fixtureStage='action-metadata';const html=await (await request('/forms')).text();
     const forms=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].map(match=>[...match[1].matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];}));
@@ -200,6 +202,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
       submitInterest(fields,settings={}){return invokeFlightAction('/dashboard/interest-fixture',fields,settings);},
+      interestPageAction(id,fields,{fromFlightId=id,...settings}={}){return invokeFlightAction('/dashboard/flights/'+fromFlightId,{flight_id:id,...fields},{...settings,postRoute:'/dashboard/flights/'+id});},
       async recipientAction(selected,fields,{session,transport='fetched',origin:requestOrigin=origin}={}){
         const route='/dashboard/recipient-fixture';const html=await (await request(route,{session})).text();
         const forms=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)];

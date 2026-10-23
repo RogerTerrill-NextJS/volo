@@ -6,6 +6,8 @@ import {getFlightDetail} from '../../../../../lib/flights/detail-query';
 import AppShell from '../../../_components/app-shell';
 import AccessState from '../../../_components/access-state';
 import FlightDetails from './flight-details';
+import InterestForm,{type InterestMode} from './interest-form';
+import {getOwnFlightInterest} from '../../../../../lib/flights/interest-query';
 
 export const metadata:Metadata={title:'Flight detail | Volo',robots:{index:false,follow:false}};
 const linkClass='inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
@@ -28,9 +30,25 @@ export default async function FlightDetailPage({params}:{params:Promise<{flightI
    <Link href="/dashboard/flights" prefetch={false} className={linkClass}>Back to upcoming flights</Link>
   </AppShell>;
  }
+ let interest:InterestMode='error';
+ if(!result.flight.isOwn){
+  const own=await getOwnFlightInterest(result.flight.id);
+  if(own.status!=='authorized'){
+   if(own.status==='unauthenticated')redirect('/login?reason=authentication-required');
+   if(own.status==='forbidden')return <AccessState status="forbidden"/>;
+   if(own.status==='missing')notFound();
+   return <AccessState status="unavailable" retryHref={`/dashboard/flights/${result.flight.id}`}/>;
+  }
+  if(own.requestStatus==='pending'||own.requestStatus==='accepted')interest=own.requestStatus;
+  else if(own.requestStatus==='declined'||own.requestStatus==='cancelled')interest='closed';
+  else if(own.requestStatus==='unavailable')interest='error';
+  else if(result.flight.isPast||result.flight.status!=='open')interest='flight_unavailable';
+  else if(own.profileStatus==='missing')interest='profile_required';
+  else if(own.profileStatus==='unavailable')interest='error';
+  else interest=own.requestStatus==='withdrawn'?'resubmit':'ready';
+ }
  return <AppShell isAdmin={access.member.role==='admin'}>
   <Link href="/dashboard/flights" prefetch={false} className={linkClass}><span aria-hidden="true" className="mr-2">←</span>Back to upcoming flights</Link>
-  {/* Later owner/edit and joiner/request tickets supply their authorized action slots. */}
-  <FlightDetails flight={result.flight} pilot={result.pilot}/>
+  <FlightDetails flight={result.flight} pilot={result.pilot} joinerActions={!result.flight.isOwn?<InterestForm flightId={result.flight.id} mode={interest}/>:undefined}/>
  </AppShell>;
 }

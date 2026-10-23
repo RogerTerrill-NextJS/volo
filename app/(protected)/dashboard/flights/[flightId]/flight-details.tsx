@@ -6,7 +6,7 @@ import {formatFeedDeparture} from '../../../../../lib/flights/feed-view';
 import ProfilePhoto from '../../../_components/profile-photo';
 const linkClass='inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
 
-/** Action slots remain empty until their tickets provide fresh authorization and behavior. */
+/** The page supplies independently authorized owner and joining-pilot controls. */
 export default function FlightDetails({flight,pilot,ownerActions,joinerActions}:{flight:DetailFlight;pilot:DirectoryProfile|null;ownerActions?:ReactNode;joinerActions?:ReactNode}){
  const departure=formatFeedDeparture(flight.departure_at,flight.departure_timezone);
  const status=flight.status==='open'&&flight.isPast?'Past departure':{open:'Open',cancelled:'Cancelled',completed:'Completed'}[flight.status];
