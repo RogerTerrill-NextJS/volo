@@ -10,7 +10,7 @@ export async function verifyRequestLocks({sql,session,until,submission=false}) {
   const firstName=label+'_first',secondName=label+'_second';
   let first,second;
   const insert=id=>`insert into public.flight_requests(flight_id,requester_id) values('${flight}','${id}');`;
-  const submit=id=>`set local role authenticated; select set_config('request.jwt.claims','{"sub":"${id}","role":"authenticated"}',true); select public.submit_flight_interest('${flight}','Concurrent hello');`;
+  const submit=(id,note='Concurrent hello')=>`set local role authenticated; select set_config('request.jwt.claims','{"sub":"${id}","role":"authenticated"}',true); select public.submit_flight_interest('${flight}','${note}');`;
   const remove=`set local role authenticated; select set_config('request.jwt.claims','{"sub":"${owner}","role":"authenticated"}',true); select public.change_flight_recipient('${flight}','${requester}',false);`;
   const accept=id=>`select 1 from public.flights where id='${flight}' for update; update public.flight_requests set status='accepted' where flight_id='${flight}' and requester_id='${id}';`;
   try {
@@ -21,8 +21,8 @@ export async function verifyRequestLocks({sql,session,until,submission=false}) {
     insert into public.flight_recipients(flight_id,user_id) values ('${flight}','${requester}'),('${flight}','${other}');`);
    if(kind==='capacity')sql(insert(requester)+insert(other));
    if(kind==='full-first')sql(insert(other));
-   const firstQuery=kind==='capacity'?accept(requester):kind==='full-first'?accept(other):kind==='removal-first'?remove:submission?submit(requester):insert(requester);
-   const secondQuery=kind==='capacity'?accept(other):kind==='request-first'?remove:submission?submit(requester):insert(requester);
+   const firstQuery=kind==='capacity'?accept(requester):kind==='full-first'?accept(other):kind==='removal-first'?remove:submission?submit(requester,'First concurrent introduction'):insert(requester);
+   const secondQuery=kind==='capacity'?accept(other):kind==='request-first'?remove:submission?submit(requester,'Second concurrent introduction'):insert(requester);
    first=session(firstName,`begin; ${firstQuery}\n\\echo winner_ready`,{hold:true});
    await until(()=>first.ready()||first.finished(),'Request race first transaction did not become ready');
    assert.ok(first.ready(),'Request race first transaction failed');
@@ -30,7 +30,8 @@ export async function verifyRequestLocks({sql,session,until,submission=false}) {
    await until(()=>sql(`select exists(select 1 from pg_stat_activity w join pg_stat_activity h on h.pid=any(pg_blocking_pids(w.pid)) where w.application_name='${secondName}' and h.application_name='${firstName}' and w.wait_event_type='Lock');`)==='t'||second.finished(),'Request race did not overlap');
    assert.equal(second.finished(),false,'Competing request transaction must wait');
    first.child.stdin.end('commit;\n');
-   assert.equal((await first.done).code,0,'First request transaction failed to commit');
+   const firstResult=await first.done;
+   assert.equal(firstResult.code,0,'First request transaction failed to commit');
    const result=await second.done;
    if(kind==='request-first') {
     assert.equal(result.code,0,'Removal must cancel the committed request');
@@ -39,6 +40,14 @@ export async function verifyRequestLocks({sql,session,until,submission=false}) {
     assert.equal(result.code,0,'RPC returns a safe semantic result after waiting');
     const response=JSON.parse(result.stdout.trim().split('\n').at(-1));
     assert.equal(response.code,kind==='duplicate'?'already_requested':'flight_unavailable');
+    if(kind==='duplicate'){
+     const winner=firstResult.stdout.split('\n').flatMap(line=>{try{return [JSON.parse(line)];}catch{return [];}}).find(value=>value?.code==='submitted');
+     assert.ok(winner,'First caller receives a confirmed pending request');
+     assert.deepEqual(response,{code:'already_requested',requestId:winner.requestId,status:'pending'},'Both callers confirm the same UUID without private data');
+     const stored=JSON.parse(sql(`select json_build_object('id',id,'introductory_note',introductory_note,'created_at',created_at,'updated_at',updated_at) from public.flight_requests where flight_id='${flight}';`));
+     assert.equal(stored.id,winner.requestId);assert.equal(stored.introductory_note,'First concurrent introduction');
+     assert.equal(stored.created_at,stored.updated_at,'Duplicate result does not rewrite timestamps');
+    }
    } else {
     assert.notEqual(result.code,0,'Competing invalid request mutation must fail');
     assert.match(result.stderr,kind==='duplicate'?/23505/:/23514/);
