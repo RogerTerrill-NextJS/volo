@@ -131,6 +131,47 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(!body.includes('private-interest-error-canary'));return body;
   };
   const hasForm=body=>/<textarea[^>]*name="introductory_note"/.test(body);
+  await checkScenario('incoming_owner_list_states_profile_fallback_and_foreign_owner_isolation',async()=>{
+   const id=await newFlight(),note='incoming-owner-only-note-canary';
+   assert.match((await page(id,'owner')).body,/No requests yet/);
+   expectCode(await invoke('pilot',id,{introductory_note:note}),'submitted');
+   for(const state of ['pending','accepted','cancelled']){
+    if(state!=='pending')await checked(admin.from('flight_requests').update({status:state}).eq('flight_id',id));
+    const body=(await page(id,'owner')).body;assert.match(body,/Incoming pilot requests/);assert.ok(body.includes(note));
+    assert.ok(body.includes(state[0].toUpperCase()+state.slice(1)));assert.match(body,/View pilot profile/);assert.match(body,/Home airport: /);
+    for(const account of Object.values(accounts))assert.ok(!body.includes(account.email),'No account emails in owner HTML/RSC');
+   }
+   // An unrelated administrator who owns another flight has no request-list bypass.
+   await newFlight({owner_id:accounts.other.id});
+   const unrelated=(await page(id,'other')).body;assert.ok(!unrelated.includes(note));assert.ok(!unrelated.includes('Incoming pilot requests'));
+   assert.deepEqual(await checked(clients.other.from('flight_requests').select('id').eq('flight_id',id)),[]);
+   await stack.setMembership(accounts.pilot.id,{role:'member',status:'disabled'});
+   try{const body=(await page(id,'owner')).body;assert.ok(body.includes(note));assert.match(body,/Pilot profile unavailable/);assert.ok(!body.includes('/directory/'+accounts.pilot.id));}
+   finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+   await mode('profile-timeout:'+accounts.pilot.id);
+   try{const body=(await page(id,'owner')).body;assert.ok(body.includes(note),'Profile timeout preserves readable requests');assert.match(body,/Pilot profile unavailable/);assert.ok(!body.includes('Incoming requests are temporarily unavailable'));}
+   finally{await mode('off');}
+  });
+  await checkScenario('incoming_newest_first_pages_preserve_all_requests_and_reject_bad_cursors',async()=>{
+   const id=await newFlight(),requesters=[accounts.pilot.id,accounts.other.id];
+   for(let n=0;n<19;n++){
+    const label='incoming-page-'+n,account=await stack.createAccount({label,role:'member',status:'active'});accounts[label]=account;
+    await checked(admin.from('profiles').insert({user_id:account.id,display_name:'Incoming page pilot '+n,home_airport:'KPAO',pilot_designation:'licensed'}));requesters.push(account.id);
+   }
+   await checked(admin.from('flight_requests').insert(requesters.map((requester_id,n)=>({flight_id:id,requester_id,introductory_note:'Pagination introduction '+String(n).padStart(2,'0')+' end'}))));
+   const ordered=await checked(admin.from('flight_requests').select('introductory_note').eq('flight_id',id).order('created_at',{ascending:false}).order('id',{ascending:false}));
+   const first=(await page(id,'owner')).body;
+   for(const row of ordered.slice(0,20))assert.ok(first.includes(row.introductory_note));assert.ok(!first.includes(ordered[20].introductory_note));
+   const next=first.match(/<a[^>]*href="([^"]+)"[^>]*>Next requests<\/a>/)?.[1];assert.ok(next,'Owner receives an actual next-page link');
+   const response=await app.request(next.replaceAll('&amp;','&'),{session:sessions.owner}),second=await response.text();
+   assert.ok(second.includes(ordered[20].introductory_note));for(const row of ordered.slice(0,20))assert.ok(!second.includes(row.introductory_note));assert.ok(!second.includes('>Next requests<'));
+   const invalid=await app.request('/dashboard/flights/'+id+'?requestsAfter=invalid',{session:sessions.owner});assert.match(await invalid.text(),/request page link is invalid/);
+  });
+  await checkScenario('incoming_request_outage_is_safe_and_recovers',async()=>{
+   const id=await newFlight();expectCode(await invoke('pilot',id,{introductory_note:'incoming-outage-secret-note'}),'submitted');await mode('read-outage');
+   try{const body=(await page(id,'owner')).body;assert.match(body,/Incoming requests are temporarily unavailable/);assert.ok(!body.includes('incoming-outage-secret-note'));assert.match(body,/Try again/);}finally{await mode('off');}
+   assert.ok((await page(id,'owner')).body.includes('incoming-outage-secret-note'));
+  });
   await checkScenario('interest_detail_native_submission_and_pending_reload',async()=>{
    const id=await newFlight();const initial=await page(id);assert.equal(initial.response.status,200);assert.ok(hasForm(initial.body));
    assert.match(initial.body,/Introduction \(optional\)/);assert.match(initial.body,/Up to 500 characters/);
