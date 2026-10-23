@@ -118,10 +118,10 @@ export async function verifyFlightInterest({stack,app,scenario}){
   const page=async(id,label='pilot')=>{
    const response=await app.request('/dashboard/flights/'+id,{session:sessions[label]});
    for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
-   const body=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(body);
+   const html=await response.text(),body=html.replaceAll('&quot;','"');stack.assertNoCredentialLeaks(body);
    for(const session of Object.values(sessions))session.assertNoCredentialLeaks(body);
    assert.ok(!body.includes('private-interest-error-canary'));
-   return {response,body};
+   return {response,body,html};
   };
   const pageAction=async(id,fields={},settings={})=>{
    const response=await app.interestPageAction(id,fields,{session:sessions.pilot,transport:'native',...settings});
@@ -137,6 +137,38 @@ export async function verifyFlightInterest({stack,app,scenario}){
    const result=await pageAction(id,{introductory_note:'Hello from the detail page'});assert.match(result,/Request pending/);
    assert.ok(!hasForm((await page(id)).body),'Pending reload has no repeat-submit form');
    const records=(await rows()).filter(r=>r.flight_id===id);assert.equal(records.length,1);assert.equal(records[0].introductory_note,'Hello from the detail page');assert.equal(records[0].requester_id,accounts.pilot.id);
+  });
+  await checkScenario('interest_stale_detail_forms_concurrently_confirm_one_request',async()=>{
+   for(const initial of ['none','withdrawn']){
+    const id=await newFlight();let prior;
+    if(initial==='withdrawn'){
+     expectCode(await invoke('pilot',id,{introductory_note:'Previous withdrawn introduction'}),'submitted');
+     prior=(await rows()).find(r=>r.flight_id===id);
+     await checked(admin.from('flight_requests').update({status:'withdrawn'}).eq('id',prior.id));
+    }
+    // Independent HTTP requests model two already-open tabs. Next's single-client
+    // dispatcher intentionally serializes actions, so do not test its queue.
+    const cached=await Promise.all([page(id),page(id)]);assert.ok(cached.every(p=>hasForm(p.body)));
+    const beforeCalls=await calls();
+    const notes=['First stale-tab introduction','Second stale-tab introduction'];
+    const responses=await Promise.all(cached.map((p,index)=>pageAction(id,{introductory_note:notes[index]},{transport:index===0?'native':'fetched',formHtml:p.html})));
+    for(const body of responses){assert.match(body,/Request pending/);assert.ok(!body.includes('Unable to confirm your request'));assert.ok(!body.includes('Check your introduction'));}
+    const records=(await rows()).filter(r=>r.flight_id===id);assert.equal(records.length,1,'Concurrent stale forms retain one flight/requester record');
+    const record=records[0];assert.equal(record.status,'pending');assert.ok(notes.includes(record.introductory_note));assert.equal(await calls(),beforeCalls+2,'One guarded operation per explicit tab submission');
+    if(prior){assert.equal(record.id,prior.id);assert.equal(record.created_at,prior.created_at);}
+    else assert.equal(record.updated_at,record.created_at,'Losing duplicate cannot touch original timestamps');
+    assert.ok(!hasForm((await page(id)).body),'Reload suppresses duplicate submit control');
+    const retried=await pageAction(id,{introductory_note:'Do not overwrite the winning introduction'},{transport:'fetched',formHtml:cached[1].html});assert.match(retried,/Request pending/);
+    assert.deepEqual((await rows()).find(r=>r.id===record.id),record,'Explicit stale retry cannot rewrite the winning record');
+    await checked(admin.from('flight_requests').update({status:'accepted'}).eq('id',record.id));
+    const accepted=(await rows()).find(r=>r.id===record.id);
+    assert.match(await pageAction(id,{}, {formHtml:cached[0].html}),/Your request has been accepted/);
+    assert.deepEqual((await rows()).find(r=>r.id===record.id),accepted,'Stale accepted submission stays accepted without mutation');
+    await checked(admin.from('flight_requests').update({status:'cancelled'}).eq('id',record.id));
+    const cancelled=(await rows()).find(r=>r.id===record.id);
+    assert.match(await pageAction(id,{}, {formHtml:cached[0].html}),/closed and cannot be submitted again/);
+    assert.deepEqual((await rows()).find(r=>r.id===record.id),cancelled,'Terminal record is not revived by cached form submission');
+   }
   });
   await checkScenario('interest_detail_own_unavailable_and_profile_required_states',async()=>{
    const id=await newFlight();assert.ok(!hasForm((await page(id,'owner')).body),'Owner cannot request own flight');
