@@ -8,11 +8,13 @@ import AccessState from '../../../_components/access-state';
 import FlightDetails from './flight-details';
 import InterestForm,{type InterestMode} from './interest-form';
 import {getOwnFlightInterest} from '../../../../../lib/flights/interest-query';
+import {Suspense} from 'react';
+import IncomingRequests,{IncomingLoading} from './incoming-requests';
 
 export const metadata:Metadata={title:'Flight detail | Volo',robots:{index:false,follow:false}};
 const linkClass='inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
 
-export default async function FlightDetailPage({params}:{params:Promise<{flightId:string}>}){
+export default async function FlightDetailPage({params,searchParams}:{params:Promise<{flightId:string}>;searchParams:Promise<{[key:string]:string|string[]|undefined}>}){
  const access=await getPageAccess();
  if(access.status!=='authorized')return <AccessState status={access.status} retryHref="/dashboard/flights"/>;
  const {flightId}=await params;
@@ -47,8 +49,9 @@ export default async function FlightDetailPage({params}:{params:Promise<{flightI
   else if(own.profileStatus==='unavailable')interest='error';
   else interest=own.requestStatus==='withdrawn'?'resubmit':'ready';
  }
+ const query=result.flight.isOwn?await searchParams:{};
  return <AppShell isAdmin={access.member.role==='admin'}>
   <Link href="/dashboard/flights" prefetch={false} className={linkClass}><span aria-hidden="true" className="mr-2">←</span>Back to upcoming flights</Link>
-  <FlightDetails flight={result.flight} pilot={result.pilot} joinerActions={!result.flight.isOwn?<InterestForm flightId={result.flight.id} mode={interest}/>:undefined}/>
+  <FlightDetails flight={result.flight} pilot={result.pilot} ownerActions={result.flight.isOwn?<Suspense key={JSON.stringify(query.requestsAfter??null)} fallback={<IncomingLoading/>}><IncomingRequests flightId={result.flight.id} after={query.requestsAfter}/></Suspense>:undefined} joinerActions={!result.flight.isOwn?<InterestForm flightId={result.flight.id} mode={interest}/>:undefined}/>
  </AppShell>;
 }

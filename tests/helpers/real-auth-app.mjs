@@ -91,6 +91,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
         }
       }
       if(url.pathname==='/rest/v1/flight_requests'&&(!init?.method||init.method==='GET')&&globalThis.__voloInterestMode==='read-outage')return Response.json({code:'private-interest-error-canary'},{status:503});
+      if(url.pathname==='/rest/v1/rpc/get_network_profile'&&globalThis.__voloInterestMode?.startsWith('profile-timeout:')&&String(init?.body??'').includes(globalThis.__voloInterestMode.slice('profile-timeout:'.length)))await new Promise(resolve=>setTimeout(resolve,5500));
       if(url.pathname==='/rest/v1/rpc/submit_flight_interest'){
         globalThis.__voloInterestCalls=(globalThis.__voloInterestCalls??0)+1;
         const mode=globalThis.__voloInterestMode;
@@ -155,7 +156,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     if(interest){
       await cp(path.join(root,'app/(protected)/onboarding'),path.join(directory,'app/(protected)/onboarding'),{recursive:true});
       await put('app/dashboard/interest-fixture/page.tsx',`import {submitFlightInterest} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={submitFlightInterest} label="Interested fixture"/></main>}`);
-      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage'].includes(mode)&&!/^(disable|full):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
+      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage'].includes(mode)&&!/^(disable|full|profile-timeout):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
     }
     if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
     if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));

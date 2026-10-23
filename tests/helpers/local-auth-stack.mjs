@@ -156,7 +156,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
           const owner=await exec('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],{env,timeout:5000});
           if(owner.stdout.trim()!==projectId)throw new Error('Unowned diagnostic target');
           const logs=await exec('docker',['logs','--tail','100',container],{env,timeout:5000,maxBuffer:1024*1024});const text=logs.stdout+logs.stderr;
-          return {templateContext:/ambiguous context|different contexts/i.test(text),templateError:/templatemailer|template.*(?:error|failed)/i.test(text),rateLimit:/email rate limit exceeded|over_email_send_rate_limit/i.test(text)};
+          return {templateContext:/ambiguous context|different contexts/i.test(text),templateError:/templatemailer|template.*(?:error|failed)/i.test(text),rateLimit:/email rate limit exceeded|over_email_send_rate_limit/i.test(text),requestRateLimit:/over_request_rate_limit|request rate limit reached/i.test(text),refreshRejected:/refresh_token_(?:not_found|already_used)|invalid refresh token/i.test(text)};
         }catch{return {unavailable:true};}
       },
       ownInvitationEmail(email){
