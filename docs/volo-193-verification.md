@@ -43,6 +43,7 @@ including when departure passes between the RPC and trigger checks.
 | Additive prior-schema upgrade | Existing fictional records unchanged |
 | Public database type generation and drift check | Passed |
 | Next route type generation, TypeScript, focused ESLint and diff checks | Passed |
+| Independent whole-branch security/concurrency review | No actionable findings |
 
 SQL tests cover function privileges/search path, absent/spoofed/disabled actors,
 unrelated admins/requesters, wrong-flight request binding, input rejection, all
