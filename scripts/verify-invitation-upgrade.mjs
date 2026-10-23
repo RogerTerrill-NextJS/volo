@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {verifyRequestLocks} from '../tests/helpers/request-lock-cases.mjs';
+import {verifyRequestLocks,verifyRequestDecisionLocks} from '../tests/helpers/request-lock-cases.mjs';
 import {spawn,spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
@@ -136,6 +136,7 @@ async function concurrentCreation(kind) {
 }
 await verifyRequestLocks({sql,session,until});
 await verifyRequestLocks({sql,session,until,submission:true});
+await verifyRequestDecisionLocks({sql,session,until});
 assert.equal(sql(snapshotQuery),before,'Request race fixtures changed existing accounts or memberships');
 await concurrentCreation('email');
 await concurrentCreation('subject');
