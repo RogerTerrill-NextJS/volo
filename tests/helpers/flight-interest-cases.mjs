@@ -131,6 +131,56 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(!body.includes('private-interest-error-canary'));return body;
   };
   const hasForm=body=>/<textarea[^>]*name="introductory_note"/.test(body);
+  const connectionMode=async value=>assert.equal((await app.request('/api/connection-control',{method:'POST',body:value})).status,200);
+  const connection=async(request,label='pilot')=>{
+   const response=await app.request('/api/flight-connection?request='+encodeURIComponent(request),{session:sessions[label]});
+   for(const name of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(name)??'',/no-store/);
+   const body=await response.text();stack.assertNoCredentialLeaks(body);for(const s of Object.values(sessions))s.assertNoCredentialLeaks(body);
+   for(const a of Object.values(accounts))assert.ok(!body.includes(a.email));assert.ok(!body.includes('private-connection-error-canary'));return JSON.parse(body);
+  };
+  const acceptedConnection=async(extra={})=>{
+   const id=await newFlight(extra);if(extra.visibility==='PRIVATE')await checked(admin.from('flight_recipients').insert({flight_id:id,user_id:accounts.pilot.id}));
+   expectCode(await invoke('pilot',id,{introductory_note:'connection-private-note-canary'}),'submitted');
+   const request=(await rows()).find(r=>r.flight_id===id);await checked(clients.owner.rpc('decide_flight_request',{p_flight_id:id,p_request_id:request.id,p_decision:'accepted'}));return {id,request};
+  };
+  await checkScenario('connection_real_session_only_approved_pair_without_admin_or_pending_bypass',async()=>{
+   const {id,request}=await acceptedConnection({visibility:'PRIVATE',pilot_places:2});
+   await checked(admin.from('flight_recipients').insert({flight_id:id,user_id:accounts.other.id}));expectCode(await invoke('other',id),'submitted');
+   const snapshot=await rows();
+   for(const label of ['owner','pilot']){
+    const result=await connection(request.id,label);assert.equal(result.status,'authorized');assert.deepEqual(result.connection,{requestId:request.id,flightId:id,ownerId:accounts.owner.id,requesterId:accounts.pilot.id,counterpartId:label==='owner'?accounts.pilot.id:accounts.owner.id,isOwner:label==='owner'});
+    assert.ok(!JSON.stringify(result).includes('connection-private-note-canary'));
+   }
+   for(const label of ['other','adminNoProfile','noProfile'])assert.deepEqual(await connection(request.id,label),{status:'missing'});
+   assert.deepEqual(await connection(request.id,null),{status:'unauthenticated'});for(const label of ['disabled','absent'])assert.deepEqual(await connection(request.id,label),{status:'forbidden'});
+   for(const id of ['invalid',randomUUID()])assert.deepEqual(await connection(id),{status:'missing'});
+   assert.equal(await checked(clients.other.rpc('get_flight_connection',{p_request_id:request.id})),null,'Direct ordinary RPC has no admin/pending bypass');
+   assert.deepEqual(await rows(),snapshot,'Connection reads do not alter requests');
+  });
+  await checkScenario('connection_live_membership_withdrawal_resubmission_cancellation_and_private_removal',async()=>{
+   const {id,request}=await acceptedConnection();
+   await stack.setMembership(accounts.pilot.id,{role:'member',status:'disabled'});
+   try{assert.deepEqual(await connection(request.id,'owner'),{status:'missing'});assert.deepEqual(await connection(request.id),{status:'forbidden'});}finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+   await stack.setMembership(accounts.owner.id,{role:'member',status:'disabled'});
+   try{assert.deepEqual(await connection(request.id),{status:'missing'});}finally{await stack.setMembership(accounts.owner.id,{role:'member',status:'active'});}
+   assert.equal((await connection(request.id)).status,'authorized');
+   await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:id,p_request_id:request.id}));assert.deepEqual(await connection(request.id),{status:'missing'});
+   expectCode(await invoke('pilot',id),'submitted');assert.deepEqual(await connection(request.id),{status:'missing'});
+   await checked(clients.owner.rpc('decide_flight_request',{p_flight_id:id,p_request_id:request.id,p_decision:'accepted'}));assert.equal((await connection(request.id)).status,'authorized');
+   await checked(clients.owner.rpc('cancel_flight',{p_flight_id:id}));assert.deepEqual(await connection(request.id),{status:'missing'});
+   const privatePair=await acceptedConnection({visibility:'PRIVATE'});await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:privatePair.id,p_recipient_id:accounts.pilot.id,p_selected:false}));
+   for(const label of ['owner','pilot'])assert.deepEqual(await connection(privatePair.request.id,label),{status:'missing'});
+   assert.deepEqual(await checked(clients.pilot.from('flight_requests').select('status').eq('id',privatePair.request.id)),[{status:'cancelled'}],'Read-only retained history remains separate');
+  });
+  await checkScenario('connection_rechecks_mid_read_closure_and_viewer_revocation_and_sanitizes_provider',async()=>{
+   const {request}=await acceptedConnection();await connectionMode('withdraw:'+request.id);
+   try{assert.deepEqual(await connection(request.id),{status:'missing'});}finally{await connectionMode('off');}
+   assert.equal((await rows()).find(r=>r.id===request.id).status,'withdrawn');
+   const next=await acceptedConnection();await connectionMode('disable:'+accounts.pilot.id);
+   try{assert.deepEqual(await connection(next.request.id),{status:'forbidden'});}finally{await connectionMode('off');await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+   await connectionMode('malformed');try{assert.deepEqual(await connection(next.request.id),{status:'unavailable'});}finally{await connectionMode('off');}
+   assert.equal((await connection(next.request.id)).status,'authorized');
+  });
   const cancellationMode=async value=>assert.equal((await app.request('/api/cancellation-control',{method:'POST',body:value})).status,200);
   const cancellationCalls=async()=>(await(await app.request('/api/cancellation-control')).json()).calls;
   const cancel=async(id,fields={},settings={})=>{
@@ -448,6 +498,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(hasForm((await page(id)).body));
   });
  }finally{
+  await app.request('/api/connection-control',{method:'POST',body:'off'});
   await app.request('/api/cancellation-control',{method:'POST',body:'off'});
   await app.request('/api/edit-control',{method:'POST',body:'off'});
   await app.request('/api/withdrawal-control',{method:'POST',body:'off'});

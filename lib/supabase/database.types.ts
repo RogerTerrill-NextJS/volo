@@ -289,6 +289,9 @@ isOneToOne: false
 "edit_flight":
 { Args: { "p_aircraft_description": string,"p_departure_airport": string,"p_departure_at": string,"p_departure_timezone": string,"p_destination_airport": string,"p_expected_updated_at": string,"p_flight_id": string,"p_notes": string,"p_pilot_places": number }; Returns: Json
                            },
+"get_flight_connection":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
 "get_network_profile":
 { Args: { "p_user_id": string }; Returns: {
               "aircraft_access": string,"bio": string,"certificates": (string)[],"display_name": string,"flying_interests": string,"home_airport": string,"photo_available": boolean,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"user_id": string
