@@ -131,6 +131,53 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(!body.includes('private-interest-error-canary'));return body;
   };
   const hasForm=body=>/<textarea[^>]*name="introductory_note"/.test(body);
+  const decisionMode=async value=>assert.equal((await app.request('/api/decision-control',{method:'POST',body:value})).status,200);
+  const decisionCalls=async()=>(await(await app.request('/api/decision-control')).json()).calls;
+  const decide=async(id,requestId,decision='accepted',settings={})=>{
+   const response=await app.decisionPageAction(id,requestId,{decision,...settings.fields},{session:sessions.owner,transport:'native',...settings});
+   for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
+   const body=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(body);for(const session of Object.values(sessions))session.assertNoCredentialLeaks(body);
+   assert.ok(!body.includes('private-decision-error-canary'));return body;
+  };
+  await checkScenario('decision_owner_native_accept_and_fetched_decline_update_both_views',async()=>{
+   for(const [decision,transport] of [['accepted','native'],['declined','fetched']]){
+    const id=await newFlight();expectCode(await invoke('pilot',id,{introductory_note:'Decision intro'}),'submitted');const record=(await rows()).find(r=>r.flight_id===id);
+    const before=(await page(id,'owner')).body;assert.match(before,/<button(?=[^>]*name="decision")(?=[^>]*value="accepted")[^>]*>Accept/);assert.match(before,/<button(?=[^>]*name="decision")(?=[^>]*value="declined")[^>]*>Decline/);
+    const result=await decide(id,record.id,decision,{transport});assert.ok(result.includes(decision==='accepted'?'Request accepted.':'Request declined.'));
+    const stored=(await rows()).find(r=>r.id===record.id);assert.equal(stored.status,decision);assert.equal(stored.introductory_note,'Decision intro');
+    const owner=(await page(id,'owner')).body;assert.ok(!owner.includes('name="decision"'));assert.ok(owner.includes(decision==='accepted'?'Accepted':'Declined'));
+    const pilot=(await page(id)).body;assert.ok(pilot.includes(decision==='accepted'?'Your request has been accepted':'closed and cannot be submitted again'));
+   }
+  });
+  await checkScenario('decision_forged_owner_actions_and_input_fail_without_mutation',async()=>{
+   const id=await newFlight();expectCode(await invoke('pilot',id),'submitted');const record=(await rows()).find(r=>r.flight_id===id),html=(await page(id,'owner')).html,before=await rows(),callsBefore=await decisionCalls();
+   for(const label of ['pilot','other','disabled','absent',null]){const body=await decide(id,record.id,'accepted',{session:label?sessions[label]:undefined,formHtml:html});assert.ok(!body.includes('Request accepted.'));}
+   for(const fields of [{owner_id:accounts.owner.id},{requester_id:accounts.pilot.id},{status:'accepted'},{decision:'cancelled'}])assert.match(await decide(id,record.id,'accepted',{formHtml:html,fields}),/Check request status|has changed/);
+   await decide(id,record.id,'accepted',{formHtml:html,origin:null});
+   assert.deepEqual(await rows(),before);assert.equal(await decisionCalls(),callsBefore,'Rejected owner/input/origin never reaches decision RPC');
+   const foreign=await newFlight();expectCode(await invoke('pilot',foreign,{introductory_note:'foreign-decision-note-canary'}),'submitted');const foreignRequest=(await rows()).find(r=>r.flight_id===foreign);
+   const mismatch=await decide(id,foreignRequest.id,'accepted',{fromRequestId:record.id,formHtml:html});assert.match(mismatch,/has changed/);assert.ok(!mismatch.includes('foreign-decision-note-canary'));assert.equal((await rows()).find(r=>r.id===foreignRequest.id).status,'pending');
+   await decisionMode('disable:'+accounts.owner.id);
+   try{assert.match(await decide(id,record.id,'accepted',{formHtml:html}),/owner access could not be verified|Access denied/);assert.equal((await rows()).find(r=>r.id===record.id).status,'pending');}
+   finally{await decisionMode('off');await stack.setMembership(accounts.owner.id,{role:'member',status:'active'});}
+  });
+  await checkScenario('decision_stale_capacity_and_opposing_forms_preserve_current_state',async()=>{
+   const id=await newFlight();expectCode(await invoke('pilot',id),'submitted');expectCode(await invoke('other',id),'submitted');
+   const records=(await rows()).filter(r=>r.flight_id===id),first=records.find(r=>r.requester_id===accounts.pilot.id),second=records.find(r=>r.requester_id===accounts.other.id),html=(await page(id,'owner')).html;
+   assert.match(await decide(id,first.id,'accepted',{formHtml:html}),/Request accepted/);
+   const full=await decide(id,second.id,'accepted',{formHtml:html});assert.match(full,/This flight is full/);assert.match(full,/request is still pending/);assert.equal((await rows()).find(r=>r.id===second.id).status,'pending');
+   const accepted=(await rows()).find(r=>r.id===first.id);assert.match(await decide(id,first.id,'declined',{formHtml:html}),/has changed/);assert.deepEqual((await rows()).find(r=>r.id===first.id),accepted);
+   assert.match(await decide(id,second.id,'declined',{formHtml:html}),/Request declined/);assert.equal((await rows()).find(r=>r.id===second.id).status,'declined');
+  });
+  await checkScenario('decision_lost_or_malformed_confirmation_blocks_repeat_and_reload_recovers',async()=>{
+   for(const failure of ['lost','malformed']){
+    const id=await newFlight();expectCode(await invoke('pilot',id),'submitted');const record=(await rows()).find(r=>r.flight_id===id),before=await decisionCalls();await decisionMode(failure);
+    try{const body=await decide(id,record.id);assert.match(body,/Unable to confirm your decision/);assert.match(body,new RegExp('<form[^>]*action="/dashboard/flights/'+id+'#request-'+record.id+'"[^>]*method="get"[^>]*><button[^>]*type="submit"[^>]*>Check request status</button></form>'));}
+    finally{await decisionMode('off');}
+    assert.equal(await decisionCalls(),before+1,'Unknown confirmation never automatically retries');assert.equal((await rows()).find(r=>r.id===record.id).status,'accepted');
+    const reloaded=(await page(id,'owner')).body;assert.match(reloaded,/Accepted/);assert.ok(!reloaded.includes('name="decision"'));
+   }
+  });
   await checkScenario('incoming_owner_list_states_profile_fallback_and_foreign_owner_isolation',async()=>{
    const id=await newFlight(),note='incoming-owner-only-note-canary';
    assert.match((await page(id,'owner')).body,/No requests yet/);
@@ -259,6 +306,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(hasForm((await page(id)).body));
   });
  }finally{
+  await app.request('/api/decision-control',{method:'POST',body:'off'});
   await mode('off');
   if(flights.length){
    await checked(admin.from('flight_requests').delete().in('flight_id',flights));

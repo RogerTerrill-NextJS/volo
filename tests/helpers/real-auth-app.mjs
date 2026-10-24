@@ -101,7 +101,19 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned interest race setup rejected');
         }
       }
+      if(url.pathname==='/rest/v1/rpc/decide_flight_request'){
+        globalThis.__voloDecisionCalls=(globalThis.__voloDecisionCalls??0)+1;
+        const mode=globalThis.__voloDecisionMode;
+        if(mode?.startsWith('disable:')){
+          const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+mode.slice(8),{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned decision race'})});
+          if(!changed.ok)throw new Error('Owned decision eligibility setup rejected');
+        }
+      }
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/decide_flight_request'){
+        if(globalThis.__voloDecisionMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed decision response');}
+        if(globalThis.__voloDecisionMode==='malformed'){await response.text();return Response.json({code:'decided',requestId:'private-decision-error-canary',status:'accepted'});}
+      }
       if(globalThis.__voloFlightCreateMode==='malformed'&&['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){await response.text();return Response.json('private-flight-error-canary');}
       if(globalThis.__voloFlightCreateMode==='lost'&&['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){await response.text();throw new Error('Owned fixture discarded committed create response');}
       if(url.pathname==='/rest/v1/rpc/submit_flight_interest'){
@@ -154,6 +166,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/api/recipient-candidates/route.ts',`import {listRecipientCandidates} from '../../../lib/flights/recipient-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const response=Response.json(await listRecipientCandidates());applyPrivateResponseHeaders(response.headers);return response;}`);
     }
     if(interest){
+      await put('app/api/decision-control/route.ts',`type State=typeof globalThis & {__voloDecisionMode?:string;__voloDecisionCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloDecisionMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloDecisionCalls??0});}`);
       await cp(path.join(root,'app/(protected)/onboarding'),path.join(directory,'app/(protected)/onboarding'),{recursive:true});
       await put('app/dashboard/interest-fixture/page.tsx',`import {submitFlightInterest} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={submitFlightInterest} label="Interested fixture"/></main>}`);
       await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage'].includes(mode)&&!/^(disable|full|profile-timeout):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
@@ -169,8 +182,9 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       const headers=new Headers(additional);if(session)headers.set('Cookie',session.cookieHeader());
       const response=await fetch(destination,{method,headers,body,redirect:'manual',signal:AbortSignal.any([AbortSignal.timeout(15000),...(signal?[signal]:[])])});session?.applyResponse(response);return response;
     };
-    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml}={})=>{
-        const html=formHtml??await (await request(route,{session})).text();
+    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId}={})=>{
+        let html=formHtml??await (await request(route,{session})).text();
+        if(formRequestId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="request_id"')&&match[1].includes('value="'+formRequestId+'"'));if(!selected)throw new Error('Owned decision form missing');html=selected[1];}
         const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
         const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
         const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
@@ -204,6 +218,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       },
       submitInterest(fields,settings={}){return invokeFlightAction('/dashboard/interest-fixture',fields,settings);},
       interestPageAction(id,fields,{fromFlightId=id,...settings}={}){return invokeFlightAction('/dashboard/flights/'+fromFlightId,{flight_id:id,...fields},{...settings,postRoute:'/dashboard/flights/'+id});},
+      decisionPageAction(id,requestId,fields,{fromRequestId=requestId,...settings}={}){return invokeFlightAction('/dashboard/flights/'+id,{flight_id:id,request_id:requestId,...fields},{...settings,formRequestId:fromRequestId});},
       async recipientAction(selected,fields,{session,transport='fetched',origin:requestOrigin=origin}={}){
         const route='/dashboard/recipient-fixture';const html=await (await request(route,{session})).text();
         const forms=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)];
