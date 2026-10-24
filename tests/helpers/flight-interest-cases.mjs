@@ -15,7 +15,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
  const rows=()=>checked(admin.from('flight_requests').select('*').in('flight_id',flights).order('id'));
  const mode=async value=>assert.equal((await app.request('/api/interest-control',{method:'POST',body:value})).status,200);
  const calls=async()=>(await(await app.request('/api/interest-control')).json()).calls;
- const checkScenario=(name,run)=>scenario(name,async()=>{await Promise.all(Object.values(sessions).map(s=>s.refresh()));await run();});
+ const checkScenario=(name,run)=>scenario(name,async()=>{try{await Promise.all(Object.values(sessions).map(s=>s.refresh()));await run();}catch(error){error.operation??=error.name;throw error;}});
  async function newFlight(extra={}){
   const id=randomUUID();flights.push(id);
   await checked(admin.from('flights').insert({id,owner_id:accounts.owner.id,departure_airport:'KPAO',destination_airport:'KSQL',departure_at:new Date(Date.now()+86400000).toISOString(),departure_timezone:'UTC',aircraft_description:'Owned interest C172',pilot_places:1,visibility:'NETWORK',...extra}));
@@ -131,6 +131,54 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(!body.includes('private-interest-error-canary'));return body;
   };
   const hasForm=body=>/<textarea[^>]*name="introductory_note"/.test(body);
+  const withdrawalMode=async value=>assert.equal((await app.request('/api/withdrawal-control',{method:'POST',body:value})).status,200);
+  const withdrawalCalls=async()=>(await(await app.request('/api/withdrawal-control')).json()).calls;
+  const withdraw=async(id,settings={})=>{
+   const response=await app.interestPageAction(id,{intent:'withdraw',...settings.fields},{session:sessions.pilot,transport:'native',...settings});
+   for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
+   const body=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(body);for(const session of Object.values(sessions))session.assertNoCredentialLeaks(body);
+   assert.ok(!body.includes('private-withdrawal-error-canary'));return body;
+  };
+  await checkScenario('withdrawal_pending_native_and_accepted_fetched_allow_same_record_resubmission',async()=>{
+   for(const [status,transport] of [['pending','native'],['accepted','fetched']]){
+    const id=await newFlight();expectCode(await invoke('pilot',id,{introductory_note:'Retain withdrawal history'}),'submitted');const record=(await rows()).find(r=>r.flight_id===id);
+    if(status==='accepted')await checked(clients.owner.rpc('decide_flight_request',{p_flight_id:id,p_request_id:record.id,p_decision:'accepted'}));
+    const before=(await page(id)).body;assert.match(before,/>Withdraw request</);assert.ok(!hasForm(before));assert.ok(!(await page(id,'owner')).body.includes('>Withdraw request<'));assert.ok(!(await page(id,'other')).body.includes('>Withdraw request<'));
+    const result=await withdraw(id,{transport});assert.match(result,/Request withdrawn/);
+    if(transport==='native'){assert.ok(hasForm(result),'Native withdrawal renders resubmission form');assert.match(result,/Submit interest again/);assert.ok(!result.includes('>Withdraw request<'));}
+    else {assert.match(result,/"status":"withdrawn"/);assert.match(result,/"mode":"resubmit"/);}
+    assert.ok(hasForm((await page(id)).body),'Confirmed withdrawal permits resubmission in the current requester view');
+    const stored=(await rows()).find(r=>r.id===record.id);assert.equal(stored.status,'withdrawn');assert.equal(stored.introductory_note,record.introductory_note);assert.equal(stored.created_at,record.created_at);
+    assert.match((await page(id,'owner')).body,/Withdrawn/);
+    assert.match(await pageAction(id,{introductory_note:'Fresh request for approval'}),/Request pending/);assert.equal((await rows()).find(r=>r.flight_id===id).id,record.id);assert.equal((await rows()).find(r=>r.id===record.id).status,'pending');
+   }
+  });
+  await checkScenario('withdrawal_forged_input_access_and_revocation_never_mutate_foreign_requests',async()=>{
+   const id=await newFlight();expectCode(await invoke('pilot',id),'submitted');const html=(await page(id)).html,before=await rows(),beforeCalls=await withdrawalCalls();
+   for(const label of ['owner','other','disabled','absent',null])await withdraw(id,{formHtml:html,session:label?sessions[label]:undefined});
+   for(const fields of [{requester_id:accounts.pilot.id},{request_id:before.find(r=>r.flight_id===id).id},{owner_id:accounts.owner.id},{status:'withdrawn'},{introductory_note:'cannot rewrite'}])assert.match(await withdraw(id,{formHtml:html,fields}),/has changed/);
+   await withdraw(id,{formHtml:html,origin:null});assert.deepEqual(await rows(),before);assert.equal(await withdrawalCalls(),beforeCalls,'Denied actions never invoke withdrawal RPC');
+   await withdrawalMode('disable:'+accounts.pilot.id);
+   try{const result=await withdraw(id,{formHtml:html});assert.match(result,/access could not be verified|Access denied/);assert.equal((await rows()).find(r=>r.flight_id===id).status,'pending');}
+   finally{await withdrawalMode('off');await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+   const profile=(await checked(admin.from('profiles').select('*').eq('user_id',accounts.pilot.id)))[0];await stack.removeOwnedProfile(accounts.pilot.id);
+   try{assert.match((await page(id)).body,/>Withdraw request</);assert.match(await withdraw(id),/Request withdrawn/);assert.ok(!hasForm((await page(id)).body));}
+   finally{await checked(admin.from('profiles').insert(profile));}
+  });
+  await checkScenario('withdrawal_terminal_stale_and_matching_retries_preserve_history',async()=>{
+   for(const status of ['declined','cancelled','withdrawn']){
+    const id=await newFlight();expectCode(await invoke('pilot',id),'submitted');const html=(await page(id)).html;await checked(admin.from('flight_requests').update({status}).eq('flight_id',id));const snapshot=(await rows()).find(r=>r.flight_id===id);
+    assert.match(await withdraw(id,{formHtml:html}),status==='withdrawn'?/Request withdrawn/:/request has changed/);assert.deepEqual((await rows()).find(r=>r.id===snapshot.id),snapshot);assert.ok(!(await page(id)).body.includes('>Withdraw request<'));
+   }
+  });
+  await checkScenario('withdrawal_lost_and_malformed_confirmation_require_native_status_reload',async()=>{
+   for(const failure of ['lost','malformed']){
+    const id=await newFlight();expectCode(await invoke('pilot',id),'submitted');const before=await withdrawalCalls();await withdrawalMode(failure);
+    try{const body=await withdraw(id);assert.match(body,/Unable to confirm your withdrawal/);assert.ok(!body.includes('>Withdraw request<'));assert.ok(!hasForm(body));assert.match(body,new RegExp('<form[^>]*action="/dashboard/flights/'+id+'"[^>]*method="get"[^>]*><button[^>]*>Check request status</button></form>'));}
+    finally{await withdrawalMode('off');}
+    assert.equal(await withdrawalCalls(),before+1,'Uncertain withdrawal never retries');assert.equal((await rows()).find(r=>r.flight_id===id).status,'withdrawn');assert.match((await page(id)).body,/Submit interest again/);
+   }
+  });
   const decisionMode=async value=>assert.equal((await app.request('/api/decision-control',{method:'POST',body:value})).status,200);
   const decisionCalls=async()=>(await(await app.request('/api/decision-control')).json()).calls;
   const decide=async(id,requestId,decision='accepted',settings={})=>{
@@ -306,6 +354,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(hasForm((await page(id)).body));
   });
  }finally{
+  await app.request('/api/withdrawal-control',{method:'POST',body:'off'});
   await app.request('/api/decision-control',{method:'POST',body:'off'});
   await mode('off');
   if(flights.length){

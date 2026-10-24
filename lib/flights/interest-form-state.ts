@@ -1,4 +1,4 @@
-export type InterestFormState={revision:number;status:'editing'|'pending'|'accepted'|'closed'|'unconfirmed'|'denied'|'profile_required'|'flight_unavailable';note:string;message:string|null};
+export type InterestFormState={revision:number;status:'editing'|'pending'|'accepted'|'withdrawn'|'stale'|'withdrawal_unconfirmed'|'closed'|'unconfirmed'|'denied'|'profile_required'|'flight_unavailable';note:string;message:string|null};
 export const emptyInterestForm:InterestFormState={revision:0,status:'editing',note:'',message:null};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function interestFormResult(previous:InterestFormState,form:FormData,result:{code:string;status?:string;requestId?:string}):InterestFormState{

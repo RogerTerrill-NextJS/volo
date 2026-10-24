@@ -109,7 +109,18 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned decision eligibility setup rejected');
         }
       }
+      if(url.pathname==='/rest/v1/rpc/withdraw_flight_request'){
+        globalThis.__voloWithdrawalCalls=(globalThis.__voloWithdrawalCalls??0)+1;
+        if(globalThis.__voloWithdrawalMode?.startsWith('disable:')){
+          const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+globalThis.__voloWithdrawalMode.slice(8),{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned withdrawal race'})});
+          if(!changed.ok)throw new Error('Owned withdrawal eligibility setup rejected');
+        }
+      }
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/withdraw_flight_request'){
+        if(globalThis.__voloWithdrawalMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed withdrawal response');}
+        if(globalThis.__voloWithdrawalMode==='malformed'){await response.text();return Response.json({code:'withdrawn',requestId:'private-withdrawal-error-canary',status:'withdrawn'});}
+      }
       if(url.pathname==='/rest/v1/rpc/decide_flight_request'){
         if(globalThis.__voloDecisionMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed decision response');}
         if(globalThis.__voloDecisionMode==='malformed'){await response.text();return Response.json({code:'decided',requestId:'private-decision-error-canary',status:'accepted'});}
@@ -166,6 +177,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/api/recipient-candidates/route.ts',`import {listRecipientCandidates} from '../../../lib/flights/recipient-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const response=Response.json(await listRecipientCandidates());applyPrivateResponseHeaders(response.headers);return response;}`);
     }
     if(interest){
+      await put('app/api/withdrawal-control/route.ts',`type State=typeof globalThis & {__voloWithdrawalMode?:string;__voloWithdrawalCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloWithdrawalMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloWithdrawalCalls??0});}`);
       await put('app/api/decision-control/route.ts',`type State=typeof globalThis & {__voloDecisionMode?:string;__voloDecisionCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloDecisionMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloDecisionCalls??0});}`);
       await cp(path.join(root,'app/(protected)/onboarding'),path.join(directory,'app/(protected)/onboarding'),{recursive:true});
       await put('app/dashboard/interest-fixture/page.tsx',`import {submitFlightInterest} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={submitFlightInterest} label="Interested fixture"/></main>}`);
