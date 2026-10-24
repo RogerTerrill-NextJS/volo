@@ -47,12 +47,17 @@ select throws_ok($$select pg_temp.decide(1,1,'cancelled')$$,'22023',null,'Unsupp
 select is(pg_temp.decide(1,2),'{"code":"request_unavailable"}'::jsonb,'Request from another owned flight cannot be rebound');
 select is(pg_temp.decide(1,98),'{"code":"request_unavailable"}'::jsonb,'Unknown request shares unavailable outcome');
 select throws_ok($$update public.flight_requests set status='accepted'$$,'42501',null,'Direct acceptance stays closed');
+reset role;
+-- Let the accepted plan naturally pass departure; material rewrites after
+-- acceptance are now prohibited by the approved VOLO-197 persistence guard.
+update public.flights set departure_at=clock_timestamp()+interval '5 seconds' where id='19310000-0000-4000-8000-000000000001';
+set local role authenticated;
 select is(pg_temp.decide(),'{"code":"decided","requestId":"19320000-0000-4000-8000-000000000001","status":"accepted"}'::jsonb,'Owner accepts pending request with minimal confirmation');
 select is(pg_temp.decide(1,99),'{"code":"capacity_full"}'::jsonb,'Full capacity is a distinct bounded result');
 select is((select status::text from public.flight_requests where id='19320000-0000-4000-8000-000000000099'),'pending','Capacity loser stays pending');
 reset role;
 create temporary table accepted_snapshot as select to_jsonb(r) as row from public.flight_requests r where id='19320000-0000-4000-8000-000000000001';
-update public.flights set departure_at=now()-interval '1 day' where id='19310000-0000-4000-8000-000000000001';
+select pg_sleep(greatest(0,extract(epoch from departure_at-clock_timestamp()))+0.05) from public.flights where id='19310000-0000-4000-8000-000000000001';
 set local role authenticated;
 select is(pg_temp.decide()->>'code','already_decided','Matching acceptance retry confirms retained history after departure');
 select is(pg_temp.decide(1,1,'declined'),'{"code":"request_conflict"}'::jsonb,'Decline cannot undo acceptance');
