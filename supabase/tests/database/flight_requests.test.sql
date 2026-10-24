@@ -58,8 +58,10 @@ select is((select count(*)::integer from public.flight_requests),1,'Resubmission
 select lives_ok($$select pg_temp.transition('accepted')$$,'Pending may be accepted');
 select lives_ok($$select pg_temp.request(1,3)$$,'Schema permits pending interest while full; submission policy belongs to VOLO-64');
 select throws_ok($$select pg_temp.transition('accepted',1,3)$$,'23514',null,'Acceptance cannot exceed joining capacity');
-select throws_ok($$select pg_temp.transition('withdrawn')$$,'23514',null,'Accepted withdrawal stays closed until VOLO-67 decision');
 select throws_ok($$select pg_temp.transition('pending')$$,'23514',null,'Accepted cannot revert to pending');
+select lives_ok($$select pg_temp.transition('withdrawn')$$,'Approved accepted withdrawal releases capacity');
+select lives_ok($$select pg_temp.transition('pending')$$,'Accepted withdrawal may resubmit for fresh approval');
+select lives_ok($$select pg_temp.transition('accepted')$$,'Resubmitted request may be accepted again');
 select lives_ok($$select pg_temp.transition('cancelled')$$,'Accepted can be cancelled');
 select throws_ok($$select pg_temp.transition('pending')$$,'23514',null,'Cancelled is terminal');
 select lives_ok($$select pg_temp.transition('declined',1,3)$$,'Pending can be declined');
