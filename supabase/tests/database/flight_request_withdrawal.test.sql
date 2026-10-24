@@ -90,12 +90,10 @@ update public.memberships set status='active',disabled_at=null,disabled_reason=n
 insert into public.profiles(user_id,display_name,home_airport,pilot_designation) values('19500000-0000-4000-8000-000000000002','Withdrawal pilot','KPAO','licensed');
 update public.flight_requests set status='pending' where id='19520000-0000-4000-8000-000000000001';
 update public.flight_requests set status='accepted' where id='19520000-0000-4000-8000-000000000001';
-create table public.conversations(fixture_only boolean);
 set local role authenticated;
-select throws_ok($$select pg_temp.withdraw()$$,'55000',null,'Unintegrated conversations fence accepted withdrawal');
+select lives_ok($$select public.get_or_create_flight_conversation('19520000-0000-4000-8000-000000000001')$$,'Accepted pair can create integrated conversation');
+select is(pg_temp.withdraw()->>'code','withdrawn','Integrated conversation no longer fences accepted withdrawal');
+select ok((select closed_at is not null from public.conversations where flight_request_id='19520000-0000-4000-8000-000000000001'),'Accepted withdrawal closes conversation while retaining history');
 reset role;
-select is((select status::text from public.flight_requests where id='19520000-0000-4000-8000-000000000001'),'accepted','Fenced withdrawal leaves accepted record untouched');
-select throws_ok($$update public.flight_requests set status='withdrawn' where id='19520000-0000-4000-8000-000000000001'$$,'55000',null,'Persistence guard also fences privileged accepted withdrawal');
-drop table public.conversations;
 select * from finish();
 rollback;

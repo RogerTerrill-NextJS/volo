@@ -63,13 +63,11 @@ select is((select count(*)::integer from public.flights where id='17910000-0000-
 select set_config('request.jwt.claims','{"sub":"17900000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 select lives_ok($$select pg_temp.change_recipient('17900000-0000-4000-8000-000000000003',true)$$,'Owner can re-add without changing any request lifecycle');
 reset role;
--- Conversation introduction must still integrate closure before removal.
-create table public.conversations (fixture_only boolean);
+-- Conversation persistence is integrated; no-request removal still needs no thread.
 set local role authenticated;
-select throws_ok($$select pg_temp.change_recipient('17900000-0000-4000-8000-000000000003',false)$$,'55000',null,'Future conversation relation fences deletion');
-select is((select count(*)::integer from public.flight_recipients where flight_id='17910000-0000-4000-8000-000000000001'),1,'Fenced removal preserves the selection');
+select lives_ok($$select pg_temp.change_recipient('17900000-0000-4000-8000-000000000003',false)$$,'Conversation schema permits integrated no-request removal');
+select is((select count(*)::integer from public.flight_recipients where flight_id='17910000-0000-4000-8000-000000000001'),0,'Removal removes selection without creating history');
 reset role;
-drop table public.conversations;
 update public.memberships set status='disabled',disabled_at=now(),disabled_reason='Owned revoke' where user_id='17900000-0000-4000-8000-000000000001';
 set local role authenticated;
 select throws_ok($$select pg_temp.change_recipient('17900000-0000-4000-8000-000000000003',false)$$,'42501',null,'Disabled owner retained JWT cannot change audience');

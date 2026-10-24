@@ -1,6 +1,44 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 
+export async function verifyConversationLocks({sql,session,until}){
+ for(const [firstOp,secondOp] of [['open','open'],['open','withdraw'],['withdraw','open'],['open','cancel'],['cancel','open'],['open','remove'],['remove','open'],['late-open','withdraw']]){
+  const owner=randomUUID(),requester=randomUUID(),flight=randomUUID(),request=randomUUID();
+  const label='volo204_'+randomUUID().replaceAll('-',''),firstName=label+'_first',secondName=label+'_second';
+  const auth=(actor,query)=>`set local role authenticated;select set_config('request.jwt.claims','{"sub":"${actor}","role":"authenticated"}',true);${query}`;
+  const values=result=>result.stdout.split('\n').flatMap(line=>{try{return [JSON.parse(line)];}catch{return [];}});
+  let first,second;
+  try{
+   sql(`insert into auth.users(id,email) values('${owner}','${owner}@example.invalid'),('${requester}','${requester}@example.invalid');
+    insert into public.memberships(user_id) values('${owner}'),('${requester}');
+    insert into public.profiles(user_id,display_name,home_airport,pilot_designation) values('${requester}','Conversation requester','KPAO','licensed');
+    insert into public.flights(id,owner_id,departure_airport,destination_airport,departure_at,departure_timezone,aircraft_description,pilot_places,visibility) values('${flight}','${owner}','KPAO','KSQL',now()+interval '2 days','UTC','C172',1,'PRIVATE');
+    insert into public.flight_recipients(flight_id,user_id) values('${flight}','${requester}');
+    insert into public.flight_requests(id,flight_id,requester_id) values('${request}','${flight}','${requester}');
+    update public.flight_requests set status='accepted' where id='${request}';`);
+   const opening=firstOp==='open'||firstOp==='late-open';
+   const operation=op=>({open:auth(requester,`select json_build_object('conversation',public.get_or_create_flight_conversation('${request}'));`),withdraw:auth(requester,`select public.withdraw_flight_request('${flight}','${request}');`),cancel:auth(owner,`select public.cancel_flight('${flight}');`),remove:auth(owner,`select public.change_flight_recipient('${flight}','${requester}',false);`)})[op];
+   first=session(firstName,`begin;${firstOp==='late-open'?`select id from public.flights where id='${flight}' for update;`:operation(firstOp)}\n\\echo winner_ready`,{hold:true});
+   await until(()=>first.ready()||first.finished(),'First conversation operation did not become ready');assert.ok(first.ready());
+   second=session(secondName,`begin;${operation(secondOp)} commit;`);
+   await until(()=>sql(`select exists(select 1 from pg_stat_activity w join pg_stat_activity h on h.pid=any(pg_blocking_pids(w.pid)) where w.application_name='${secondName}' and h.application_name='${firstName}' and w.wait_event_type='Lock');`)==='t'||second.finished(),'Conversation competitor never blocked');
+   if(second.finished()){const early=await second.done;assert.fail('Conversation competitor exited before overlap: '+early.stderr);}
+   first.child.stdin.end((firstOp==='late-open'?operation('open'):'')+'commit;\n');const winner=await first.done,loser=await second.done;assert.equal(winner.code,0);
+   if(!opening){assert.notEqual(loser.code,0);assert.match(loser.stderr,/42501/);assert.equal(sql(`select count(*) from public.conversations where flight_request_id='${request}';`),'0','Closed-first race cannot create a thread');}
+   else{
+    assert.equal(loser.code,0,loser.stderr);const stored=JSON.parse(sql(`select to_jsonb(c) from public.conversations c where flight_request_id='${request}';`));
+    assert.equal(stored.id,values(winner).find(v=>v?.conversation)?.conversation);assert.equal(sql(`select count(*) from public.conversations where flight_request_id='${request}';`),'1');
+    if(secondOp==='open'){assert.equal(stored.id,values(loser).find(v=>v?.conversation)?.conversation);assert.equal(stored.closed_at,null);}
+    else assert.ok(stored.closed_at,'Create-first race retains only closed history after lifecycle commits');
+   }
+   console.log(`Conversation ${firstOp}-${secondOp}: competing flight lock observed; unique thread and closure verified`);
+  }finally{
+   first?.child.stdin.end();second?.child.stdin.end();sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);await Promise.all([first?.done,second?.done]);
+   sql(`delete from public.conversations where flight_request_id='${request}';delete from public.flight_requests where id='${request}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id='${requester}';delete from public.memberships where user_id in ('${owner}','${requester}');delete from auth.users where id in ('${owner}','${requester}');`);
+  }
+ }
+}
+
 export async function verifyFlightCancellationLocks({sql,session,until}){
  const cases=[
   ['accept-cancel','accept','cancel','decided','cancelled','cancelled'],

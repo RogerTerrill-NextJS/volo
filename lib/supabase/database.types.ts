@@ -5,7 +5,38 @@ export type Database = {
   
   "public": {
           Tables: {
-            "flight_recipients": {
+            "conversations": {
+                  Row: {
+                    "closed_at": string | null,"created_at": string,"flight_request_id": string,"id": string,"owner_id": string,"requester_id": string
+                  }
+                  Insert: {
+                    "closed_at"?: string | null,"created_at"?: string,"flight_request_id": string,"id"?: string,"owner_id": string,"requester_id": string
+                  }
+                  Update: {
+                    "closed_at"?: string | null,"created_at"?: string,"flight_request_id"?: string,"id"?: string,"owner_id"?: string,"requester_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "conversations_flight_request_id_fkey"
+      columns: ["flight_request_id"]
+isOneToOne: true
+      referencedRelation: "flight_requests"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "conversations_owner_id_fkey"
+      columns: ["owner_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    },{
+      foreignKeyName: "conversations_requester_id_fkey"
+      columns: ["requester_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    }
+                  ]
+                },"flight_recipients": {
                   Row: {
                     "added_at": string,"flight_id": string,"user_id": string
                   }
@@ -296,6 +327,9 @@ isOneToOne: false
 { Args: { "p_user_id": string }; Returns: {
               "aircraft_access": string,"bio": string,"certificates": (string)[],"display_name": string,"flying_interests": string,"home_airport": string,"photo_available": boolean,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"user_id": string
             }[]
+                           },
+"get_or_create_flight_conversation":
+{ Args: { "p_request_id": string }; Returns: string
                            },
 "list_directory_profiles":
 { Args: { "p_after"?: string,"p_aircraft"?: string,"p_certificate"?: string,"p_page_size"?: number,"p_rating"?: string,"p_search"?: string }; Returns: {
