@@ -5,7 +5,15 @@ import {interestFormResult,type InterestFormState} from '../../../../../lib/flig
 import {decisionPolicy} from '../../../../../lib/flights/decision-mutation';
 import {decisionFormResult,type DecisionFormState} from '../../../../../lib/flights/decision-form-state';
 import {refresh} from 'next/cache';
+import {withdrawalPolicy} from '../../../../../lib/flights/withdrawal-mutation';
+import {withdrawalFormResult} from '../../../../../lib/flights/withdrawal-form-state';
 export async function requestInterest(previous:InterestFormState,form:FormData):Promise<InterestFormState>{
+ if(form.get('intent')==='withdraw'){
+  const outcome=await handleActionMutation(form,withdrawalPolicy(),2048);
+  const state=withdrawalFormResult(previous,form,outcome.ok?outcome.data:{code:outcome.code});
+  if(state.status==='withdrawn')refresh();
+  return state;
+ }
  const outcome=await handleActionMutation(form,interestSubmissionPolicy(),4096);
  const result=outcome.ok?outcome.data:{code:outcome.code};
  return interestFormResult(previous,form,result);
