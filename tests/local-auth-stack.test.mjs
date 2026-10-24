@@ -207,3 +207,14 @@ test('explicit_owned_token_verification_registers_credentials_without_null_canar
   await assert.rejects(stack.verifyCapturedLink('foreign@example.invalid',html),/not owned/);
  }finally{await stack?.close();await h.dispose();}
 });
+
+test('message_fixture_rejects_unowned_senders_and_unsafe_input_before_SQL',async()=>{
+ const h=await harness();let stack;
+ try{
+  stack=await h.start();const account=await stack.createAccount({label:'message-fixture',role:null});
+  const id='20540000-0000-4000-8000-000000000001',conversation='20530000-0000-4000-8000-000000000001',before=h.calls.length;
+  await assert.rejects(stack.createOwnedMessage({id,conversation,sender:'20500000-0000-4000-8000-000000000099',body:'Hello'}),/not owned/);
+  for(const extra of [{id:"';delete from auth.users;--"},{conversation:'remote'},{body:'x'.repeat(4001)},{body:'bad\u0000text'}])await assert.rejects(stack.createOwnedMessage({id,conversation,sender:account.id,body:'Hello',...extra}));
+  assert.equal(h.calls.length,before,'Rejected message fixture never executes SQL');
+ }finally{await stack?.close();await h.dispose();}
+});
