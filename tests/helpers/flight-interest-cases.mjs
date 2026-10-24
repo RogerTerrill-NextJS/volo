@@ -131,6 +131,39 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(!body.includes('private-interest-error-canary'));return body;
   };
   const hasForm=body=>/<textarea[^>]*name="introductory_note"/.test(body);
+  const editMode=async value=>assert.equal((await app.request('/api/edit-control',{method:'POST',body:value})).status,200);
+  const editCalls=async()=>(await(await app.request('/api/edit-control')).json()).calls;
+  const editPage=async(id,label='owner')=>{const response=await app.request('/dashboard/flights/'+id+'/edit',{session:sessions[label]});return {response,html:await response.text()};};
+  const edit=async(id,fields={},settings={})=>{
+   const response=await app.editPageAction(id,fields,{session:sessions.owner,transport:'native',...settings});for(const name of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(name)??'',/no-store/);
+   const body=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(body);for(const s of Object.values(sessions))s.assertNoCredentialLeaks(body);assert.ok(!body.includes('private-edit-error-canary'));return body;
+  };
+  await checkScenario('edit_owner_native_and_fetched_preserve_precision_audience_and_participants',async()=>{
+   const id=await newFlight({visibility:'PRIVATE',pilot_places:2,notes:'Initial owner note'});await checked(admin.from('flight_recipients').insert({flight_id:id,user_id:accounts.pilot.id}));expectCode(await invoke('pilot',id),'submitted');
+   const initial=(await checked(admin.from('flights').select('*').eq('id',id)))[0],cached=(await editPage(id)).html;assert.match(cached,/Initial owner note/);assert.match(cached,/expected_updated_at/);assert.ok(!cached.includes('name="visibility"'));assert.ok(!cached.includes('name="recipient_ids"'));
+   assert.match(await edit(id,{departure_airport:'KSFO',notes:'Native owner edit'},{formHtml:cached}),/Flight updated/);const first=(await checked(admin.from('flights').select('*').eq('id',id)))[0];assert.equal(first.departure_at,initial.departure_at);assert.equal(first.visibility,'PRIVATE');assert.equal(first.departure_airport,'KSFO');
+   assert.match(await edit(id,{departure_airport:'KSFO',notes:'Native owner edit'},{formHtml:cached}),/Flight updated/);assert.deepEqual((await checked(admin.from('flights').select('*').eq('id',id)))[0],first);
+   await checked(admin.from('flight_requests').update({status:'accepted'}).eq('flight_id',id));const locked=(await editPage(id)).html;assert.match(locked,/Cancel and repost/);assert.match(locked,/<input(?=[^>]*name="aircraft_description")(?=[^>]*readOnly)[^>]*>/i);
+   assert.match(await edit(id,{notes:'Fetched briefing update'},{transport:'fetched'}),/Flight updated/);const stored=(await checked(admin.from('flights').select('*').eq('id',id)))[0];assert.equal(stored.departure_at,initial.departure_at);assert.equal(stored.notes,'Fetched briefing update');assert.equal((await rows()).find(r=>r.flight_id===id).status,'accepted');
+   assert.match((await page(id,'pilot')).body,/Fetched briefing update/);assert.equal((await checked(admin.from('flight_recipients').select('user_id').eq('flight_id',id))).length,1);
+  });
+  await checkScenario('edit_owner_access_origin_and_protected_fields_fail_without_mutation',async()=>{
+   const id=await newFlight(),html=(await editPage(id)).html,before=(await checked(admin.from('flights').select('*').eq('id',id)))[0],calls=await editCalls();
+   for(const label of ['pilot','other','disabled','absent',null]){const result=await app.request('/dashboard/flights/'+id+'/edit',{session:label?sessions[label]:undefined});assert.ok(!(await result.text()).includes('name="expected_updated_at"'));await edit(id,{notes:'Foreign attempt'},{formHtml:html,session:label?sessions[label]:undefined});}
+   for(const fields of [{owner_id:accounts.owner.id},{visibility:'NETWORK'},{status:'cancelled'},{recipient_ids:'[]'},{departure_timezone:'bad'}])assert.match(await edit(id,fields,{formHtml:html}),/Check the highlighted|Reload|could not be verified/);
+   await edit(id,{notes:'Wrong origin'},{formHtml:html,origin:null});assert.deepEqual((await checked(admin.from('flights').select('*').eq('id',id)))[0],before);assert.equal(await editCalls(),calls);
+   await editMode('disable:'+accounts.owner.id);try{assert.match(await edit(id,{notes:'Revoked owner'},{formHtml:html}),/could not be verified|Access denied/);assert.deepEqual((await checked(admin.from('flights').select('*').eq('id',id)))[0],before);}finally{await editMode('off');await stack.setMembership(accounts.owner.id,{role:'member',status:'active'});}
+   const closed=await newFlight({status:'cancelled'});assert.ok(!(await editPage(closed)).html.includes('name="expected_updated_at"'));
+  });
+  await checkScenario('edit_stale_material_and_capacity_changes_require_reload_without_overwrite',async()=>{
+   const id=await newFlight({pilot_places:2}),html=(await editPage(id)).html;assert.match(await edit(id,{notes:'Winning note'},{formHtml:html}),/Flight updated/);const winner=(await checked(admin.from('flights').select('*').eq('id',id)))[0];assert.match(await edit(id,{notes:'Stale loser'},{formHtml:html}),/changed after you opened/);assert.deepEqual((await checked(admin.from('flights').select('*').eq('id',id)))[0],winner);
+   expectCode(await invoke('pilot',id),'submitted');const record=(await rows()).find(r=>r.flight_id===id),fresh=(await editPage(id)).html;await editMode('accept:'+record.id);try{assert.match(await edit(id,{aircraft_description:'Unauthorized changed aircraft'},{formHtml:fresh}),/Cancel and repost/);}finally{await editMode('off');}
+   expectCode(await invoke('other',id),'submitted');const other=(await rows()).find(r=>r.flight_id===id&&r.requester_id===accounts.other.id),capacity=(await editPage(id)).html;await editMode('accept:'+other.id);try{assert.match(await edit(id,{pilot_places:'1'},{formHtml:capacity}),/Accepted participants changed/);}finally{await editMode('off');}
+   const stored=(await checked(admin.from('flights').select('*').eq('id',id)))[0];assert.equal(stored.aircraft_description,'Owned interest C172');assert.equal(stored.pilot_places,2);
+  });
+  await checkScenario('edit_uncertain_confirmation_blocks_repeat_and_native_reload_recovers',async()=>{
+   for(const failure of ['lost','malformed']){const id=await newFlight(),calls=await editCalls();await editMode(failure);try{const body=await edit(id,{notes:'Committed despite uncertain reply'});assert.match(body,/Unable to confirm your edit/);assert.match(body,/<fieldset[^>]*disabled/);assert.match(body,/Reload current flight/);}finally{await editMode('off');}assert.equal(await editCalls(),calls+1);assert.match((await editPage(id)).html,/Committed despite uncertain reply/);}
+  });
   const withdrawalMode=async value=>assert.equal((await app.request('/api/withdrawal-control',{method:'POST',body:value})).status,200);
   const withdrawalCalls=async()=>(await(await app.request('/api/withdrawal-control')).json()).calls;
   const withdraw=async(id,settings={})=>{
@@ -354,6 +387,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(hasForm((await page(id)).body));
   });
  }finally{
+  await app.request('/api/edit-control',{method:'POST',body:'off'});
   await app.request('/api/withdrawal-control',{method:'POST',body:'off'});
   await app.request('/api/decision-control',{method:'POST',body:'off'});
   await mode('off');

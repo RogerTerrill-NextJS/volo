@@ -1,7 +1,7 @@
 import type {FlightField} from './validation';
 import {parseRecipientIds,type PostingField} from './recipients.ts';
 
-export type FlightFormState={revision:number;status:'editing'|'created'|'unconfirmed'|'denied';values:Partial<Record<FlightField,string>>;recipientIds:string[];fieldErrors:Partial<Record<PostingField,string>>;message:string|null;flightId?:string};
+export type FlightFormState={revision:number;status:'editing'|'created'|'updated'|'stale'|'unconfirmed'|'denied';values:Partial<Record<FlightField,string>>;recipientIds:string[];fieldErrors:Partial<Record<PostingField,string>>;message:string|null;flightId?:string;expectedUpdatedAt?:string};
 export type FlightFormResult={code:string;message?:string;fieldErrors?:Partial<Record<FlightField|'recipient_ids',string>>;flightId?:string;recipientCount?:number};
 export const emptyFlightForm:FlightFormState={revision:0,status:'editing',values:{},recipientIds:[],fieldErrors:{},message:null};
 const limits={departure_airport:8,destination_airport:8,departure_local_date:10,departure_local_time:8,departure_timezone:100,departure_occurrence:7,aircraft_description:500,pilot_places:10,notes:2000} as const;

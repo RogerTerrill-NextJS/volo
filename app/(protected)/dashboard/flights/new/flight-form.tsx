@@ -4,9 +4,9 @@ import {emptyFlightForm,type FlightFormState} from '../../../../../lib/flights/f
 import type {FlightField} from '../../../../../lib/flights/validation';
 import {validateFlightWithRecipients} from '../../../../../lib/flights/recipients';
 import RecipientPicker,{type SelectedPilot} from './recipient-picker';
+import {validateEditInput} from '../../../../../lib/flights/edit-input';
 
 const inputClass='w-full min-w-0 rounded-lg border border-zinc-300 bg-transparent px-3 py-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-zinc-700';
-const permalink='/dashboard/flights/new';
 type Feedback={fieldErrors:FlightFormState['fieldErrors'];message:string};
 
 function VisibilityChoice({visibility,onChange,error}:{visibility:string;onChange:(value:string)=>void;error?:string}){
@@ -25,8 +25,9 @@ function VisibilityChoice({visibility,onChange,error}:{visibility:string;onChang
  </fieldset>;
 }
 
-export default function FlightForm({publish}:{publish:(previous:FlightFormState,form:FormData)=>Promise<FlightFormState>}){
- const [state,action,pending]=useActionState(publish,emptyFlightForm,permalink);
+export default function FlightForm({publish,edit}:{publish:(previous:FlightFormState,form:FormData)=>Promise<FlightFormState>;edit?:{flightId:string;initial:FlightFormState;acceptedCount:number;visibility:'NETWORK'|'PRIVATE'}}){
+ const permalink=edit?`/dashboard/flights/${edit.flightId}/edit`:'/dashboard/flights/new';
+ const [state,action,pending]=useActionState(publish,edit?.initial??emptyFlightForm,permalink);
  const [audience,setAudience]=useState<{revision:number;visibility:string;selected:SelectedPilot[]}>({revision:state.revision,visibility:state.values.visibility??'',selected:state.recipientIds.map(user_id=>({user_id,display_name:`Selected pilot ${user_id}`,home_airport:''}))});
  // Keep only server-returned IDs after validation, with labels from our existing query results.
  if(audience.revision!==state.revision)setAudience({revision:state.revision,visibility:state.values.visibility??'',selected:state.recipientIds.map(user_id=>audience.selected.find(pilot=>pilot.user_id===user_id)??{user_id,display_name:`Selected pilot ${user_id}`,home_airport:''})});
@@ -40,8 +41,9 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
   if(pending||submitting.current||blocked){event.preventDefault();return;}
   const fields=new FormData(event.currentTarget);
   const raw=Object.fromEntries([...fields].filter(([key])=>!key.startsWith('$ACTION_')));
-  const validated=validateFlightWithRecipients(raw,Date.now(),true);
+  const validated=edit?validateEditInput(raw):validateFlightWithRecipients(raw,Date.now(),true);
   if(!validated.ok){event.preventDefault();setLocal(validated);return;}
+  if(edit&&'input' in validated&&validated.input.value.pilot_places<edit.acceptedCount){event.preventDefault();setLocal({fieldErrors:{pilot_places:'Capacity cannot be below the accepted pilot count.'},message:'Check the joining-pilot capacity.'});return;}
   submitting.current=true;setLocal(null);
  }
  function description(field:FlightField){return `flight-${field}-help${errors[field]?` flight-${field}-error`:''}`;}
@@ -49,7 +51,7 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
  function input(field:Exclude<FlightField,'departure_occurrence'|'visibility'|'notes'>,label:string,help:string,type='text'){
   return <div className="min-w-0 space-y-2">
    <label htmlFor={`flight-${field}`} className="block text-sm font-medium">{label} (required)</label>
-   <input id={`flight-${field}`} name={field} type={type} required defaultValue={state.values[field]??''} autoComplete="off"
+   <input id={`flight-${field}`} name={field} type={type} required readOnly={Boolean(edit&&edit.acceptedCount>0&&field!=='pilot_places')} defaultValue={state.values[field]??''} autoComplete="off"
     autoCapitalize={field.endsWith('airport')?'characters':'off'} step={type==='time'?'1':type==='number'?'1':undefined} min={type==='number'?'1':undefined} max={type==='number'?'2147483647':undefined}
     inputMode={type==='number'?'numeric':undefined} list={field==='departure_timezone'?'flight-timezones':undefined}
     placeholder={field==='departure_timezone'?'America/Los_Angeles':field.endsWith('airport')?'KPAO':undefined}
@@ -58,17 +60,19 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
   </div>;
  }
  return <div className="w-full max-w-xl min-w-0 space-y-6">
-  <div ref={feedback} tabIndex={-1} role={message?(state.status==='created'&&!local?'status':'alert'):undefined} className="space-y-3 break-words empty:hidden">
+  {edit&&<section aria-labelledby="edit-guidance" className="space-y-3 rounded-xl border border-zinc-300 p-4 dark:border-zinc-700"><h2 id="edit-guidance" className="font-semibold">Allowed changes</h2><p>{edit.acceptedCount>0?`${edit.acceptedCount} accepted pilot${edit.acceptedCount===1?'':'s'}. You can update notes and capacity. Cancel and repost the flight to change airports, departure time, timezone or aircraft.`:'You can update the flight plan, notes and capacity. If a pilot is accepted before you save, material changes will require cancellation and reposting.'}</p><p>Capacity must stay at or above the accepted pilot count. Visibility remains {edit.visibility==='PRIVATE'?'Private':'Network'}; audience and status are unchanged by editing.</p></section>}
+  <div ref={feedback} tabIndex={-1} role={message?(['created','updated'].includes(state.status)&&!local?'status':'alert'):undefined} className="space-y-3 break-words empty:hidden">
    {message&&<p>{message}</p>}
    {Object.keys(errors).length>0&&<ul className="list-disc space-y-2 pl-5">{Object.entries(errors).map(([field,text])=><li key={field}><a href={`#flight-${field}`} className="underline underline-offset-4">{text}</a></li>)}</ul>}
    {state.status==='created'&&<><p className="text-sm">Flight reference: <span className="break-all">{state.flightId}</span></p><a href={permalink} className="inline-block py-3 underline underline-offset-4">Post another flight</a></>}
    {state.status==='denied'&&<a href="/onboarding" className="inline-block py-3 underline underline-offset-4">Complete your profile</a>}
+   {edit&&state.status==='updated'&&<a href={`/dashboard/flights/${edit.flightId}`} className="inline-flex min-h-11 items-center underline">View updated flight</a>}
   </div>
-  {state.status!=='created'&&<form key={state.revision} action={action} onSubmit={submit} noValidate aria-busy={pending} className="space-y-6">
+  {edit&&blocked&&<form action={permalink} method="get"><button type="submit" className="min-h-11 underline">{state.status==='updated'?'Edit this flight again':'Reload current flight'}</button></form>}
+  {!['created','updated'].includes(state.status)&&<form key={state.revision} action={action} onSubmit={submit} noValidate aria-busy={pending} className="space-y-6">
    <fieldset disabled={pending||blocked} className="min-w-0 space-y-6 disabled:opacity-70">
     <legend className="sr-only">Flight details</legend>
-    <VisibilityChoice visibility={audience.visibility} onChange={visibility=>{setAudience({...audience,visibility,selected:visibility==='PRIVATE'?audience.selected:[]});setLocal(null);}} error={errors.visibility}/>
-    {audience.visibility==='PRIVATE'&&<RecipientPicker selected={audience.selected} onChange={selected=>{setAudience({...audience,selected});setLocal(null);}} error={errors.recipient_ids}/>}
+    {edit?<><input type="hidden" name="flight_id" value={edit.flightId}/><input type="hidden" name="expected_updated_at" value={state.expectedUpdatedAt??edit.initial.expectedUpdatedAt}/></>:<><VisibilityChoice visibility={audience.visibility} onChange={visibility=>{setAudience({...audience,visibility,selected:visibility==='PRIVATE'?audience.selected:[]});setLocal(null);}} error={errors.visibility}/>{audience.visibility==='PRIVATE'&&<RecipientPicker selected={audience.selected} onChange={selected=>{setAudience({...audience,selected});setLocal(null);}} error={errors.recipient_ids}/>}</>}
     {input('departure_airport','Departure airport','Airport identifier, 2–8 letters or numbers.')}
     {input('destination_airport','Destination airport','Airport identifier. It can be the same as your departure airport.')}
     <div className="grid min-w-0 gap-6 sm:grid-cols-2">
@@ -79,7 +83,8 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
     <datalist id="flight-timezones">{['America/Los_Angeles','America/Denver','America/Chicago','America/New_York','Pacific/Honolulu','America/Anchorage','Europe/London','UTC'].map(zone=><option key={zone} value={zone}/>)}</datalist>
     <div className="space-y-2">
      <label htmlFor="flight-departure_occurrence" className="block text-sm font-medium">Repeated local time (only when required)</label>
-     <select id="flight-departure_occurrence" name="departure_occurrence" defaultValue={state.values.departure_occurrence??''} aria-describedby={description('departure_occurrence')} aria-invalid={errors.departure_occurrence?true:undefined} className={inputClass}>
+     {edit&&edit.acceptedCount>0&&<input type="hidden" name="departure_occurrence" value={state.values.departure_occurrence??''}/>}
+     <select disabled={Boolean(edit&&edit.acceptedCount>0)} id="flight-departure_occurrence" name="departure_occurrence" defaultValue={state.values.departure_occurrence??''} aria-describedby={description('departure_occurrence')} aria-invalid={errors.departure_occurrence?true:undefined} className={inputClass}>
       <option value="">No occurrence selected</option><option value="earlier">Earlier occurrence</option><option value="later">Later occurrence</option>
      </select>
      <p id="flight-departure_occurrence-help" className="text-sm text-zinc-600 dark:text-zinc-400">When clocks move back, a local time can occur twice. If prompted, choose the earlier or later occurrence. Times skipped by a clock change cannot be posted.</p>{error('departure_occurrence')}
@@ -91,9 +96,9 @@ export default function FlightForm({publish}:{publish:(previous:FlightFormState,
      <textarea id="flight-notes" name="notes" rows={5} defaultValue={state.values.notes??''} aria-invalid={errors.notes?true:undefined} aria-describedby={description('notes')} className={inputClass}/>
      <p id="flight-notes-help" className="text-sm text-zinc-600 dark:text-zinc-400">Anything else joining pilots should know. Up to 2,000 characters.</p>{error('notes')}
     </div>
-    <button type="submit" disabled={pending||blocked} className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900">{pending?'Publishing flight…':'Publish flight'}</button>
+    <button type="submit" disabled={pending||blocked} className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900">{edit?(pending?'Saving flight…':'Save changes'):(pending?'Publishing flight…':'Publish flight')}</button>
    </fieldset>
-   <p role="status" className="text-sm empty:hidden">{pending?'Publishing your flight. Please wait.':''}</p>
+   <p role="status" className="text-sm empty:hidden">{pending?(edit?'Saving your flight. Please wait.':'Publishing your flight. Please wait.'):''}</p>
   </form>}
  </div>;
 }
