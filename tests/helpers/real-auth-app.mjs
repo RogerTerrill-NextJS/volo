@@ -116,7 +116,19 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned withdrawal eligibility setup rejected');
         }
       }
+      if(url.pathname==='/rest/v1/rpc/edit_flight'){
+        globalThis.__voloEditCalls=(globalThis.__voloEditCalls??0)+1;
+        const mode=globalThis.__voloEditMode;
+        if(mode?.startsWith('accept:')||mode?.startsWith('disable:')){
+          const accepting=mode.startsWith('accept:');const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/')}+(accepting?'flight_requests?id=eq.':'memberships?user_id=eq.')+mode.slice(accepting?7:8),{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify(accepting?{status:'accepted'}:{status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned edit race'})});
+          if(!changed.ok)throw new Error('Owned edit race setup failed');
+        }
+      }
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/edit_flight'){
+        if(globalThis.__voloEditMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed edit response');}
+        if(globalThis.__voloEditMode==='malformed'){await response.text();return Response.json({code:'updated',flightId:'private-edit-error-canary',updatedAt:'invalid'});}
+      }
       if(url.pathname==='/rest/v1/rpc/withdraw_flight_request'){
         if(globalThis.__voloWithdrawalMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed withdrawal response');}
         if(globalThis.__voloWithdrawalMode==='malformed'){await response.text();return Response.json({code:'withdrawn',requestId:'private-withdrawal-error-canary',status:'withdrawn'});}
@@ -168,6 +180,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
     if(flights){
+      await put('app/api/edit-control/route.ts',`type State=typeof globalThis & {__voloEditMode?:string;__voloEditCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^(accept|disable):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloEditMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloEditCalls??0});}`);
       await cp(path.join(root,'app/(protected)/dashboard/flights'),path.join(directory,'app/(protected)/dashboard/flights'),{recursive:true});
       await put('app/dashboard/flight-create-fixture/page.tsx',`import {createFlight} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={createFlight} label="Create flight"/></main>}`);
       await put('app/api/flight-create-control/route.ts',`type State=typeof globalThis & {__voloFlightCreateMode?:string;__voloFlightCreateCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloFlightCreateMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloFlightCreateCalls??0});}`);
@@ -229,6 +242,13 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
       submitInterest(fields,settings={}){return invokeFlightAction('/dashboard/interest-fixture',fields,settings);},
+      async editPageAction(id,overrides,{formHtml,...settings}={}){
+        const route='/dashboard/flights/'+id+'/edit',html=formHtml??await(await request(route,settings)).text(),fields={};
+        for(const match of html.matchAll(/<input\b[^>]*>/g)){const name=match[0].match(/name="([^"]+)"/)?.[1];if(name&&!name.startsWith('$ACTION_'))fields[decode(name)]=decode(match[0].match(/value="([^"]*)"/)?.[1]??'');}
+        for(const match of html.matchAll(/<textarea\b[^>]*name="([^"]+)"[^>]*>([\s\S]*?)<\/textarea>/g))fields[decode(match[1])]=decode(match[2]);
+        if(fields.departure_occurrence===undefined)fields.departure_occurrence=decode(html.match(/<option[^>]*value="([^"]*)"[^>]*selected[^>]*>/)?.[1]??'');
+        return invokeFlightAction(route,{...fields,...overrides},{...settings,formHtml:html});
+      },
       interestPageAction(id,fields,{fromFlightId=id,...settings}={}){return invokeFlightAction('/dashboard/flights/'+fromFlightId,{flight_id:id,...fields},{...settings,postRoute:'/dashboard/flights/'+id});},
       decisionPageAction(id,requestId,fields,{fromRequestId=requestId,...settings}={}){return invokeFlightAction('/dashboard/flights/'+id,{flight_id:id,request_id:requestId,...fields},{...settings,formRequestId:fromRequestId});},
       async recipientAction(selected,fields,{session,transport='fetched',origin:requestOrigin=origin}={}){

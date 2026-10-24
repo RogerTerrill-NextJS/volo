@@ -52,6 +52,7 @@ export default async function FlightDetailPage({params,searchParams}:{params:Pro
  const query=result.flight.isOwn?await searchParams:{};
  return <AppShell isAdmin={access.member.role==='admin'}>
   <Link href="/dashboard/flights" prefetch={false} className={linkClass}><span aria-hidden="true" className="mr-2">←</span>Back to upcoming flights</Link>
+  {result.flight.isOwn&&!result.flight.isPast&&result.flight.status==='open'&&<Link href={`/dashboard/flights/${result.flight.id}/edit`} prefetch={false} className={linkClass}>Edit flight</Link>}
   <FlightDetails flight={result.flight} pilot={result.pilot} ownerActions={result.flight.isOwn?<Suspense key={JSON.stringify(query.requestsAfter??null)} fallback={<IncomingLoading/>}><IncomingRequests flightId={result.flight.id} after={query.requestsAfter}/></Suspense>:undefined} joinerActions={!result.flight.isOwn?<InterestForm flightId={result.flight.id} mode={interest}/>:undefined}/>
  </AppShell>;
 }

@@ -13,7 +13,7 @@ const columns='id,owner_id,departure_airport,destination_airport,departure_at,de
 const unavailable=()=>new Error('Flight detail unavailable.');
 const text=(value:unknown):value is string=>typeof value==='string'&&value.isWellFormed()&&!value.includes('\u0000');
 
-function project(input:unknown,target:string):Omit<DetailFlight,'isOwn'|'isPast'>{
+export function projectFlightDetail(input:unknown,target:string):Omit<DetailFlight,'isOwn'|'isPast'>{
  if(!input||typeof input!=='object'||Array.isArray(input))throw unavailable();
  const row=input as Record<string,unknown>;
  if(typeof row.id!=='string'||row.id.toLowerCase()!==target||typeof row.owner_id!=='string'||!uuid.test(row.owner_id)
@@ -48,7 +48,7 @@ export async function getFlightDetail(id:unknown,ports:FlightDetailPorts=createF
   const before=await ports.access();if(before.status!=='authorized')return {status:before.status};
   if(typeof id!=='string'||!uuid.test(id))return {status:'missing'};
   const target=id.toLowerCase(),data=await ports.readRow(target);
-  const flight=data===null?null:project(data,target);
+  const flight=data===null?null:projectFlightDetail(data,target);
   // Recheck before the optional lookup as well as after it; discard changed viewers.
   const current=await ports.access();if(current.status!=='authorized')return {status:current.status};
   if(current.member.userId!==before.member.userId)return {status:'forbidden'};
