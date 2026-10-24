@@ -33,7 +33,7 @@ export default async function FlightDetailPage({params,searchParams}:{params:Pro
    <Link href="/dashboard/flights" prefetch={false} className={linkClass}>Back to upcoming flights</Link>
   </AppShell>;
  }
- let interest:InterestMode='error';let connectionRequestId:string|undefined;
+ let interest:InterestMode='error';let connectionRequestId:string|undefined;let closedConnection=false;
  if(!result.flight.isOwn){
   const own=await getOwnFlightInterest(result.flight.id);
   if(own.status!=='authorized'){
@@ -42,7 +42,8 @@ export default async function FlightDetailPage({params,searchParams}:{params:Pro
    if(own.status==='missing')notFound();
    return <AccessState status="unavailable" retryHref={`/dashboard/flights/${result.flight.id}`}/>;
   }
-  if(own.requestStatus==='accepted'&&result.flight.status==='open')connectionRequestId=own.requestId;
+  closedConnection=own.requestStatus==='cancelled'||own.requestStatus==='withdrawn';
+  if(closedConnection||(own.requestStatus==='accepted'&&result.flight.status==='open'))connectionRequestId=own.requestId;
   if(own.requestStatus==='pending'||own.requestStatus==='accepted')interest=own.requestStatus;
   else if(own.requestStatus==='declined'||own.requestStatus==='cancelled')interest='closed';
   else if(own.requestStatus==='unavailable')interest='error';
@@ -55,7 +56,7 @@ export default async function FlightDetailPage({params,searchParams}:{params:Pro
  return <AppShell isAdmin={access.member.role==='admin'}>
   <Link href="/dashboard/flights" prefetch={false} className={linkClass}><span aria-hidden="true" className="mr-2">←</span>Back to upcoming flights</Link>
   {result.flight.isOwn&&!result.flight.isPast&&result.flight.status==='open'&&<Link href={`/dashboard/flights/${result.flight.id}/edit`} prefetch={false} className={linkClass}>Edit flight</Link>}
-  <FlightDetails flight={result.flight} pilot={result.pilot} ownerActions={result.flight.isOwn?<Suspense key={JSON.stringify(query.requestsAfter??null)} fallback={<IncomingLoading/>}><IncomingRequests flightId={result.flight.id} after={query.requestsAfter} connectionsAvailable={result.flight.status==='open'}/></Suspense>:undefined} joinerActions={!result.flight.isOwn?<>{connectionRequestId&&<Link href={`/dashboard/connections/${connectionRequestId}`} prefetch={false} className={linkClass}>View accepted connection</Link>}<InterestForm flightId={result.flight.id} mode={interest}/></>:undefined}/>
+  <FlightDetails flight={result.flight} pilot={result.pilot} ownerActions={result.flight.isOwn?<Suspense key={JSON.stringify(query.requestsAfter??null)} fallback={<IncomingLoading/>}><IncomingRequests flightId={result.flight.id} after={query.requestsAfter} connectionsAvailable={result.flight.status==='open'}/></Suspense>:undefined} joinerActions={!result.flight.isOwn?<>{connectionRequestId&&<Link href={`/dashboard/connections/${connectionRequestId}`} prefetch={false} className={linkClass}>{closedConnection?'View closed request':'View accepted connection'}</Link>}<InterestForm flightId={result.flight.id} mode={interest}/></>:undefined}/>
   {result.flight.isOwn&&<CancellationForm key={result.flight.id} flightId={result.flight.id} flightStatus={result.flight.status}/>}
  </AppShell>;
 }

@@ -206,12 +206,12 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.match(await connectionPage('invalid'),/Connection unavailable/);assert.match(await connectionPage(randomUUID()),/Connection unavailable/);
    const pending=await newFlight({notes:'pending-connection-canary'});expectCode(await invoke('pilot',pending),'submitted');const pendingRow=(await rows()).find(r=>r.flight_id===pending);
    assert.ok(!(await page(pending)).body.includes('View accepted connection'));for(const label of ['owner','pilot']){const body=await connectionPage(pendingRow.id,label);assert.match(body,/Connection unavailable/);assert.ok(!body.includes('pending-connection-canary'));}
-   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:id,p_recipient_id:accounts.pilot.id,p_selected:false}));for(const label of ['owner','pilot']){const body=await connectionPage(request.id,label);assert.match(body,/Connection unavailable/);assert.ok(!body.includes('connection-closed-private-canary'));}
+   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:id,p_recipient_id:accounts.pilot.id,p_selected:false}));for(const label of ['owner','pilot']){const body=await connectionPage(request.id,label);assert.match(body,/Request cancelled/);assert.ok(!body.includes('connection-closed-private-canary'));assert.match(body,/connection-private-note-canary/);assert.equal(body.includes('Owned interest C172'),label==='owner');assert.ok(!body.includes('View accepted connection'));}
    for(const close of ['withdraw','cancel','complete']){
     const pair=await acceptedConnection({notes:'closed-connection-canary'});
     if(close==='withdraw')await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:pair.id,p_request_id:pair.request.id}));
     else if(close==='cancel')await checked(clients.owner.rpc('cancel_flight',{p_flight_id:pair.id}));else await checked(admin.from('flights').update({status:'completed'}).eq('id',pair.id));
-    const body=await connectionPage(pair.request.id);assert.match(body,/Connection unavailable/);assert.ok(!body.includes('closed-connection-canary'));
+    for(const label of ['owner','pilot']){const body=await connectionPage(pair.request.id,label);assert.match(body,close==='complete'?/Connection unavailable/:close==='withdraw'?/Request withdrawn/:/Request cancelled/);assert.ok(!body.includes('closed-connection-canary'));assert.ok(!body.includes('Send message'));if(close!=='complete'){assert.match(body,/Request history/);assert.match((await page(pair.id,label)).body,/View closed request/);}}
    }
   });
   await checkScenario('connection_page_optional_profile_failure_recovery_and_final_authorization_recheck',async()=>{
@@ -219,8 +219,21 @@ export async function verifyFlightInterest({stack,app,scenario}){
    try{const body=await connectionPage(pair.request.id,'owner');assert.match(body,/Pilot profile temporarily unavailable/);assert.match(body,/optional-profile-flight-note/);}finally{await mode('off');}
    assert.ok((await connectionPage(pair.request.id,'owner')).includes('/directory/'+accounts.pilot.id));
    await connectionMode('malformed');try{const body=await connectionPage(pair.request.id);assert.match(body,/Connection temporarily unavailable/);assert.match(body,/Check connection status/);assert.ok(!body.includes('optional-profile-flight-note'));}finally{await connectionMode('off');}
-   await connectionMode('withdraw-profile:'+pair.request.id);try{const body=await connectionPage(pair.request.id,'owner');assert.match(body,/Connection unavailable/);assert.ok(!body.includes('optional-profile-flight-note'));assert.ok(!body.includes('/directory/'+accounts.pilot.id));}finally{await connectionMode('off');}
+   await connectionMode('withdraw-profile:'+pair.request.id);try{const body=await connectionPage(pair.request.id,'owner');assert.match(body,/Request withdrawn/);assert.ok(!body.includes('optional-profile-flight-note'));assert.ok(!body.includes('/directory/'+accounts.pilot.id));}finally{await connectionMode('off');}
    assert.equal((await rows()).find(r=>r.id===pair.request.id).status,'withdrawn');
+  });
+  await checkScenario('closed_connection_history_is_read_only_and_resubmission_requires_fresh_acceptance',async()=>{
+   const pair=await acceptedConnection();
+   await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:pair.id,p_request_id:pair.request.id}));
+   for(const label of ['owner','pilot']){const body=await connectionPage(pair.request.id,label);assert.match(body,/Request withdrawn/);assert.match(body,/connection-private-note-canary/);assert.match(body,/fresh acceptance/);assert.ok(!body.includes('>Accept<')&&!body.includes('>Withdraw request<')&&!body.includes('>Send message<'));}
+   for(const label of ['other','adminNoProfile','disabled','absent']){const body=await connectionPage(pair.request.id,label);assert.ok(!body.includes('Request history'));assert.ok(!body.includes('connection-private-note-canary'));assert.ok(!body.includes('Owned interest C172'));}
+   assert.deepEqual(await connection(pair.request.id),{status:'missing'});
+   expectCode(await invoke('pilot',pair.id,{introductory_note:'Fresh introduction'}),'submitted');
+   for(const label of ['owner','pilot'])assert.match(await connectionPage(pair.request.id,label),/Connection unavailable/);
+   assert.deepEqual(await connection(pair.request.id),{status:'missing'});
+   await checked(clients.owner.rpc('decide_flight_request',{p_flight_id:pair.id,p_request_id:pair.request.id,p_decision:'accepted'}));
+   assert.match(await connectionPage(pair.request.id),/Accepted connection/);
+   const before=await rows();await connectionPage(pair.request.id);assert.deepEqual(await rows(),before,'Connection views never mutate requests');
   });
   const cancellationMode=async value=>assert.equal((await app.request('/api/cancellation-control',{method:'POST',body:value})).status,200);
   const cancellationCalls=async()=>(await(await app.request('/api/cancellation-control')).json()).calls;

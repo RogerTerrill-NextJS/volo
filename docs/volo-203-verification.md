@@ -1,0 +1,16 @@
+# VOLO-203 — Cancelled and withdrawn connection views
+
+Based on merged VOLO-202 (`21f53a7`). Both pilots can open a read-only cancelled or withdrawn request from flight detail or its existing connection URL. The view identifies the posting/joining role, retains the introduction, shows a closure notice, and includes the currently permitted flight summary. A withdrawn request links back to the existing eligibility/resubmission flow and states that fresh acceptance is required.
+
+The existing accepted/open connection projection is unchanged. Closed history reads the existing request with ordinary session participant RLS, validates a minimal projection, and rechecks the request, current flight visibility and active viewer identity. A removed PRIVATE recipient can read their own retained introduction but receives no current flight summary or flight link. An owner must still own the visible flight; unrelated members and administrators gain no history access. Provider failures remain retryable failures. Pending, declined, completed-only and unknown records retain the neutral unavailable connection view.
+
+Cancelled/withdrawn rows do not record whether the request was previously accepted, so the page calls these closed requests without claiming prior acceptance. No new lifecycle, capacity accounting, migration, conversation table, messaging action or permission grant is introduced. VOLO-81 remains responsible for future send enforcement. Same-record resubmission becomes pending and cannot reopen an accepted connection until a fresh owner decision.
+
+## Verification
+
+- 26 targeted unit tests passed across closed history, accepted connection/view composition, own-interest projection, incoming requests and flight detail. The new closed-history test was observed failing before implementation. A final race regression also caught resubmission during the last flight/profile lookup; moving the closure recheck after that lookup fixed it and all 26 unit tests passed again.
+- 41 targeted real-Auth flight-interest integration scenarios passed, followed by a focused rerun of the four affected page scenarios with stronger retained-introduction assertions. Updated page regressions cover both closure states, both perspectives, revoked PRIVATE access, retained introductions and closure during profile loading. A focused scenario checks unrelated/admin/disabled denial, read-only behavior and fresh acceptance after resubmission.
+- Type generation, TypeScript and focused ESLint passed; independent code review found no actionable issues.
+- Local browser checks passed for both entry links and perspectives, retained introduction, resubmission navigation and keyboard activation. At 320px the long introduction wraps without horizontal overflow; the status-check button has a visible keyboard outline and 44px height.
+
+All verification writes use owned fictional local resources. The full suite and unchanged SQL concurrency tests are skipped under the MVP targeted-test policy. Hosted data/accounts, production publishing and Netlify settings are unchanged. PR Deploy Preview and production release verification are separate; preview verification remains pending and no production release is requested.
