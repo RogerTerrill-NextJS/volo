@@ -245,6 +245,9 @@ isOneToOne: false
 "bind_invitation_send_subject":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_requester_id": string,"p_subject_id": string }; Returns: Json
                            },
+"cancel_flight":
+{ Args: { "p_flight_id": string }; Returns: Json
+                           },
 "change_flight_recipient":
 { Args: { "p_flight_id": string,"p_recipient_id": string,"p_selected": boolean }; Returns: string
                            },
