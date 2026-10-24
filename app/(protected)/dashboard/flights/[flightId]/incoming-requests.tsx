@@ -24,7 +24,7 @@ export default async function IncomingRequests({flightId,after,connectionsAvaila
     </div>
     <p className="whitespace-pre-line [overflow-wrap:anywhere]">{request.note||'No introduction provided.'}</p>
     <p className="text-sm text-zinc-600 dark:text-zinc-400">First requested: <time dateTime={request.createdAt}>{request.createdAt.slice(0,10)} at {request.createdAt.slice(11,16)} UTC</time></p>
-    {connectionsAvailable&&request.status==='accepted'&&<Link href={`/dashboard/connections/${request.id}`} prefetch={false} className={linkClass}>View accepted connection</Link>}
+    {((connectionsAvailable&&request.status==='accepted')||request.status==='cancelled'||request.status==='withdrawn')&&<Link href={`/dashboard/connections/${request.id}`} prefetch={false} className={linkClass}>{request.status==='accepted'?'View accepted connection':'View closed request'}</Link>}
     <DecisionControls flightId={flightId} requestId={request.id} initialStatus={request.status} permalink={(typeof after==='string'?`${first}?requestsAfter=${encodeURIComponent(after)}`:first)+'#request-'+request.id} pilotName={request.pilot?.displayName??'this pilot'}/>
    </li>)}
   </ul>}

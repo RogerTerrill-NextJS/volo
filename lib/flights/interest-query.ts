@@ -24,7 +24,8 @@ function requestStatus(row:unknown,flight:string,viewer:string):RequestStatus|'n
  if(row===null)return 'none';
  if(!row||typeof row!=='object'||Array.isArray(row))return 'unavailable';
  const value=row as Record<string,unknown>;
- if((value.status==='accepted'&&(typeof value.id!=='string'||!uuid.test(value.id)))||value.flight_id!==flight||value.requester_id!==viewer||typeof value.status!=='string'||!['pending','accepted','withdrawn','declined','cancelled'].includes(value.status))return 'unavailable';
+ if(value.flight_id!==flight||value.requester_id!==viewer||typeof value.status!=='string'||!['pending','accepted','withdrawn','declined','cancelled'].includes(value.status))return 'unavailable';
+ if(['accepted','withdrawn','cancelled'].includes(value.status)&&(typeof value.id!=='string'||!uuid.test(value.id)))return 'unavailable';
  return value.status as RequestStatus;
 }
 /** Own-request read, not an owner list. History never grants current PRIVATE visibility. */
@@ -34,7 +35,7 @@ export async function getOwnFlightInterest(id:unknown,ports:InterestQueryPorts=c
   if(typeof id!=='string'||!uuid.test(id))return {status:'missing'};
   const target=id.toLowerCase(),viewer=before.member.userId;
   const [request,profileStatus]=await Promise.all([
-   ports.readRequest(target,viewer).then(row=>{const status=requestStatus(row,target,viewer);return {requestStatus:status,...(status==='accepted'?{requestId:((row as Record<string,unknown>).id as string).toLowerCase()}:{})};}).catch(()=>({requestStatus:'unavailable' as const})),
+   ports.readRequest(target,viewer).then(row=>{const status=requestStatus(row,target,viewer);return {requestStatus:status,...(['accepted','withdrawn','cancelled'].includes(status)?{requestId:((row as Record<string,unknown>).id as string).toLowerCase()}:{})};}).catch(()=>({requestStatus:'unavailable' as const})),
    ports.readProfile(before.member).catch(()=>'unavailable' as const),
   ]);
   // Recheck live flight access after reading independent retained history.

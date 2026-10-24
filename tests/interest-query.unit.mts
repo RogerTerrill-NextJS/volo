@@ -6,7 +6,7 @@ const flight='19000000-0000-4000-8000-000000000001',viewer='19000000-0000-4000-8
 const access:AccessResult={status:'authorized',member:{userId:viewer,role:'member'}};
 const ports=(status='pending'):InterestQueryPorts=>({access:async()=>access,readRequest:async(f,v)=>{assert.equal(f,flight);assert.equal(v,viewer);return {id:other,flight_id:flight,requester_id:viewer,status};},readVisibleFlight:async id=>{assert.equal(id,flight);return {id:flight};},readProfile:async member=>{assert.equal(member.userId,viewer);return 'complete';}});
 test('own interest reads only the verified requester and projects approved status',async()=>{
- for(const status of ['pending','accepted','withdrawn','declined','cancelled'])assert.deepEqual(await getOwnFlightInterest(flight.toUpperCase(),ports(status)),{status:'authorized',requestStatus:status,profileStatus:'complete',...(status==='accepted'?{requestId:other}:{})});
+ for(const status of ['pending','accepted','withdrawn','declined','cancelled'])assert.deepEqual(await getOwnFlightInterest(flight.toUpperCase(),ports(status)),{status:'authorized',requestStatus:status,profileStatus:'complete',...(['accepted','withdrawn','cancelled'].includes(status)?{requestId:other}:{})});
  assert.deepEqual(await getOwnFlightInterest(flight,{...ports(),readRequest:async()=>null,readProfile:async()=> 'missing'}),{status:'authorized',requestStatus:'none',profileStatus:'missing'});
 });
 test('own interest denies invalid or revoked viewers and no longer visible private flights',async()=>{
