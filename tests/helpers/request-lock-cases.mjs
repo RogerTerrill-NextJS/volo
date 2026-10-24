@@ -1,6 +1,57 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 
+export async function verifyFlightEditLocks({sql,session,until}){
+ const cases=[
+  ['accept-material',0,'accept','material','decided','repost_required',2,1,'KPAO'],
+  ['material-accept',0,'material','accept','updated','decided',2,1,'KSFO'],
+  ['accept-capacity',1,'other-accept','capacity','decided','capacity_conflict',2,2,'KPAO'],
+  ['capacity-accept',1,'capacity','other-accept','updated','capacity_full',1,1,'KPAO'],
+  ['withdraw-capacity',2,'withdraw','capacity','withdrawn','updated',1,1,'KPAO'],
+  ['capacity-withdraw',2,'capacity','withdraw','capacity_conflict','withdrawn',2,1,'KPAO'],
+  ['different-edits',0,'note','other-note','updated','flight_conflict',2,0,'KPAO'],
+  ['identical-edits',0,'note','note','updated','already_updated',2,0,'KPAO'],
+ ];
+ for(const [kind,accepted,firstOp,secondOp,firstCode,secondCode,places,count,airport] of cases){
+  const owner=randomUUID(),requester=randomUUID(),other=randomUUID(),flight=randomUUID(),request=randomUUID(),competing=randomUUID();
+  const label='volo197_'+randomUUID().replaceAll('-',''),firstName=label+'_first',secondName=label+'_second';
+  const auth=(actor,query)=>`set local role authenticated;select set_config('request.jwt.claims','{"sub":"${actor}","role":"authenticated"}',true);${query}`;
+  const values=result=>result.stdout.split('\n').flatMap(line=>{try{return [JSON.parse(line)];}catch{return [];}});
+  let first,second;
+  try{
+   sql(`insert into auth.users(id,email) values ('${owner}','${owner}@example.invalid'),('${requester}','${requester}@example.invalid'),('${other}','${other}@example.invalid');
+    insert into public.memberships(user_id) values ('${owner}'),('${requester}'),('${other}');
+    insert into public.profiles(user_id,display_name,home_airport,pilot_designation) values ('${owner}','Edit owner','KPAO','licensed'),('${requester}','Edit requester','KPAO','licensed'),('${other}','Edit other','KPAO','licensed');
+    insert into public.flights(id,owner_id,departure_airport,destination_airport,departure_at,departure_timezone,aircraft_description,pilot_places,visibility) values ('${flight}','${owner}','KPAO','KSQL',now()+interval '2 days','UTC','C172',2,'PRIVATE');
+    insert into public.flight_recipients(flight_id,user_id) values ('${flight}','${requester}'),('${flight}','${other}');
+    insert into public.flight_requests(id,flight_id,requester_id,introductory_note) values ('${request}','${flight}','${requester}','First introduction'),('${competing}','${flight}','${other}','Other introduction');
+    ${accepted?`update public.flight_requests set status='accepted' where ${accepted===2?`flight_id='${flight}'`:`id='${request}'`};`:''}`);
+   const original=JSON.parse(sql(`select to_jsonb(f) from public.flights f where id='${flight}';`));
+   const edit=(start='KPAO',capacity=2,note=null)=>auth(owner,`select public.edit_flight('${flight}','${original.updated_at}','${start}','KSQL','${original.departure_at}','UTC','C172',${capacity},${note?`'${note}'`:'null'});`);
+   const operations={material:edit('KSFO'),capacity:edit('KPAO',1),note:edit('KPAO',2,'First edit'),'other-note':edit('KPAO',2,'Second edit'),accept:auth(owner,`select public.decide_flight_request('${flight}','${request}','accepted');`),'other-accept':auth(owner,`select public.decide_flight_request('${flight}','${competing}','accepted');`),withdraw:auth(requester,`select public.withdraw_flight_request('${flight}','${request}');`)};
+   first=session(firstName,`begin;${operations[firstOp]} select json_build_object('snapshot',to_jsonb(f)) from public.flights f where id='${flight}';\n\\echo winner_ready`,{hold:true});
+   await until(()=>first.ready()||first.finished(),'First edit race operation did not become ready');assert.ok(first.ready(),'First edit race operation failed');
+   second=session(secondName,`begin;${operations[secondOp]} commit;`);
+   await until(()=>sql(`select exists(select 1 from pg_stat_activity w join pg_stat_activity h on h.pid=any(pg_blocking_pids(w.pid)) where w.application_name='${secondName}' and h.application_name='${firstName}' and w.wait_event_type='Lock');`)==='t'||second.finished(),'Edit operations did not overlap');
+   assert.equal(second.finished(),false,'Second edit lifecycle operation waits on common flight lock');
+   first.child.stdin.end('commit;\n');const winner=await first.done,loser=await second.done;
+   assert.equal(winner.code,0);assert.equal(loser.code,0);assert.equal(values(winner).find(v=>v?.code)?.code,firstCode);assert.equal(values(loser).find(v=>v?.code)?.code,secondCode);
+   const stored=JSON.parse(sql(`select to_jsonb(f) from public.flights f where id='${flight}';`));
+   assert.equal(stored.pilot_places,places);assert.equal(stored.departure_airport,airport);assert.equal(Number(sql(`select count(*) from public.flight_requests where flight_id='${flight}' and status='accepted';`)),count);
+   for(const key of ['id','owner_id','created_at','visibility','status'])assert.equal(stored[key],original[key]);
+   assert.equal(sql(`select count(*) from public.flight_recipients where flight_id='${flight}';`),'2');
+   assert.equal(sql(`select count(*) from public.flight_requests where flight_id='${flight}' and introductory_note in ('First introduction','Other introduction');`),'2');
+   if(['different-edits','identical-edits','accept-material','accept-capacity','capacity-accept'].includes(kind))assert.deepEqual(stored,values(winner).find(v=>v?.snapshot)?.snapshot,'Later conflict/no-op/decision cannot rewrite winner flight');
+   if(kind==='different-edits'||kind==='identical-edits')assert.equal(stored.notes,'First edit');
+   console.log(`Flight edit ${kind}: observed competing lock and verified capacity/material/revision invariant`);
+  }finally{
+   first?.child.stdin.end();second?.child.stdin.end();sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
+   await Promise.all([first?.done,second?.done]);
+   sql(`delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
+  }
+ }
+}
+
 // Withdrawal shares the established flight lock with decisions, resubmission and
 // PRIVATE removal. Observe real blocking before committing the first operation.
 export async function verifyRequestWithdrawalLocks({sql,session,until}){
