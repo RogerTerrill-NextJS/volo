@@ -349,6 +349,9 @@ isOneToOne: false
                            },
 "submit_flight_interest":
 { Args: { "p_flight_id": string,"p_introductory_note"?: string }; Returns: Json
+                           },
+"withdraw_flight_request":
+{ Args: { "p_flight_id": string,"p_request_id": string }; Returns: Json
                            }
           }
           Enums: {

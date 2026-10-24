@@ -1,6 +1,63 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 
+// Withdrawal shares the established flight lock with decisions, resubmission and
+// PRIVATE removal. Observe real blocking before committing the first operation.
+export async function verifyRequestWithdrawalLocks({sql,session,until}){
+ const cases=[
+  ['duplicate','pending','withdraw','withdraw','withdrawn','already_withdrawn','withdrawn','pending'],
+  ['accept-withdraw','pending','accept','withdraw','decided','withdrawn','withdrawn','pending'],
+  ['withdraw-accept','pending','withdraw','accept','withdrawn','request_conflict','withdrawn','pending'],
+  ['withdraw-other-accept','accepted','withdraw','other-accept','withdrawn','decided','withdrawn','accepted'],
+  ['other-accept-withdraw','accepted','other-accept','withdraw','capacity_full','withdrawn','withdrawn','pending'],
+  ['withdraw-resubmit','pending','withdraw','submit','withdrawn','submitted','pending','pending'],
+  ['resubmit-withdraw','withdrawn','submit','withdraw','submitted','withdrawn','withdrawn','pending'],
+  ['removal-withdraw','accepted','remove','withdraw',null,'request_conflict','cancelled','pending'],
+  ['withdraw-removal','accepted','withdraw','remove','withdrawn',null,'withdrawn','pending'],
+ ];
+ for(const [kind,initial,firstOp,secondOp,firstCode,secondCode,finalStatus,otherStatus] of cases){
+  const owner=randomUUID(),requester=randomUUID(),other=randomUUID(),flight=randomUUID(),request=randomUUID(),competing=randomUUID();
+  const label='volo195_'+randomUUID().replaceAll('-',''),firstName=label+'_first',secondName=label+'_second';
+  const auth=(actor,query)=>`set local role authenticated; select set_config('request.jwt.claims','{"sub":"${actor}","role":"authenticated"}',true); ${query}`;
+  const operations={withdraw:auth(requester,`select public.withdraw_flight_request('${flight}','${request}');`),accept:auth(owner,`select public.decide_flight_request('${flight}','${request}','accepted');`),'other-accept':auth(owner,`select public.decide_flight_request('${flight}','${competing}','accepted');`),submit:auth(requester,`select public.submit_flight_interest('${flight}','Fresh resubmission');`),remove:auth(owner,`select public.change_flight_recipient('${flight}','${requester}',false);`)};
+  const values=result=>result.stdout.split('\n').flatMap(line=>{try{return [JSON.parse(line)];}catch{return [];}});
+  let first,second;
+  try{
+   sql(`insert into auth.users(id,email) values ('${owner}','${owner}@example.invalid'),('${requester}','${requester}@example.invalid'),('${other}','${other}@example.invalid');
+    insert into public.memberships(user_id) values ('${owner}'),('${requester}'),('${other}');
+    insert into public.profiles(user_id,display_name,home_airport,pilot_designation) values ('${requester}','Withdrawal requester','KPAO','licensed'),('${other}','Withdrawal other','KPAO','licensed');
+    insert into public.flights(id,owner_id,departure_airport,destination_airport,departure_at,departure_timezone,aircraft_description,pilot_places,visibility) values ('${flight}','${owner}','KPAO','KSQL',now()+interval '2 days','UTC','C172',1,'PRIVATE');
+    insert into public.flight_recipients(flight_id,user_id) values ('${flight}','${requester}'),('${flight}','${other}');
+    insert into public.flight_requests(id,flight_id,requester_id,introductory_note) values ('${request}','${flight}','${requester}','Original introduction'),('${competing}','${flight}','${other}','Other introduction');
+    ${initial==='pending'?'':`update public.flight_requests set status='${initial}' where id='${request}';`}`);
+   const original=JSON.parse(sql(`select to_jsonb(r) from public.flight_requests r where id='${request}';`));
+   first=session(firstName,`begin; ${operations[firstOp]} select json_build_object('snapshot',to_jsonb(r)) from public.flight_requests r where id='${request}';\n\\echo winner_ready`,{hold:true});
+   await until(()=>first.ready()||first.finished(),'Withdrawal first operation did not become ready');assert.ok(first.ready(),'First withdrawal operation failed');
+   second=session(secondName,`begin; ${operations[secondOp]} commit;`);
+   await until(()=>sql(`select exists(select 1 from pg_stat_activity w join pg_stat_activity h on h.pid=any(pg_blocking_pids(w.pid)) where w.application_name='${secondName}' and h.application_name='${firstName}' and w.wait_event_type='Lock');`)==='t'||second.finished(),'Withdrawal operations did not overlap');
+   assert.equal(second.finished(),false,'Second lifecycle operation must wait');
+   first.child.stdin.end('commit;\n');const winner=await first.done,loser=await second.done;
+   assert.equal(winner.code,0,'First lifecycle operation commits');assert.equal(loser.code,0,'Waiting operation returns safe result');
+   if(firstCode)assert.equal(values(winner).find(v=>v?.code)?.code,firstCode);
+   if(secondCode)assert.equal(values(loser).find(v=>v?.code)?.code,secondCode);
+   const stored=JSON.parse(sql(`select to_jsonb(r) from public.flight_requests r where id='${request}';`));
+   assert.equal(stored.status,finalStatus);for(const key of ['id','flight_id','requester_id','created_at'])assert.equal(stored[key],original[key]);
+   assert.equal(stored.introductory_note,[firstOp,secondOp].includes('submit')?'Fresh resubmission':original.introductory_note);
+   assert.equal(sql(`select status from public.flight_requests where id='${competing}';`),otherStatus);
+   assert.equal(sql(`select count(*) from public.flight_requests where flight_id='${flight}';`),'2');
+   assert.ok(Number(sql(`select count(*) from public.flight_requests where flight_id='${flight}' and status='accepted';`))<=1,'Capacity invariant preserved');
+   if(['duplicate','withdraw-accept','removal-withdraw','withdraw-removal'].includes(kind))assert.deepEqual(stored,values(winner).find(v=>v?.snapshot)?.snapshot,'No-op/conflicting operation preserves complete winner record');
+   if(kind.includes('removal'))assert.equal(sql(`select count(*) from public.flight_recipients where flight_id='${flight}' and user_id='${requester}';`),'0');
+   console.log(`Withdrawal ${kind}: observed competing lock and verified final state`);
+  }finally{
+   first?.child.stdin.end();second?.child.stdin.end();
+   sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
+   await Promise.all([first?.done,second?.done]);
+   sql(`delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
+  }
+ }
+}
+
 // Reuse the upgrade verifier's owned-local SQL/session/barrier infrastructure.
 // No hosted destination, credentials or generic lifecycle runner is introduced.
 export async function verifyRequestLocks({sql,session,until,submission=false}) {
