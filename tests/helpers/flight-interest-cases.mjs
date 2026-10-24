@@ -181,6 +181,47 @@ export async function verifyFlightInterest({stack,app,scenario}){
    await connectionMode('malformed');try{assert.deepEqual(await connection(next.request.id),{status:'unavailable'});}finally{await connectionMode('off');}
    assert.equal((await connection(next.request.id)).status,'authorized');
   });
+  const connectionPage=async(request,label='pilot')=>{
+   const response=await app.request('/dashboard/connections/'+request,{session:sessions[label]});
+   for(const name of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(name)??'',/no-store/);
+   const body=await response.text();stack.assertNoCredentialLeaks(body);for(const s of Object.values(sessions))s.assertNoCredentialLeaks(body);for(const a of Object.values(accounts))assert.ok(!body.includes(a.email));assert.ok(!body.includes('private-connection-error-canary'));return body;
+  };
+  await checkScenario('connection_page_both_pilots_receive_bound_flight_counterpart_and_entry_links',async()=>{
+   await checked(admin.from('profiles').update({display_name:'Posting connection pilot',bio:'Owner permitted biography'}).eq('user_id',accounts.owner.id));
+   await checked(admin.from('profiles').update({display_name:'Joining connection pilot',bio:'Requester permitted biography'}).eq('user_id',accounts.pilot.id));
+   try{
+    const {id,request}=await acceptedConnection({visibility:'PRIVATE',notes:'connection-view-flight-canary'});
+    for(const [label,name,bio,role] of [['owner','Joining connection pilot','Requester permitted biography','Joining pilot'],['pilot','Posting connection pilot','Owner permitted biography','Posting pilot']]){
+     const body=await connectionPage(request.id,label);assert.match(body,/Accepted connection/);assert.ok(body.includes(name)&&body.includes(bio)&&body.includes(role));assert.match(body,/connection-view-flight-canary/);assert.match(body,/UTC/);assert.match(body,/Owned interest C172/);assert.ok(body.includes('href="/dashboard/flights/'+id+'"'));assert.ok(!body.includes('Send message'));
+     const source=(await page(id,label)).body;assert.ok(source.includes('href="/dashboard/connections/'+request.id+'"'));assert.match(source,/View accepted connection/);
+    }
+    assert.match(await connectionPage(request.id,'owner'),/You are the posting pilot/);assert.match(await connectionPage(request.id),/Your request has been accepted/);
+   }finally{
+    await checked(admin.from('profiles').update({display_name:'Owned interest pilot',bio:null}).in('user_id',[accounts.owner.id,accounts.pilot.id]));
+   }
+  });
+  await checkScenario('connection_page_pending_unrelated_closed_and_revoked_views_discard_private_details',async()=>{
+   const {id,request}=await acceptedConnection({visibility:'PRIVATE',notes:'connection-closed-private-canary'});
+   for(const label of ['other','adminNoProfile','noProfile','disabled','absent']){const body=await connectionPage(request.id,label);assert.ok(!body.includes('connection-closed-private-canary'));assert.ok(!body.includes('Owned interest C172'));}
+   assert.match(await connectionPage('invalid'),/Connection unavailable/);assert.match(await connectionPage(randomUUID()),/Connection unavailable/);
+   const pending=await newFlight({notes:'pending-connection-canary'});expectCode(await invoke('pilot',pending),'submitted');const pendingRow=(await rows()).find(r=>r.flight_id===pending);
+   assert.ok(!(await page(pending)).body.includes('View accepted connection'));for(const label of ['owner','pilot']){const body=await connectionPage(pendingRow.id,label);assert.match(body,/Connection unavailable/);assert.ok(!body.includes('pending-connection-canary'));}
+   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:id,p_recipient_id:accounts.pilot.id,p_selected:false}));for(const label of ['owner','pilot']){const body=await connectionPage(request.id,label);assert.match(body,/Connection unavailable/);assert.ok(!body.includes('connection-closed-private-canary'));}
+   for(const close of ['withdraw','cancel','complete']){
+    const pair=await acceptedConnection({notes:'closed-connection-canary'});
+    if(close==='withdraw')await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:pair.id,p_request_id:pair.request.id}));
+    else if(close==='cancel')await checked(clients.owner.rpc('cancel_flight',{p_flight_id:pair.id}));else await checked(admin.from('flights').update({status:'completed'}).eq('id',pair.id));
+    const body=await connectionPage(pair.request.id);assert.match(body,/Connection unavailable/);assert.ok(!body.includes('closed-connection-canary'));
+   }
+  });
+  await checkScenario('connection_page_optional_profile_failure_recovery_and_final_authorization_recheck',async()=>{
+   const pair=await acceptedConnection({notes:'optional-profile-flight-note'});await mode('profile-timeout:'+accounts.pilot.id);
+   try{const body=await connectionPage(pair.request.id,'owner');assert.match(body,/Pilot profile temporarily unavailable/);assert.match(body,/optional-profile-flight-note/);}finally{await mode('off');}
+   assert.ok((await connectionPage(pair.request.id,'owner')).includes('/directory/'+accounts.pilot.id));
+   await connectionMode('malformed');try{const body=await connectionPage(pair.request.id);assert.match(body,/Connection temporarily unavailable/);assert.match(body,/Check connection status/);assert.ok(!body.includes('optional-profile-flight-note'));}finally{await connectionMode('off');}
+   await connectionMode('withdraw-profile:'+pair.request.id);try{const body=await connectionPage(pair.request.id,'owner');assert.match(body,/Connection unavailable/);assert.ok(!body.includes('optional-profile-flight-note'));assert.ok(!body.includes('/directory/'+accounts.pilot.id));}finally{await connectionMode('off');}
+   assert.equal((await rows()).find(r=>r.id===pair.request.id).status,'withdrawn');
+  });
   const cancellationMode=async value=>assert.equal((await app.request('/api/cancellation-control',{method:'POST',body:value})).status,200);
   const cancellationCalls=async()=>(await(await app.request('/api/cancellation-control')).json()).calls;
   const cancel=async(id,fields={},settings={})=>{

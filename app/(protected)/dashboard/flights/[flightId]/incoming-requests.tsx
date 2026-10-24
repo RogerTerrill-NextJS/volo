@@ -5,7 +5,7 @@ import DecisionControls from './decision-controls';
 const linkClass='inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
 export function IncomingLoading(){return <section aria-labelledby="incoming-heading" aria-busy="true" className="space-y-3 border-t border-zinc-200 pt-6 dark:border-zinc-800"><h2 id="incoming-heading" className="text-xl font-semibold">Incoming requests</h2><p role="status">Loading incoming requests…</p></section>;}
 
-export default async function IncomingRequests({flightId,after}:{flightId:string;after:unknown}){
+export default async function IncomingRequests({flightId,after,connectionsAvailable=false}:{flightId:string;after:unknown;connectionsAvailable?:boolean}){
  const result=await listIncomingRequests(flightId,after),first=`/dashboard/flights/${flightId}`;
  const href=(value:string)=>`${first}?requestsAfter=${encodeURIComponent(value)}#incoming-heading`;
  if(result.status==='unauthenticated')redirect('/login?reason=authentication-required');
@@ -24,6 +24,7 @@ export default async function IncomingRequests({flightId,after}:{flightId:string
     </div>
     <p className="whitespace-pre-line [overflow-wrap:anywhere]">{request.note||'No introduction provided.'}</p>
     <p className="text-sm text-zinc-600 dark:text-zinc-400">First requested: <time dateTime={request.createdAt}>{request.createdAt.slice(0,10)} at {request.createdAt.slice(11,16)} UTC</time></p>
+    {connectionsAvailable&&request.status==='accepted'&&<Link href={`/dashboard/connections/${request.id}`} prefetch={false} className={linkClass}>View accepted connection</Link>}
     <DecisionControls flightId={flightId} requestId={request.id} initialStatus={request.status} permalink={(typeof after==='string'?`${first}?requestsAfter=${encodeURIComponent(after)}`:first)+'#request-'+request.id} pilotName={request.pilot?.displayName??'this pilot'}/>
    </li>)}
   </ul>}
