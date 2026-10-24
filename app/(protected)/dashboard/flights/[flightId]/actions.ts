@@ -7,6 +7,14 @@ import {decisionFormResult,type DecisionFormState} from '../../../../../lib/flig
 import {refresh} from 'next/cache';
 import {withdrawalPolicy} from '../../../../../lib/flights/withdrawal-mutation';
 import {withdrawalFormResult} from '../../../../../lib/flights/withdrawal-form-state';
+import {cancellationPolicy} from '../../../../../lib/flights/cancellation-mutation';
+import {cancellationFormResult,type CancellationFormState} from '../../../../../lib/flights/cancellation-form-state';
+export async function cancelFlight(previous:CancellationFormState,form:FormData):Promise<CancellationFormState>{
+ const outcome=await handleActionMutation(form,cancellationPolicy(),2048);
+ const state=cancellationFormResult(previous,form,outcome.ok?outcome.data:{code:outcome.code});
+ if(state.status==='cancelled')refresh();
+ return state;
+}
 export async function requestInterest(previous:InterestFormState,form:FormData):Promise<InterestFormState>{
  if(form.get('intent')==='withdraw'){
   const outcome=await handleActionMutation(form,withdrawalPolicy(),2048);

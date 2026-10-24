@@ -116,6 +116,9 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned withdrawal eligibility setup rejected');
         }
       }
+      if(url.pathname==='/rest/v1/rpc/cancel_flight'){
+        globalThis.__voloCancellationCalls=(globalThis.__voloCancellationCalls??0)+1;
+      }
       if(url.pathname==='/rest/v1/rpc/edit_flight'){
         globalThis.__voloEditCalls=(globalThis.__voloEditCalls??0)+1;
         const mode=globalThis.__voloEditMode;
@@ -128,6 +131,10 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       if(url.pathname==='/rest/v1/rpc/edit_flight'){
         if(globalThis.__voloEditMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed edit response');}
         if(globalThis.__voloEditMode==='malformed'){await response.text();return Response.json({code:'updated',flightId:'private-edit-error-canary',updatedAt:'invalid'});}
+      }
+      if(url.pathname==='/rest/v1/rpc/cancel_flight'){
+        if(globalThis.__voloCancellationMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed cancellation response');}
+        if(globalThis.__voloCancellationMode==='malformed'){await response.text();return Response.json({code:'cancelled',flightId:'private-cancellation-error-canary',status:'cancelled'});}
       }
       if(url.pathname==='/rest/v1/rpc/withdraw_flight_request'){
         if(globalThis.__voloWithdrawalMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed withdrawal response');}
@@ -180,6 +187,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
     if(flights){
+      await put('app/api/cancellation-control/route.ts',`type State=typeof globalThis & {__voloCancellationMode?:string;__voloCancellationCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloCancellationMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloCancellationCalls??0});}`);
       await put('app/api/edit-control/route.ts',`type State=typeof globalThis & {__voloEditMode?:string;__voloEditCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^(accept|disable):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloEditMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloEditCalls??0});}`);
       await cp(path.join(root,'app/(protected)/dashboard/flights'),path.join(directory,'app/(protected)/dashboard/flights'),{recursive:true});
       await put('app/dashboard/flight-create-fixture/page.tsx',`import {createFlight} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={createFlight} label="Create flight"/></main>}`);
@@ -207,8 +215,9 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       const headers=new Headers(additional);if(session)headers.set('Cookie',session.cookieHeader());
       const response=await fetch(destination,{method,headers,body,redirect:'manual',signal:AbortSignal.any([AbortSignal.timeout(15000),...(signal?[signal]:[])])});session?.applyResponse(response);return response;
     };
-    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId}={})=>{
+    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId,formIntent}={})=>{
         let html=formHtml??await (await request(route,{session})).text();
+        if(formIntent){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="intent"')&&match[1].includes('value="'+formIntent+'"'));if(!selected)throw new Error('Owned intent form missing');html=selected[1];}
         if(formRequestId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="request_id"')&&match[1].includes('value="'+formRequestId+'"'));if(!selected)throw new Error('Owned decision form missing');html=selected[1];}
         const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
         const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
@@ -242,6 +251,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
       submitInterest(fields,settings={}){return invokeFlightAction('/dashboard/interest-fixture',fields,settings);},
+      cancellationPageAction(id,fields,settings={}){return invokeFlightAction('/dashboard/flights/'+id,{flight_id:id,intent:'cancel',confirmation:'cancel',...fields},{...settings,formIntent:'cancel'});},
       async editPageAction(id,overrides,{formHtml,...settings}={}){
         const route='/dashboard/flights/'+id+'/edit',html=formHtml??await(await request(route,settings)).text(),fields={};
         for(const match of html.matchAll(/<input\b[^>]*>/g)){const name=match[0].match(/name="([^"]+)"/)?.[1];if(name&&!name.startsWith('$ACTION_'))fields[decode(name)]=decode(match[0].match(/value="([^"]*)"/)?.[1]??'');}

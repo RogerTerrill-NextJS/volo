@@ -10,6 +10,7 @@ import InterestForm,{type InterestMode} from './interest-form';
 import {getOwnFlightInterest} from '../../../../../lib/flights/interest-query';
 import {Suspense} from 'react';
 import IncomingRequests,{IncomingLoading} from './incoming-requests';
+import CancellationForm from './cancellation-form';
 
 export const metadata:Metadata={title:'Flight detail | Volo',robots:{index:false,follow:false}};
 const linkClass='inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
@@ -54,5 +55,6 @@ export default async function FlightDetailPage({params,searchParams}:{params:Pro
   <Link href="/dashboard/flights" prefetch={false} className={linkClass}><span aria-hidden="true" className="mr-2">←</span>Back to upcoming flights</Link>
   {result.flight.isOwn&&!result.flight.isPast&&result.flight.status==='open'&&<Link href={`/dashboard/flights/${result.flight.id}/edit`} prefetch={false} className={linkClass}>Edit flight</Link>}
   <FlightDetails flight={result.flight} pilot={result.pilot} ownerActions={result.flight.isOwn?<Suspense key={JSON.stringify(query.requestsAfter??null)} fallback={<IncomingLoading/>}><IncomingRequests flightId={result.flight.id} after={query.requestsAfter}/></Suspense>:undefined} joinerActions={!result.flight.isOwn?<InterestForm flightId={result.flight.id} mode={interest}/>:undefined}/>
+  {result.flight.isOwn&&<CancellationForm key={result.flight.id} flightId={result.flight.id} flightStatus={result.flight.status}/>}
  </AppShell>;
 }
