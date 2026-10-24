@@ -235,6 +235,22 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.match(await connectionPage(pair.request.id),/Accepted connection/);
    const before=await rows();await connectionPage(pair.request.id);assert.deepEqual(await rows(),before,'Connection views never mutate requests');
   });
+  await checkScenario('conversation_real_session_pair_binding_private_history_and_fresh_acceptance',async()=>{
+   const {id,request}=await acceptedConnection({visibility:'PRIVATE',notes:'conversation-private-flight-canary'});
+   const open=label=>clients[label].rpc('get_or_create_flight_conversation',{p_request_id:request.id}).retry(false);
+   for(const label of ['other','adminNoProfile','noProfile','disabled','absent'])assert.equal((await open(label)).error?.code,'42501');
+   const created=await open('pilot');assert.equal(created.error,null);assert.match(created.data,/^[a-f0-9-]{36}$/);assert.equal((await open('owner')).data,created.data);
+   const stored=await checked(clients.pilot.from('conversations').select('*').eq('id',created.data));assert.equal(stored.length,1);assert.equal(stored[0].owner_id,accounts.owner.id);assert.equal(stored[0].requester_id,accounts.pilot.id);assert.equal(stored[0].flight_request_id,request.id);assert.equal(stored[0].closed_at,null);
+   assert.deepEqual(await checked(clients.other.from('conversations').select('*').eq('id',created.data)),[]);
+   assert.equal((await clients.pilot.from('conversations').update({owner_id:accounts.other.id}).eq('id',created.data).retry(false)).error?.code,'42501');
+   await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:id,p_request_id:request.id}));assert.equal((await open('pilot')).error?.code,'42501');
+   assert.ok((await checked(clients.owner.from('conversations').select('closed_at').eq('id',created.data).single())).closed_at);
+   expectCode(await invoke('pilot',id),'submitted');assert.equal((await open('pilot')).error?.code,'42501');
+   await checked(clients.owner.rpc('decide_flight_request',{p_flight_id:id,p_request_id:request.id,p_decision:'accepted'}));assert.equal((await open('pilot')).data,created.data);
+   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:id,p_recipient_id:accounts.pilot.id,p_selected:false}));assert.equal((await open('pilot')).error?.code,'42501');
+   assert.deepEqual(await checked(clients.pilot.from('flights').select('id').eq('id',id)),[]);
+   assert.ok((await checked(clients.pilot.from('conversations').select('closed_at').eq('id',created.data).single())).closed_at);
+  });
   const cancellationMode=async value=>assert.equal((await app.request('/api/cancellation-control',{method:'POST',body:value})).status,200);
   const cancellationCalls=async()=>(await(await app.request('/api/cancellation-control')).json()).calls;
   const cancel=async(id,fields={},settings={})=>{
@@ -559,6 +575,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
   await app.request('/api/decision-control',{method:'POST',body:'off'});
   await mode('off');
   if(flights.length){
+   for(const account of Object.values(accounts))await stack.removeOwnedConversations(account.id);
    await checked(admin.from('flight_requests').delete().in('flight_id',flights));
    await checked(admin.from('flight_recipients').delete().in('flight_id',flights));
    await checked(admin.from('flights').delete().in('id',flights));

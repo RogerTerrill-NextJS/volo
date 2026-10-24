@@ -297,6 +297,12 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         requireOwned(id);if(!['member','admin'].includes(role)||!['active','disabled'].includes(status))throw new Error('Invalid membership fixture');
         await api(`/rest/v1/memberships?user_id=eq.${id}`,{method:'PATCH',body:membership(role,status)});
       },
+      async removeOwnedConversations(id){
+        // History deletion has no service-role grant. Cleanup is restricted to
+        // this disposable stack and an account created by this exact test run.
+        requireOwned(id);
+        await ownedFixtureSql(`delete from public.conversations where owner_id='${id}' or requester_id='${id}';`);
+      },
       async removeOwnedProfile(id){
         requireOwned(id);
         await ownedFixtureSql(`delete from public.profiles where user_id='${id}';`);
