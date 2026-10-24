@@ -131,6 +131,67 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(!body.includes('private-interest-error-canary'));return body;
   };
   const hasForm=body=>/<textarea[^>]*name="introductory_note"/.test(body);
+  const cancellationMode=async value=>assert.equal((await app.request('/api/cancellation-control',{method:'POST',body:value})).status,200);
+  const cancellationCalls=async()=>(await(await app.request('/api/cancellation-control')).json()).calls;
+  const cancel=async(id,fields={},settings={})=>{
+   const response=await app.cancellationPageAction(id,fields,{session:sessions.owner,transport:'native',...settings});
+   for(const name of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(name)??'',/no-store/);
+   const body=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(body);for(const s of Object.values(sessions))s.assertNoCredentialLeaks(body);assert.ok(!body.includes('private-cancellation-error-canary'));return body;
+  };
+  await checkScenario('cancellation_native_and_fetched_refresh_owner_requester_and_feed',async()=>{
+   for(const transport of ['native','fetched']){
+    const id=await newFlight({visibility:transport==='native'?'PRIVATE':'NETWORK',pilot_places:2,notes:'Retained cancellation flight notes'});
+    if(transport==='native')await checked(admin.from('flight_recipients').insert([accounts.pilot,accounts.other].map(a=>({flight_id:id,user_id:a.id}))));
+    expectCode(await invoke('pilot',id,{introductory_note:'Retained accepted introduction'}),'submitted');expectCode(await invoke('other',id,{introductory_note:'Retained pending introduction'}),'submitted');
+    await checked(admin.from('flight_requests').update({status:'accepted'}).eq('flight_id',id).eq('requester_id',accounts.pilot.id));
+    const before=(await rows()).filter(r=>r.flight_id===id),initial=await page(id,'owner');
+    assert.match(initial.body,/Confirm flight cancellation/);assert.match(initial.body,/<input[^>]*required[^>]*name="confirmation"|<input[^>]*name="confirmation"[^>]*required/);
+    assert.ok(!(await page(id)).body.includes('Confirm flight cancellation'),'Requester has no owner control');
+    assert.match(await cancel(id,{}, {transport,formHtml:initial.html}),/Flight cancelled\. Pending and accepted requests are closed/);
+    const closed=(await rows()).filter(r=>r.flight_id===id);assert.equal(closed.length,2);assert.ok(closed.every(r=>r.status==='cancelled'));
+    for(const row of closed)for(const field of ['id','flight_id','requester_id','introductory_note','created_at'])assert.equal(row[field],before.find(r=>r.id===row.id)[field]);
+    const owner=(await page(id,'owner')).body,pilot=(await page(id)).body;
+    for(const body of [owner,pilot]){assert.match(body,/Cancelled flight/);assert.match(body,/Retained cancellation flight notes/);assert.ok(!body.includes('>Edit flight<'));}
+    assert.match(owner,/Retained accepted introduction/);assert.match(owner,/Retained pending introduction/);assert.ok(!owner.includes('Confirm cancellation'));assert.ok(!/value="accepted"|value="declined"/.test(owner));
+    assert.match(pilot,/closed and cannot be submitted again/);assert.ok(!pilot.includes('Withdraw request'));assert.ok(!hasForm(pilot));
+    const feed=await app.request('/dashboard/flights',{session:sessions.owner});assert.ok(!(await feed.text()).includes('href="/dashboard/flights/'+id+'"'));
+   }
+  });
+  await checkScenario('cancellation_rejects_unconfirmed_forged_and_revoked_forms',async()=>{
+   const id=await newFlight(),cached=(await page(id,'owner')).html;
+   const snapshot=()=>checked(admin.from('flights').select('*').eq('id',id).single());const before=await snapshot();
+   for(const fields of [{confirmation:undefined},{confirmation:'on'},{owner_id:accounts.owner.id},{role:'admin'},{status:'cancelled'},{intent:'withdraw'},{confirmation:'x'.repeat(3000)}]){
+    const count=await cancellationCalls();assert.match(await cancel(id,fields,{formHtml:cached}),/Check flight status/);assert.equal(await cancellationCalls(),count,'Invalid form never calls cancellation RPC');assert.deepEqual(await snapshot(),before);
+   }
+   for(const label of [null,'disabled','absent','pilot','noProfile']){
+    const body=await cancel(id,{}, {formHtml:cached,session:sessions[label]});assert.ok(!body.includes('Flight cancelled.'));assert.deepEqual(await snapshot(),before);
+   }
+   const count=await cancellationCalls();await cancel(id,{}, {formHtml:cached,origin:null});assert.equal(await cancellationCalls(),count);assert.deepEqual(await snapshot(),before);
+   await stack.setMembership(accounts.owner.id,{role:'member',status:'disabled'});
+   try{await cancel(id,{}, {formHtml:cached});assert.equal(await cancellationCalls(),count);assert.deepEqual(await snapshot(),before);}finally{await stack.setMembership(accounts.owner.id,{role:'member',status:'active'});}
+   const noProfile=await newFlight({owner_id:accounts.noProfile.id});assert.match(await cancel(noProfile,{}, {formHtml:(await page(noProfile,'noProfile')).html,session:sessions.noProfile}),/Flight cancelled\./);
+   const adminId=await newFlight();assert.match(await cancel(adminId,{}, {formHtml:cached,session:sessions.adminNoProfile}),/Flight cancelled\./,'Authoritative admin RPC authorization remains available without exposing owner controls');
+  });
+  await checkScenario('cancellation_stale_forms_confirm_idempotently_or_report_completed_conflict',async()=>{
+   const id=await newFlight(),cached=(await page(id,'owner')).html;
+   assert.match(await cancel(id,{}, {formHtml:cached}),/Flight cancelled\./);const before=await checked(admin.from('flights').select('*').eq('id',id).single());
+   assert.match(await cancel(id,{}, {formHtml:cached,transport:'fetched'}),/Flight cancelled\./);assert.deepEqual(await checked(admin.from('flights').select('*').eq('id',id).single()),before);
+   const completed=await newFlight(),formHtml=(await page(completed,'owner')).html;await checked(admin.from('flights').update({status:'completed'}).eq('id',completed));
+   const body=await cancel(completed,{}, {formHtml});assert.match(body,/Check flight status/);assert.match(body,/<fieldset[^>]*disabled/);assert.ok(!body.includes('Flight cancelled.'));
+   assert.match((await page(completed,'owner')).body,/Completed flight/);assert.ok(!(await page(completed,'owner')).body.includes('Confirm cancellation'));
+  });
+  await checkScenario('cancellation_lost_and_malformed_confirmations_require_explicit_reload',async()=>{
+   for(const mode of ['lost','malformed']){
+    const id=await newFlight(),count=await cancellationCalls();await cancellationMode(mode);let body;
+    try{body=await cancel(id,{}, {transport:mode==='lost'?'native':'fetched'});}finally{await cancellationMode('off');}
+    assert.match(body,/Unable to confirm cancellation/);assert.match(body,/Check flight status/);
+    // Native responses render HTML; fetched responses deliver the client form state.
+    if(mode==='lost')assert.match(body,/<fieldset[^>]*disabled/);else assert.match(body,/"status":"unconfirmed"/);
+    assert.ok(!body.includes('Flight cancelled.'));
+    assert.equal(await cancellationCalls(),count+1,'Unknown confirmation never causes automatic retry');
+    const current=(await page(id,'owner')).body;assert.match(current,/Cancelled flight/);assert.ok(!current.includes('Confirm cancellation'));
+   }
+  });
   const editMode=async value=>assert.equal((await app.request('/api/edit-control',{method:'POST',body:value})).status,200);
   const editCalls=async()=>(await(await app.request('/api/edit-control')).json()).calls;
   const editPage=async(id,label='owner')=>{const response=await app.request('/dashboard/flights/'+id+'/edit',{session:sessions[label]});return {response,html:await response.text()};};
@@ -387,6 +448,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(hasForm((await page(id)).body));
   });
  }finally{
+  await app.request('/api/cancellation-control',{method:'POST',body:'off'});
   await app.request('/api/edit-control',{method:'POST',body:'off'});
   await app.request('/api/withdrawal-control',{method:'POST',body:'off'});
   await app.request('/api/decision-control',{method:'POST',body:'off'});

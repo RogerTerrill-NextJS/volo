@@ -12,10 +12,10 @@ export default function InterestForm({flightId,mode}:{flightId:string;mode:Inter
  const [withdrawing,setWithdrawing]=useState(false);
  const [count,setCount]=useState({revision:0,value:0}),feedback=useRef<HTMLParagraphElement>(null);
  useEffect(()=>{if(state.revision>0)feedback.current?.focus();},[state.revision]);
- const status=state.revision>0?state.status:mode;
+ const status=mode==='closed'?'closed':state.revision>0?state.status:mode;
  const canResubmit=status==='withdrawn'&&!['flight_unavailable','profile_required','error','closed'].includes(mode);
  const editing=['ready','resubmit','editing'].includes(status)||canResubmit,unconfirmed=status==='unconfirmed';
- const message=state.revision>0?state.message:initialMessages[mode];
+ const message=mode==='closed'?initialMessages.closed:state.revision>0?state.message:initialMessages[mode];
  const error=['error','unconfirmed','withdrawal_unconfirmed','stale','denied','flight_unavailable','editing'].includes(status)&&message!==null;
  return <section aria-labelledby="flight-interest-heading" className="min-w-0 space-y-4 border-t border-zinc-200 pt-6 dark:border-zinc-800">
   <h2 id="flight-interest-heading" className="text-xl font-semibold">Join this flight</h2>
