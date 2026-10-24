@@ -251,6 +251,21 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.deepEqual(await checked(clients.pilot.from('flights').select('id').eq('id',id)),[]);
    assert.ok((await checked(clients.pilot.from('conversations').select('closed_at').eq('id',created.data).single())).closed_at);
   });
+  await checkScenario('message_real_session_history_is_participant_only_and_all_direct_writes_are_closed',async()=>{
+   const {id,request}=await acceptedConnection({visibility:'PRIVATE'});
+   const thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:request.id}));
+   const message=randomUUID(),body="Owned plain message: <script>text only</script> and pilot's introduction";
+   await stack.createOwnedMessage({id:message,conversation:thread,sender:accounts.pilot.id,body});
+   for(const label of ['owner','pilot'])assert.deepEqual(await checked(clients[label].from('messages').select('id,sender_id,body').eq('conversation_id',thread)),[{id:message,sender_id:accounts.pilot.id,body}]);
+   for(const label of ['other','adminNoProfile','noProfile','disabled','absent'])assert.deepEqual(await checked(clients[label].from('messages').select('body').eq('conversation_id',thread)),[]);
+   for(const label of ['owner','pilot','other']){assert.equal((await clients[label].from('messages').insert({conversation_id:thread,sender_id:accounts.owner.id,body:'Spoofed send'}).retry(false)).error?.code,'42501');assert.equal((await clients[label].from('messages').update({body:'Edited'}).eq('id',message).retry(false)).error?.code,'42501');assert.equal((await clients[label].from('messages').delete().eq('id',message).retry(false)).error?.code,'42501');}
+   assert.equal((await admin.from('messages').insert({conversation_id:thread,sender_id:accounts.pilot.id,body:'Privileged API send'}).retry(false)).error?.code,'42501');
+   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:id,p_recipient_id:accounts.pilot.id,p_selected:false}));
+   assert.deepEqual(await checked(clients.pilot.from('flights').select('id').eq('id',id)),[]);
+   assert.deepEqual(await checked(clients.pilot.from('messages').select('body').eq('conversation_id',thread)),[{body}]);
+   await stack.setMembership(accounts.pilot.id,{role:'member',status:'disabled'});
+   try{assert.deepEqual(await checked(clients.pilot.from('messages').select('body').eq('conversation_id',thread)),[]);assert.deepEqual(await checked(clients.owner.from('messages').select('body').eq('conversation_id',thread)),[{body}]);}finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+  });
   const cancellationMode=async value=>assert.equal((await app.request('/api/cancellation-control',{method:'POST',body:value})).status,200);
   const cancellationCalls=async()=>(await(await app.request('/api/cancellation-control')).json()).calls;
   const cancel=async(id,fields={},settings={})=>{

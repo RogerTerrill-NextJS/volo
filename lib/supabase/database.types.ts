@@ -207,6 +207,31 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"messages": {
+                  Row: {
+                    "body": string,"conversation_id": string,"created_at": string,"id": string,"sender_id": string
+                  }
+                  Insert: {
+                    "body": string,"conversation_id": string,"created_at"?: string,"id"?: string,"sender_id": string
+                  }
+                  Update: {
+                    "body"?: string,"conversation_id"?: string,"created_at"?: string,"id"?: string,"sender_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "messages_conversation_id_fkey"
+      columns: ["conversation_id"]
+isOneToOne: false
+      referencedRelation: "conversations"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "messages_sender_id_fkey"
+      columns: ["sender_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    }
+                  ]
                 },"password_recovery_authorizations": {
                   Row: {
                     "consumed_at": string | null,"created_at": string,"email_key": string,"expires_at": string,"lookup_digest": string,"origin": string,"session_id": string,"subject": string
