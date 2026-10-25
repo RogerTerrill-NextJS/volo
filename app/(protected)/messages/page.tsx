@@ -22,6 +22,7 @@ export default async function MessagesPage({searchParams}:{searchParams:Promise<
     {row.closed&&<p className="text-sm font-medium">Conversation closed · History retained</p>}
     <p className="text-zinc-600 dark:text-zinc-400">{row.preview||'No messages yet.'}</p>
     <p className="text-sm">Started <time dateTime={row.createdAt}>{new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeZone:'UTC'}).format(new Date(row.createdAt))} (UTC)</time></p>
+    <Link href={`/messages/${row.id}`} prefetch={false} className={linkClass}>Open conversation<span className="sr-only"> with {row.pilotName||'pilot'}</span></Link>
     <Link href={`/dashboard/connections/${row.requestId}`} prefetch={false} className={linkClass}>View flight connection<span className="sr-only"> with {row.pilotName||'pilot'}</span></Link>
    </li>)}</ul>:<section className="space-y-3"><h2 className="text-xl font-semibold">{(await searchParams).after?'No older conversations':'No conversations yet'}</h2><p>Conversations appear here after an accepted flight request opens a conversation.</p><Link href="/dashboard/flights" prefetch={false} className={linkClass}>Browse upcoming flights</Link></section>}
    <nav aria-label="Conversation pages" className="flex flex-wrap gap-6">{(await searchParams).after&&<Link href="/messages" prefetch={false} className={linkClass}>Back to latest conversations</Link>}{result.nextCursor&&<Link href={`/messages?after=${encodeURIComponent(result.nextCursor)}`} prefetch={false} className={linkClass}>Older conversations</Link>}</nav>

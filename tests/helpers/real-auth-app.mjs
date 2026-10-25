@@ -127,7 +127,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned edit race setup failed');
         }
       }
-      if(url.pathname==='/rest/v1/rpc/send_conversation_message')globalThis.__voloMessageCalls=(globalThis.__voloMessageCalls??0)+1;
+      if(url.pathname==='/rest/v1/rpc/send_conversation_message'){globalThis.__voloMessageCalls=(globalThis.__voloMessageCalls??0)+1;if(globalThis.__voloMessageMode==='delay')await new Promise(resolve=>setTimeout(resolve,3000));}
       if(url.pathname==='/rest/v1/messages'&&globalThis.__voloMessageMode==='read-outage')return Response.json({code:'private-message-error-canary'},{status:503});
       const response=await original(input,{...init,redirect:'error'});
       if(url.pathname==='/rest/v1/rpc/send_conversation_message'){
@@ -215,7 +215,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     if(flights){
       await put('app/dashboard/message-fixture/page.tsx',`import {sendMessage} from '../../../lib/messages/actions';import Form from '../../form';export default function Page(){return <main><Form action={sendMessage} label="Message fixture"/></main>}`);
       await put('app/api/message-history/route.ts',`import {getConversationHistory} from '../../../lib/messages/history-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const url=new URL(request.url),response=Response.json(await getConversationHistory(url.searchParams.get('conversation'),url.searchParams.get('before')));applyPrivateResponseHeaders(response.headers);return response;}`);
-      await put('app/api/message-control/route.ts',`type State=typeof globalThis & {__voloMessageMode?:string;__voloMessageCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage'].includes(mode)&&!/^disable-history:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMessageMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloMessageCalls??0});}`);
+      await put('app/api/message-control/route.ts',`type State=typeof globalThis & {__voloMessageMode?:string;__voloMessageCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage','delay','action-lost'].includes(mode)&&!/^disable-history:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMessageMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloMessageCalls??0});}`);
 
       await put('app/api/flight-connection/route.ts',`import {getFlightConnection} from '../../../lib/flights/connection-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const response=Response.json(await getFlightConnection(new URL(request.url).searchParams.get('request')));applyPrivateResponseHeaders(response.headers);return response;}`);
       await put('app/api/connection-control/route.ts',`type State=typeof globalThis & {__voloConnectionMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','malformed'].includes(mode)&&!/^(withdraw|disable|withdraw-profile):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloConnectionMode=mode;return Response.json({ok:true});}`);
@@ -223,6 +223,8 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/api/edit-control/route.ts',`type State=typeof globalThis & {__voloEditMode?:string;__voloEditCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^(accept|disable):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloEditMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloEditCalls??0});}`);
       await cp(path.join(root,'app/(protected)/dashboard/connections'),path.join(directory,'app/(protected)/dashboard/connections'),{recursive:true});
       await cp(path.join(root,'app/(protected)/messages'),path.join(directory,'app/(protected)/messages'),{recursive:true});
+      const chatActionPath=path.join(directory,'app/(protected)/messages/[conversationId]/actions.ts');
+      await writeFile(chatActionPath,(await readFile(chatActionPath,'utf8')).replace(" if(state.status==='sent')refresh();"," if(state.status==='sent'&&(globalThis as typeof globalThis & {__voloMessageMode?:string}).__voloMessageMode==='action-lost')throw Error('Owned fixture discarded committed chat action');\n if(state.status==='sent')refresh();"));
       await cp(path.join(root,'app/(protected)/dashboard/flights'),path.join(directory,'app/(protected)/dashboard/flights'),{recursive:true});
       await put('app/dashboard/flight-create-fixture/page.tsx',`import {createFlight} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={createFlight} label="Create flight"/></main>}`);
       await put('app/api/flight-create-control/route.ts',`type State=typeof globalThis & {__voloFlightCreateMode?:string;__voloFlightCreateCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloFlightCreateMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloFlightCreateCalls??0});}`);
@@ -236,7 +238,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/api/decision-control/route.ts',`type State=typeof globalThis & {__voloDecisionMode?:string;__voloDecisionCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloDecisionMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloDecisionCalls??0});}`);
       await cp(path.join(root,'app/(protected)/onboarding'),path.join(directory,'app/(protected)/onboarding'),{recursive:true});
       await put('app/dashboard/interest-fixture/page.tsx',`import {submitFlightInterest} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={submitFlightInterest} label="Interested fixture"/></main>}`);
-      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage'].includes(mode)&&!/^(disable|full|profile-timeout):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
+      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage','delay','action-lost'].includes(mode)&&!/^(disable|full|profile-timeout):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
     }
     if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
     if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));
@@ -285,6 +287,12 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
       sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
+      async chatPageAction(thread,fields,{formHtml,...settings}={}){
+        const route='/messages/'+thread,html=formHtml??await(await request(route,settings)).text();
+        const input=[...html.matchAll(/<input\b[^>]*>/g)].find(match=>match[0].includes('name="message_id"'))?.[0];
+        const messageId=decode(input?.match(/value="([^"]*)"/)?.[1]??'');
+        return invokeFlightAction(route,{conversation_id:thread,message_id:messageId,...fields},{...settings,formHtml:html});
+      },
       submitInterest(fields,settings={}){return invokeFlightAction('/dashboard/interest-fixture',fields,settings);},
       cancellationPageAction(id,fields,settings={}){return invokeFlightAction('/dashboard/flights/'+id,{flight_id:id,intent:'cancel',confirmation:'cancel',...fields},{...settings,formIntent:'cancel'});},
       async editPageAction(id,overrides,{formHtml,...settings}={}){
