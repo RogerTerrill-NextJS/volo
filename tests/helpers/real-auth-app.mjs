@@ -127,7 +127,19 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned edit race setup failed');
         }
       }
+      if(url.pathname==='/rest/v1/rpc/send_conversation_message')globalThis.__voloMessageCalls=(globalThis.__voloMessageCalls??0)+1;
+      if(url.pathname==='/rest/v1/messages'&&globalThis.__voloMessageMode==='read-outage')return Response.json({code:'private-message-error-canary'},{status:503});
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/send_conversation_message'){
+        if(globalThis.__voloMessageMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed message response');}
+        if(globalThis.__voloMessageMode==='malformed'){await response.text();return Response.json({id:'private-message-error-canary'});}
+      }
+      if(url.pathname==='/rest/v1/messages'&&globalThis.__voloMessageMode?.startsWith('disable-history:')){
+        const subject=globalThis.__voloMessageMode.slice(16);globalThis.__voloMessageMode='off';
+        const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned history read race'})});
+        if(!changed.ok)throw new Error('Owned history race setup rejected');
+      }
+
       if(url.pathname==='/rest/v1/rpc/edit_flight'){
         if(globalThis.__voloEditMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed edit response');}
         if(globalThis.__voloEditMode==='malformed'){await response.text();return Response.json({code:'updated',flightId:'private-edit-error-canary',updatedAt:'invalid'});}
@@ -201,6 +213,10 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
     if(flights){
+      await put('app/dashboard/message-fixture/page.tsx',`import {sendMessage} from '../../../lib/messages/actions';import Form from '../../form';export default function Page(){return <main><Form action={sendMessage} label="Message fixture"/></main>}`);
+      await put('app/api/message-history/route.ts',`import {getConversationHistory} from '../../../lib/messages/history-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const url=new URL(request.url),response=Response.json(await getConversationHistory(url.searchParams.get('conversation'),url.searchParams.get('before')));applyPrivateResponseHeaders(response.headers);return response;}`);
+      await put('app/api/message-control/route.ts',`type State=typeof globalThis & {__voloMessageMode?:string;__voloMessageCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage'].includes(mode)&&!/^disable-history:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMessageMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloMessageCalls??0});}`);
+
       await put('app/api/flight-connection/route.ts',`import {getFlightConnection} from '../../../lib/flights/connection-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const response=Response.json(await getFlightConnection(new URL(request.url).searchParams.get('request')));applyPrivateResponseHeaders(response.headers);return response;}`);
       await put('app/api/connection-control/route.ts',`type State=typeof globalThis & {__voloConnectionMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','malformed'].includes(mode)&&!/^(withdraw|disable|withdraw-profile):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloConnectionMode=mode;return Response.json({ok:true});}`);
       await put('app/api/cancellation-control/route.ts',`type State=typeof globalThis & {__voloCancellationMode?:string;__voloCancellationCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloCancellationMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloCancellationCalls??0});}`);
@@ -268,6 +284,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       createFlight(fields,{page=false,...settings}={}){
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
+      sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
       submitInterest(fields,settings={}){return invokeFlightAction('/dashboard/interest-fixture',fields,settings);},
       cancellationPageAction(id,fields,settings={}){return invokeFlightAction('/dashboard/flights/'+id,{flight_id:id,intent:'cancel',confirmation:'cancel',...fields},{...settings,formIntent:'cancel'});},
       async editPageAction(id,overrides,{formHtml,...settings}={}){
