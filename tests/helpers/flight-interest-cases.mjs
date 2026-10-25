@@ -267,6 +267,19 @@ export async function verifyFlightInterest({stack,app,scenario}){
    await stack.setMembership(accounts.pilot.id,{role:'member',status:'disabled'});
    try{assert.deepEqual(await checked(clients.pilot.from('messages').select('body').eq('conversation_id',thread)),[]);assert.deepEqual(await checked(clients.owner.from('messages').select('body').eq('conversation_id',thread)),[{body}]);}finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
   });
+  await checkScenario('conversation_list_safe_previews_private_context_and_participant_empty_states',async()=>{
+   const {id,request}=await acceptedConnection({visibility:'PRIVATE',departure_airport:'ZZZZ207',destination_airport:'YYYY207'});
+   const thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:request.id}));
+   const body='list-preview-207 <script>alert("preview")</script> '+ '🛩'.repeat(200);
+   await stack.createOwnedMessage({id:randomUUID(),conversation:thread,sender:accounts.pilot.id,body});
+   const read=async label=>{const response=await app.request('/messages',{session:sessions[label]});for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);const html=await response.text();stack.assertNoCredentialLeaks(html);assert.ok(!html.includes('<script>alert("preview")</script>'));return html;};
+   for(const label of ['owner','pilot']){const html=await read(label);assert.match(html,/list-preview-207/);assert.match(html,/ZZZZ207/);assert.ok(html.includes('/dashboard/connections/'+request.id));}
+   for(const label of ['other','adminNoProfile','noProfile','disabled','absent']){const html=await read(label);assert.ok(!html.includes('list-preview-207'));assert.ok(!html.includes('ZZZZ207'));if(['other','adminNoProfile','noProfile'].includes(label))assert.match(html,/No conversations yet/);}
+   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:id,p_recipient_id:accounts.pilot.id,p_selected:false}));
+   const closed=await read('pilot');assert.match(closed,/list-preview-207/);assert.match(closed,/Conversation closed/);assert.ok(!closed.includes('ZZZZ207'));assert.match(closed,/Flight details are no longer available/);
+   await stack.setMembership(accounts.pilot.id,{role:'member',status:'disabled'});try{assert.ok(!(await read('pilot')).includes('list-preview-207'));assert.match(await read('owner'),/list-preview-207/);}finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+   const invalid=await app.request('/messages?after=invalid',{session:sessions.owner});assert.match(await invalid.text(),/This conversation page is unavailable/);
+  });
   await checkScenario('message_guarded_rpc_and_realtime_enforce_current_participants_without_delete_events',async()=>{
    const pair=await acceptedConnection({visibility:'PRIVATE'}),thread=await checked(clients.owner.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
    const labels=['owner','pilot','other','disabled','absent'],events=Object.fromEntries(labels.map(label=>[label,[]])),channels=[];
