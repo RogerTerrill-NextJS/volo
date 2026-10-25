@@ -17,3 +17,7 @@ Repeated disables return the existing timestamp without rewriting reason or inse
 - Database types were generated from the owned migrated stack. Route generation, TypeScript, focused ESLint, diff checks and server/client boundary builds passed. The real-session production fixture compiled the actual query/action modules. CI now includes the existing runner's member-admin mode and the targeted unit cases; no second Auth harness was created. Fixture cleanup deletes audit references only inside its validated disposable stack before removing owned memberships.
 
 The full suite, unrelated SQL/concurrency and browser presentation checks were not run under the MVP policy; no production UI changes belong to this step. The additive migration is committed but has not been applied to hosted Supabase. No hosted accounts/data/email/settings changes or production publication occurred. Deploy Preview verification and later approved migration/release verification remain separate.
+
+## CI follow-up
+
+The first PR run passed seeded and unseeded database policy tests, but the invitation upgrade verifier rejected the new migration as `Unexpected migration history`. Its two explicit history lists had not been extended for `20261028010000`. Both now include that exact version; database ownership and GitHub-hosted-runner guards remain intact. All three upgrade-verifier guard tests, focused lint and diff checks passed. The destructive upgrade verifier itself remains restricted to the disposable CI runner.
