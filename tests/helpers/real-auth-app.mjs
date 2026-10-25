@@ -127,9 +127,23 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned edit race setup failed');
         }
       }
+      if(url.pathname==='/rest/v1/rpc/get_or_create_flight_conversation'){
+        if(globalThis.__voloMessageMode==='open-outage')return Response.json({code:'private-message-error-canary'},{status:503});
+        if(globalThis.__voloMessageMode==='open-delay')await new Promise(resolve=>setTimeout(resolve,3000));
+        if(globalThis.__voloMessageMode?.startsWith('open-withdraw:')){
+          const subject=globalThis.__voloMessageMode.slice(14);globalThis.__voloMessageMode='off';
+          const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/flight_requests?id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'withdrawn'})});
+          if(!changed.ok)throw new Error('Owned conversation entry race rejected');
+        }
+      }
+      if(url.pathname==='/rest/v1/conversations'&&globalThis.__voloMessageMode==='open-read-outage')return Response.json({code:'private-message-error-canary'},{status:503});
       if(url.pathname==='/rest/v1/rpc/send_conversation_message'){globalThis.__voloMessageCalls=(globalThis.__voloMessageCalls??0)+1;if(globalThis.__voloMessageMode==='delay')await new Promise(resolve=>setTimeout(resolve,3000));}
       if(url.pathname==='/rest/v1/messages'&&globalThis.__voloMessageMode==='read-outage')return Response.json({code:'private-message-error-canary'},{status:503});
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/get_or_create_flight_conversation'){
+        if(globalThis.__voloMessageMode==='open-lost'){await response.text();throw new Error('Owned fixture discarded conversation response');}
+        if(globalThis.__voloMessageMode==='open-malformed'){await response.text();return Response.json('private-message-error-canary');}
+      }
       if(url.pathname==='/rest/v1/rpc/send_conversation_message'){
         if(globalThis.__voloMessageMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed message response');}
         if(globalThis.__voloMessageMode==='malformed'){await response.text();return Response.json({id:'private-message-error-canary'});}
@@ -215,7 +229,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     if(flights){
       await put('app/dashboard/message-fixture/page.tsx',`import {sendMessage} from '../../../lib/messages/actions';import Form from '../../form';export default function Page(){return <main><Form action={sendMessage} label="Message fixture"/></main>}`);
       await put('app/api/message-history/route.ts',`import {getConversationHistory} from '../../../lib/messages/history-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const url=new URL(request.url),response=Response.json(await getConversationHistory(url.searchParams.get('conversation'),url.searchParams.get('before')));applyPrivateResponseHeaders(response.headers);return response;}`);
-      await put('app/api/message-control/route.ts',`type State=typeof globalThis & {__voloMessageMode?:string;__voloMessageCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage','delay','action-lost'].includes(mode)&&!/^disable-history:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMessageMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloMessageCalls??0});}`);
+      await put('app/api/message-control/route.ts',`type State=typeof globalThis & {__voloMessageMode?:string;__voloMessageCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage','delay','action-lost','open-outage','open-delay','open-lost','open-malformed','open-read-outage'].includes(mode)&&!/^(disable-history|open-withdraw):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMessageMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloMessageCalls??0});}`);
 
       await put('app/api/flight-connection/route.ts',`import {getFlightConnection} from '../../../lib/flights/connection-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const response=Response.json(await getFlightConnection(new URL(request.url).searchParams.get('request')));applyPrivateResponseHeaders(response.headers);return response;}`);
       await put('app/api/connection-control/route.ts',`type State=typeof globalThis & {__voloConnectionMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','malformed'].includes(mode)&&!/^(withdraw|disable|withdraw-profile):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloConnectionMode=mode;return Response.json({ok:true});}`);
@@ -287,6 +301,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
       sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
+      connectionPageAction(id,fields,{fromRequestId=id,...settings}={}){return invokeFlightAction('/dashboard/connections/'+fromRequestId,{request_id:id,...fields},{...settings,formRequestId:fromRequestId});},
       async chatPageAction(thread,fields,{formHtml,...settings}={}){
         const route='/messages/'+thread,html=formHtml??await(await request(route,settings)).text();
         const input=[...html.matchAll(/<input\b[^>]*>/g)].find(match=>match[0].includes('name="message_id"'))?.[0];

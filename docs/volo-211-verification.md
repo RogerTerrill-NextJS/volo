@@ -1,0 +1,16 @@
+# VOLO-211 — Accepted connection contact pathway
+
+Based on merged VOLO-210 (`bb16cfb`). The accepted connection page now offers Message pilot for either participant. Its POST Server Action independently applies the existing origin/session/input guard, resolves current acceptance, and invokes the existing idempotent conversation RPC with only the request UUID. The destination is derived from a validated persisted conversation matching that request and its original owner/requester pair, followed by a fresh connection check. GET rendering never creates or reopens a conversation.
+
+The form supports native and hydrated submission, disabled pending feedback, focused safe errors and explicit retry. A lost or malformed provider response does not expose an unconfirmed destination; retry reuses the same request's conversation. No profile-completeness requirement or administrator bypass is added.
+
+Closed connection pages perform a read-only, participant-scoped lookup for their retained conversation and offer View conversation history when it exists. Missing and unavailable outcomes remain neutral. The destination chat independently enforces retained-history authorization and closed send state. Pending/unrelated connection IDs have no message entry. Existing accepted connection links from flight views provide the path into this new control.
+
+## Verification
+
+- All 27 targeted conversation entry, accepted/closed connection, message wiring and mutation guard checks passed, including six new entry/history unit cases. Coverage includes request-only input, pair/UUID mismatch rejection, revoked approval, provider failures without automatic retries, and changing viewer authority.
+- All six focused real-session scenarios passed and cleaned their owned resources. Three existing connection-page scenarios cover participant views and authorization races. Three new entry scenarios exercise native and fetched redirects for both pilots, repeated-open deduplication, GET without creation, anonymous/unadmitted/disabled/unrelated/admin denial, missing origin, tampered participant/conversation/request IDs, pending requests, PRIVATE removal, disabled counterpart, withdrawal during the opening RPC, and outage/committed-response-loss/malformed/readback-failure recovery. Closed history remains read-only, with neutral read-outage feedback.
+- Actual Chrome verified the hydrated button opening a fresh conversation, disabled pending status, focused safe outage feedback, retry returning to the same chat, closed-history navigation with retained text and no composer, and pending connection denial. At 320px, document width remained 320px and the contact button measured 48px high.
+- Route type generation, TypeScript, focused ESLint, diff checks and server/client boundary checks passed. The existing production-build fixture compiled the real route and action. New server modules reject Client Component imports. Independent whole-change review found no actionable issues.
+
+All writes used fictional owned local resources. No migration, hosted data/account/email/settings change or production publication occurred. The full suite and hosted Deploy Preview verification were not run under the MVP policy. PR preview verification and any later requested production release remain separate.

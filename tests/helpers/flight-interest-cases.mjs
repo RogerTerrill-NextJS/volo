@@ -236,6 +236,51 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.match(await connectionPage(pair.request.id),/Accepted connection/);
    const before=await rows();await connectionPage(pair.request.id);assert.deepEqual(await rows(),before,'Connection views never mutate requests');
   });
+  const entryMode=async value=>assert.equal((await app.request('/api/message-control',{method:'POST',body:value})).status,200);
+  const entryRows=request=>checked(admin.from('conversations').select('id,flight_request_id,owner_id,requester_id,closed_at').eq('flight_request_id',request));
+  const enter=async(request,fields={},settings={})=>{
+   const response=await app.connectionPageAction(request,fields,{session:sessions.pilot,...settings});
+   for(const name of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(name)??'',/no-store/);
+   const body=await response.text();stack.assertNoCredentialLeaks(body);assert.ok(!body.includes('private-message-error-canary'));for(const s of Object.values(sessions))s.assertNoCredentialLeaks(body);
+   return {response,body};
+  };
+  await checkScenario('contact_entry_both_participants_native_fetched_and_idempotent',async()=>{
+   const pair=await acceptedConnection({visibility:'PRIVATE'});
+   for(const label of ['owner','pilot'])assert.match(await connectionPage(pair.request.id,label),/Message pilot/);
+   assert.deepEqual(await entryRows(pair.request.id),[],'GET never creates conversations');
+   const native=await enter(pair.request.id,{}, {session:sessions.owner,transport:'native'});assert.equal(native.response.status,303);
+   const destination=native.response.headers.get('location');assert.match(destination,/^\/messages\/[a-f0-9-]{36}$/);
+   const fetched=await enter(pair.request.id);assert.equal(fetched.response.headers.get('x-action-redirect'),destination+';push');
+   assert.equal((await enter(pair.request.id)).response.headers.get('x-action-redirect'),destination+';push');
+   const stored=await entryRows(pair.request.id);assert.equal(stored.length,1);assert.equal(stored[0].owner_id,accounts.owner.id);assert.equal(stored[0].requester_id,accounts.pilot.id);
+   assert.match(await(await app.request(destination,{session:sessions.pilot})).text(),/Write a message/);
+  });
+  await checkScenario('contact_entry_tampered_pending_foreign_and_stale_requests_cannot_open',async()=>{
+   const pair=await acceptedConnection({visibility:'PRIVATE'}),formHtml=await connectionPage(pair.request.id);
+   const denied=async(fields={},settings={})=>{const result=await enter(pair.request.id,fields,{formHtml,...settings});assert.equal(result.response.headers.get('x-action-redirect'),null);assert.ok(!result.body.includes('NEXT_REDIRECT'));return result;};
+   for(const label of ['other','adminNoProfile','disabled','absent'])await denied({}, {session:sessions[label]});
+   await denied({}, {session:undefined});await denied({}, {origin:null});
+   for(const field of ['conversation_id','owner_id','requester_id'])await denied({[field]:randomUUID()});
+   await denied({request_id:'invalid'});await denied({request_id:randomUUID()});
+   const pending=await newFlight();expectCode(await invoke('pilot',pending),'submitted');const pendingRequest=(await rows()).find(r=>r.flight_id===pending);
+   await denied({request_id:pendingRequest.id});assert.deepEqual(await entryRows(pendingRequest.id),[]);
+   assert.ok(!(await connectionPage(pendingRequest.id)).includes('Message pilot'));
+   await stack.setMembership(accounts.owner.id,{role:'member',status:'disabled'});try{await denied();}finally{await stack.setMembership(accounts.owner.id,{role:'member',status:'active'});}
+   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:pair.id,p_recipient_id:accounts.pilot.id,p_selected:false}));await denied();assert.deepEqual(await entryRows(pair.request.id),[]);
+   const race=await acceptedConnection(),raceHtml=await connectionPage(race.request.id);await entryMode('open-withdraw:'+race.request.id);
+   try{const result=await enter(race.request.id,{}, {formHtml:raceHtml});assert.equal(result.response.headers.get('x-action-redirect'),null);assert.deepEqual(await entryRows(race.request.id),[]);}finally{await entryMode('off');}
+  });
+  await checkScenario('contact_entry_recovery_reuses_committed_thread_and_closed_history',async()=>{
+   for(const failure of ['open-outage','open-lost','open-malformed','open-read-outage']){
+    const pair=await acceptedConnection(),formHtml=await connectionPage(pair.request.id);await entryMode(failure);
+    try{const result=await enter(pair.request.id,{}, {formHtml,transport:'native'});assert.equal(result.response.status,200);assert.match(result.body,/We could not open the conversation right now/);}finally{await entryMode('off');}
+    const result=await enter(pair.request.id,{}, {transport:'native'});assert.equal(result.response.status,303);const stored=await entryRows(pair.request.id);assert.equal(stored.length,1);assert.equal(result.response.headers.get('location'),'/messages/'+stored[0].id);
+    await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:pair.id,p_request_id:pair.request.id}));
+    const closed=await connectionPage(pair.request.id);assert.ok(closed.includes('href="/messages/'+stored[0].id+'"'));assert.match(closed,/View conversation history/);assert.ok(!closed.includes('Message pilot'));
+    const history=await(await app.request('/messages/'+stored[0].id,{session:sessions.pilot})).text();assert.match(history,/Conversation closed/);assert.ok(!history.includes('name="body"'));
+    await entryMode('open-read-outage');try{assert.match(await connectionPage(pair.request.id),/Conversation history is temporarily unavailable/);}finally{await entryMode('off');}
+   }
+  });
   await checkScenario('conversation_real_session_pair_binding_private_history_and_fresh_acceptance',async()=>{
    const {id,request}=await acceptedConnection({visibility:'PRIVATE',notes:'conversation-private-flight-canary'});
    const open=label=>clients[label].rpc('get_or_create_flight_conversation',{p_request_id:request.id}).retry(false);

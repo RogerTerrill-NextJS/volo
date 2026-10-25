@@ -9,6 +9,8 @@ import AppShell from '../../../_components/app-shell';
 import AccessState from '../../../_components/access-state';
 import ProfilePhoto from '../../../_components/profile-photo';
 import PilotDetails from '../../../_components/pilot-details';
+import {getConnectionConversation} from '../../../../../lib/messages/connection-query';
+import ContactForm from './contact-form';
 export const metadata:Metadata={title:'Flight connection | Volo',robots:{index:false,follow:false}};
 const linkClass='inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
 export default async function ConnectionPage({params}:{params:Promise<{requestId:string}>}){
@@ -18,7 +20,9 @@ export default async function ConnectionPage({params}:{params:Promise<{requestId
  if(result.status==='unauthenticated')redirect('/login?reason=authentication-required');
  if(result.status==='forbidden')return <AccessState status="forbidden"/>;
  if(result.status==='closed'){
-  const {history,flight}=result,departure=flight?formatFeedDeparture(flight.departure_at,flight.departure_timezone):null;
+  const {history,flight}=result,departure=flight?formatFeedDeparture(flight.departure_at,flight.departure_timezone):null,conversation=await getConnectionConversation(history.requestId);
+  if(conversation.status==='unauthenticated')redirect('/login?reason=authentication-required');
+  if(conversation.status==='forbidden')return <AccessState status="forbidden"/>;
   return <AppShell isAdmin={access.member.role==='admin'}>
    <Link href="/dashboard/flights" prefetch={false} className={linkClass}>Back to upcoming flights</Link>
    <header className="space-y-3"><h1 className="text-3xl font-semibold tracking-tight">{history.status==='withdrawn'?'Request withdrawn':'Request cancelled'}</h1>
@@ -38,6 +42,9 @@ export default async function ConnectionPage({params}:{params:Promise<{requestId
     <Link href={`/dashboard/flights/${flight.id}`} prefetch={false} className={linkClass}>{history.status==='withdrawn'&&!history.isOwner&&flight.status==='open'&&!flight.isPast?'View flight and resubmission eligibility':'View flight'}</Link>
     {history.status==='withdrawn'&&flight.status==='open'&&<p>A new request requires fresh acceptance from the posting pilot.</p>}
    </section>:<p>Flight details are no longer available to this account. Retained request history does not restore access to a private flight.</p>}
+   <section aria-labelledby="closed-conversation-history" className="space-y-3"><h2 id="closed-conversation-history" className="text-xl font-semibold">Conversation history</h2>
+    {conversation.status==='authorized'?<Link href={`/messages/${conversation.conversationId}`} prefetch={false} className={linkClass}>View conversation history</Link>:<p>{conversation.status==='unavailable'?'Conversation history is temporarily unavailable. Check connection status to try again.':'No conversation history is available for this connection.'}</p>}
+   </section>
    <form action={`/dashboard/connections/${history.requestId}`} method="get"><button className={linkClass}>Check connection status</button></form>
   </AppShell>;
  }
@@ -52,6 +59,7 @@ export default async function ConnectionPage({params}:{params:Promise<{requestId
  return <AppShell isAdmin={access.member.role==='admin'}>
   <Link href={`/dashboard/flights/${flight.id}`} prefetch={false} className={linkClass}>Back to flight</Link>
   <header className="space-y-3"><h1 className="text-3xl font-semibold tracking-tight">Accepted connection</h1><p>{connection.isOwner?'You are the posting pilot. This pilot has been accepted for your flight.':'Your request has been accepted by the posting pilot.'}</p></header>
+  <ContactForm requestId={connection.requestId}/>
   <section aria-labelledby="connection-flight" className="min-w-0 space-y-6 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8 dark:border-zinc-800">
    <p>{flight.visibility==='PRIVATE'?'Private':'Network'} · {flight.isPast?'Past departure':'Open'}</p>
    <h2 id="connection-flight" className="text-2xl font-semibold">{flight.departure_airport} → {flight.destination_airport}</h2>

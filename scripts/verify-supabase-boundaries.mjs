@@ -105,7 +105,7 @@ try {
     assert.match(failure.stdout + failure.stderr, /depends on "server-only".*only available in Server Components|only works in a Server Component|cannot be imported from a Client Component/);
   }
   console.log("PASS: all mutation request/input/guard/HTTP/Action modules reject Client Component imports");
-  for (const moduleName of ['send-mutation','history-query']) {
+  for (const moduleName of ['send-mutation','history-query','open-mutation','connection-query']) {
     await put('app/page.jsx',`"use client"; import * as server from "../lib/messages/${moduleName}"; export default function Page(){return <p>{Object.keys(server).join(',')}</p>;}`);
     failure=undefined;
     try {await build();}catch(error){failure=error;}
