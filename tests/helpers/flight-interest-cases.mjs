@@ -388,6 +388,72 @@ export async function verifyFlightInterest({stack,app,scenario}){
    for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
    const html=await response.text();stack.assertNoCredentialLeaks(html);assert.ok(!html.includes('private-message-error-canary'));return html;
   };
+  const communicationSnapshot=async pair=>{
+   const requests=await checked(admin.from('flight_requests').select('*').eq('flight_id',pair.id).order('id'));
+   const conversations=await checked(admin.from('conversations').select('*').in('flight_request_id',requests.map(r=>r.id)).order('id'));
+   const messages=conversations.length?await checked(admin.from('messages').select('*').in('conversation_id',conversations.map(c=>c.id)).order('id')):[];
+   return {requests,conversations,messages};
+  };
+  await checkScenario('communication_permissions_same_flight_pending_and_revoked_participants',async()=>{
+   const secret='cross-feature-approved-message-canary',pair=await acceptedConnection({visibility:'PRIVATE',pilot_places:2,notes:'cross-feature-flight-canary'});
+   await checked(admin.from('flight_recipients').insert({flight_id:pair.id,user_id:accounts.other.id}));expectCode(await invoke('other',pair.id),'submitted');
+   const pending=(await rows()).find(r=>r.flight_id===pair.id&&r.requester_id===accounts.other.id);
+   const opened=await enter(pair.request.id,{}, {session:sessions.owner,transport:'native'}),destination=opened.response.headers.get('location');assert.equal(opened.response.status,303);assert.match(destination,/^\/messages\/[a-f0-9-]{36}$/);
+   const thread=destination.slice('/messages/'.length),forms={};
+   assert.equal((await enter(pair.request.id)).response.headers.get('x-action-redirect'),destination+';push');
+   assert.match(await chatAction(thread,{body:secret},{session:sessions.owner,transport:'native'}),/Message sent/);
+   for(const label of ['owner','pilot']){forms[label]=await connectionPage(pair.request.id,label);assert.match(forms[label],/Message pilot/);assert.match(await chatPage(thread,label),/cross-feature-approved-message-canary/);}
+   const composer=await chatPage(thread),before=await communicationSnapshot(pair);assert.deepEqual(await entryRows(pending.id),[]);
+   for(const label of ['other','noProfile','disabled']){
+    const view=await connectionPage(pair.request.id,label),chat=await chatPage(thread,label);
+    assert.ok(!view.includes('cross-feature-flight-canary')&&!view.includes('Message pilot'));assert.ok(!chat.includes(secret)&&!chat.includes('name="body"'));
+    const denied=await enter(pair.request.id,{}, {session:sessions[label],formHtml:forms.pilot});assert.equal(denied.response.headers.get('x-action-redirect'),null);assert.ok(!denied.body.includes(secret));
+   }
+   for(const label of ['owner','other']){const view=await connectionPage(pending.id,label);assert.match(view,/Connection unavailable/);assert.ok(!view.includes('Message pilot'));}
+   const changedId=await enter(pair.request.id,{request_id:pending.id},{session:sessions.other,formHtml:forms.pilot});assert.equal(changedId.response.headers.get('x-action-redirect'),null);
+   assert.deepEqual(await communicationSnapshot(pair),before,'Pending/unrelated/disabled entry attempts leave all communication records unchanged');
+   await stack.setMembership(accounts.pilot.id,{role:'member',status:'disabled'});
+   try{
+    const blocked=await communicationSnapshot(pair);assert.ok(!(await connectionPage(pair.request.id)).includes('Message pilot'));assert.ok(!(await chatPage(thread)).includes(secret));
+    for(const label of ['owner','pilot']){const denied=await enter(pair.request.id,{}, {session:sessions[label],formHtml:forms[label]});assert.equal(denied.response.headers.get('x-action-redirect'),null);}
+    assert.ok(!(await chatAction(thread,{body:'Blocked disabled send'},{formHtml:composer})).includes('Message sent.'));
+    const retained=await history(thread,'owner');assert.equal(retained.status,'authorized');assert.equal(retained.sendStatus,'closed');assert.equal(retained.messages[0].body,secret);
+    assert.deepEqual(await communicationSnapshot(pair),blocked,'Revoked participant stale forms cannot create, reopen or send');
+   }finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+  });
+  await checkScenario('communication_permissions_closed_entry_and_stale_composers_require_fresh_acceptance',async()=>{
+   for(const closure of ['cancel','remove','withdraw']){
+    const pair=await acceptedConnection({visibility:'PRIVATE',notes:'closed-contact-private-flight-canary'}),opened=await enter(pair.request.id,{}, {transport:'native'});
+    assert.equal(opened.response.status,303);const destination=opened.response.headers.get('location');assert.match(destination,/^\/messages\/[a-f0-9-]{36}$/);const thread=destination.slice('/messages/'.length),secret='closed-contact-message-'+closure,contactForms={},composers={};
+    assert.match(await chatAction(thread,{body:secret},{transport:'native'}),/Message sent/);
+    for(const label of ['owner','pilot']){contactForms[label]=await connectionPage(pair.request.id,label);composers[label]=await chatPage(thread,label);}
+    if(closure==='cancel')await checked(clients.owner.rpc('cancel_flight',{p_flight_id:pair.id}));
+    else if(closure==='remove')await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:pair.id,p_recipient_id:accounts.pilot.id,p_selected:false}));
+    else await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:pair.id,p_request_id:pair.request.id}));
+    const before=await communicationSnapshot(pair);assert.ok(before.conversations[0].closed_at);
+    for(const [label,transport] of [['owner','native'],['pilot','fetched']]){
+     const closed=await connectionPage(pair.request.id,label);assert.match(closed,closure==='withdraw'?/Request withdrawn/:/Request cancelled/);assert.ok(closed.includes('href="'+destination+'"'));assert.ok(!closed.includes('Message pilot')&&!closed.includes('closed-contact-private-flight-canary'));
+     const chat=await chatPage(thread,label);assert.ok(chat.includes(secret)&&!chat.includes('name="body"'));
+     const denied=await enter(pair.request.id,{}, {session:sessions[label],transport,formHtml:contactForms[label]});assert.equal(denied.response.status,200);assert.equal(denied.response.headers.get('location'),null);assert.equal(denied.response.headers.get('x-action-redirect'),null);
+     assert.ok(!(await chatAction(thread,{body:'Stale send '+closure},{session:sessions[label],transport,formHtml:composers[label]})).includes('Message sent.'));
+    }
+    if(closure==='remove'){assert.ok(!(await page(pair.id)).body.includes('closed-contact-private-flight-canary'));assert.match(await connectionPage(pair.request.id),/Flight details are no longer available/);}
+    assert.deepEqual(await communicationSnapshot(pair),before,'Closed reads and stale native/fetched forms cannot reopen or send');
+    if(closure==='withdraw'){
+     expectCode(await invoke('pilot',pair.id),'submitted');const pending=await communicationSnapshot(pair);assert.equal(pending.requests[0].status,'pending');assert.ok(pending.conversations[0].closed_at);
+     for(const [label,transport] of [['owner','native'],['pilot','fetched']]){
+      assert.match(await connectionPage(pair.request.id,label),/Connection unavailable/);assert.ok(!(await chatPage(thread,label)).includes('name="body"'));
+      const denied=await enter(pair.request.id,{}, {session:sessions[label],formHtml:contactForms[label]});assert.equal(denied.response.headers.get('x-action-redirect'),null);
+      assert.ok(!(await chatAction(thread,{body:'Pending resubmission send'},{session:sessions[label],transport,formHtml:composers[label]})).includes('Message sent.'));
+     }
+     assert.deepEqual(await communicationSnapshot(pair),pending,'Resubmission alone cannot restore communication authority');
+     await checked(clients.owner.rpc('decide_flight_request',{p_flight_id:pair.id,p_request_id:pair.request.id,p_decision:'accepted'}));
+     for(const label of ['owner','pilot'])assert.equal((await enter(pair.request.id,{}, {session:sessions[label]})).response.headers.get('x-action-redirect'),destination+';push');
+     assert.equal((await entryRows(pair.request.id)).length,1);assert.equal((await entryRows(pair.request.id))[0].closed_at,null);assert.ok((await chatPage(thread)).includes(secret));
+     assert.match(await chatAction(thread,{body:'Freshly accepted reply'},{session:sessions.owner,transport:'native'}),/Message sent/);
+    }
+   }
+  });
   await checkScenario('chat_page_both_participants_empty_safe_history_and_native_fetched_composer',async()=>{
    const pair=await acceptedConnection(),thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
    for(const label of ['owner','pilot']){const html=await chatPage(thread,label);assert.match(html,/Flight conversation/);assert.match(html,/No messages yet/);assert.match(html,/Send message/);assert.match(html,/name="message_id"/);assert.match(html,/Connecting live updates/);}
