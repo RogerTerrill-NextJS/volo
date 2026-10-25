@@ -11,7 +11,7 @@ import {promisify} from 'node:util';
 import {reservePort,validateLocalApiUrl,sanitizeDiagnostics,evidenceDirectory} from './local-auth-stack.mjs';
 
 const decode=value=>value.replaceAll('&quot;','"').replaceAll('&#x27;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
-export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false,photos=false,flights=false,interest=false}) {
+export async function startRealAuthApp({repositoryRoot:root,stack,signal,applicationOrigin,browser=false,photos=false,flights=false,interest=false,memberAdmin=false}) {
   validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
   const directory=await mkdtemp(path.join(tmpdir(),'volo-real-auth-app-'));const effects=[];let server,recorder,output='',closePromise,fixtureStage='files';
   const put=async(name,value)=>{const file=path.join(directory,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,value);};
@@ -139,7 +139,17 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       if(url.pathname==='/rest/v1/conversations'&&globalThis.__voloMessageMode==='open-read-outage')return Response.json({code:'private-message-error-canary'},{status:503});
       if(url.pathname==='/rest/v1/rpc/send_conversation_message'){globalThis.__voloMessageCalls=(globalThis.__voloMessageCalls??0)+1;if(globalThis.__voloMessageMode==='delay')await new Promise(resolve=>setTimeout(resolve,3000));}
       if(url.pathname==='/rest/v1/messages'&&globalThis.__voloMessageMode==='read-outage')return Response.json({code:'private-message-error-canary'},{status:503});
+      if(url.pathname==='/rest/v1/rpc/admin_disable_member'&&globalThis.__voloMemberAdminMode?.startsWith('disable-actor:')){
+        const subject=globalThis.__voloMemberAdminMode.slice(14);globalThis.__voloMemberAdminMode='off';
+        const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned admin race'})});
+        if(!changed.ok)throw Error('Owned admin race setup rejected');
+      }
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/admin_disable_member'){
+        if(globalThis.__voloMemberAdminMode==='lost'){await response.text();throw Error('Owned disable response lost');}
+        if(globalThis.__voloMemberAdminMode==='malformed'){await response.text();return Response.json({code:'disabled',userId:'private-member-admin-canary'});}
+      }
+      if(url.pathname==='/rest/v1/rpc/admin_member_overview'&&globalThis.__voloMemberAdminMode==='overview-malformed'){await response.text();return Response.json([{email:'private-member-admin-canary'}]);}
       if(url.pathname==='/rest/v1/rpc/get_or_create_flight_conversation'){
         if(globalThis.__voloMessageMode==='open-lost'){await response.text();throw new Error('Owned fixture discarded conversation response');}
         if(globalThis.__voloMessageMode==='open-malformed'){await response.text();return Response.json('private-message-error-canary');}
@@ -226,6 +236,11 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/actions.ts',`'use server';import {handleActionMutation} from '../lib/auth/action-mutation';import {policy} from '../fixture-policy';export async function mutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy());}export async function adminMutate(_previous:unknown,form:FormData){return handleActionMutation(form,policy(true));}`);
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
+    if(memberAdmin){
+      await put('app/api/member-admin-control/route.ts',`type State=typeof globalThis & {__voloMemberAdminMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','overview-malformed'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMemberAdminMode=mode;return Response.json({ok:true});}`);
+      await put('app/admin/member-fixture/page.tsx',`import {disableMember} from '../../../lib/auth/member-admin-actions';import Form from '../../form';export default function Page(){return <main><Form action={disableMember} label="Disable member"/></main>}`);
+      await put('app/api/member-overview/route.ts',`import {listAdminMembers} from '../../../lib/auth/member-admin-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const value=await listAdminMembers(new URL(request.url).searchParams.get('after')??undefined);const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(value,{headers});}`);
+    }
     if(flights){
       await put('app/dashboard/message-fixture/page.tsx',`import {sendMessage} from '../../../lib/messages/actions';import Form from '../../form';export default function Page(){return <main><Form action={sendMessage} label="Message fixture"/></main>}`);
       await put('app/api/message-history/route.ts',`import {getConversationHistory} from '../../../lib/messages/history-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const url=new URL(request.url),response=Response.json(await getConversationHistory(url.searchParams.get('conversation'),url.searchParams.get('before')));applyPrivateResponseHeaders(response.headers);return response;}`);
@@ -301,6 +316,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
       sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
+      disableMember(fields,settings={}){return invokeFlightAction('/admin/member-fixture',fields,settings);},
       connectionPageAction(id,fields,{fromRequestId=id,...settings}={}){return invokeFlightAction('/dashboard/connections/'+fromRequestId,{request_id:id,...fields},{...settings,formRequestId:fromRequestId});},
       async chatPageAction(thread,fields,{formHtml,...settings}={}){
         const route='/messages/'+thread,html=formHtml??await(await request(route,settings)).text();

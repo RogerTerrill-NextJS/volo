@@ -1,0 +1,72 @@
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
+select plan(31);
+insert into auth.users(id,email) values
+ ('21300000-0000-4000-8000-000000000001','admin213@example.invalid'),
+ ('21300000-0000-4000-8000-000000000002','member213@example.invalid'),
+ ('21300000-0000-4000-8000-000000000003','second213@example.invalid');
+insert into public.memberships(user_id,role) values
+ ('21300000-0000-4000-8000-000000000001','admin'),
+ ('21300000-0000-4000-8000-000000000002','member'),
+ ('21300000-0000-4000-8000-000000000003','admin');
+select ok((select relrowsecurity from pg_class where oid='public.member_admin_audit'::regclass),'Audit RLS enabled');
+set local role anon;
+select throws_ok($$select public.admin_member_overview(null)$$,'42501',null,'Anonymous overview denied');
+select throws_ok($$select public.admin_disable_member('21300000-0000-4000-8000-000000000002','Reason')$$,'42501',null,'Anonymous disable denied');
+reset role;
+set local role service_role;
+select throws_ok($$select public.admin_disable_member('21300000-0000-4000-8000-000000000002','Reason')$$,'42501',null,'Service RPC bypass denied');
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"21300000-0000-4000-8000-000000000002","role":"authenticated","user_metadata":{"role":"admin"}}',true);
+select throws_ok($$select public.admin_member_overview(null)$$,'42501',null,'Member overview denied despite metadata');
+select throws_ok($$select public.admin_disable_member('21300000-0000-4000-8000-000000000003','Reason')$$,'42501',null,'Member disable denied');
+select is((select count(*)::integer from public.member_admin_audit),0,'Member cannot read audit rows');
+select set_config('request.jwt.claims','{"sub":"21300000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+select ok(jsonb_array_length(public.admin_member_overview(null))>=3,'Admin overview allowed');
+select ok(not (public.admin_member_overview(null)::text like '%@example.invalid%'),'Overview omits email');
+reset role;
+insert into auth.users(id,email) select ('21300000-0000-4000-9000-'||lpad(n::text,12,'0'))::uuid,'page213-'||n||'@example.invalid' from generate_series(1,52) n;
+insert into public.memberships(user_id) select ('21300000-0000-4000-9000-'||lpad(n::text,12,'0'))::uuid from generate_series(1,52) n;
+set local role authenticated;
+select is(jsonb_array_length(public.admin_member_overview(null)),51,'SQL overview has a hard 51-row bound');
+reset role;
+update public.memberships set status='disabled',disabled_at=now()-interval '1 day',disabled_reason=repeat('x',501) where user_id='21300000-0000-4000-9000-000000000001';
+update public.memberships set status='disabled',disabled_at=now(),disabled_reason=E'\n' where user_id='21300000-0000-4000-9000-000000000002';
+set local role authenticated;
+select ok((select char_length(r->>'disabledReason')=500 and (r->>'disabledReasonTruncated')::boolean from jsonb_array_elements(public.admin_member_overview(null)) r where r->>'userId'='21300000-0000-4000-9000-000000000001'),'Legacy long reason is bounded and marked');
+select is((select r->>'disabledReason' from jsonb_array_elements(public.admin_member_overview(null)) r where r->>'userId'='21300000-0000-4000-9000-000000000002'),E'\n','Schema-valid newline reason remains readable');
+select is(jsonb_array_length(public.admin_member_overview('ffffffff-ffff-ffff-ffff-ffffffffffff')),0,'Overview cursor bounded');
+select throws_ok($$select public.admin_disable_member('21300000-0000-4000-8000-000000000002','  ')$$,'22023',null,'Blank reason denied');
+select throws_ok($$select public.admin_disable_member('21300000-0000-4000-8000-000000000002',repeat('a',501))$$,'22023',null,'Oversized reason denied');
+select is(public.admin_disable_member('21300000-0000-4000-8000-000000000001','Reason')->>'code','self_disable_not_allowed','Self disable blocked');
+select is(public.admin_disable_member('21300000-0000-4000-8000-000000000002','Safety review')->>'code','disabled','Admin disables member');
+select is((select count(*)::integer from public.member_admin_audit),1,'One audit event');
+reset role;
+select ok(exists(select 1 from public.member_admin_audit a join public.memberships m on m.user_id=a.target_id where a.actor_id='21300000-0000-4000-8000-000000000001' and a.target_id='21300000-0000-4000-8000-000000000002' and a.action='member_disabled' and a.reason='Safety review' and a.created_at=m.disabled_at),'Actor target action time reason are bound atomically');
+set local role authenticated;
+select is(public.admin_disable_member('21300000-0000-4000-8000-000000000002','Different retry')->>'code','already_disabled','Retry is idempotent');
+select is((select count(*)::integer from public.member_admin_audit),1,'Retry adds no audit event');
+select throws_ok($$update public.member_admin_audit set reason='rewrite'$$,'42501',null,'Audit update denied');
+select throws_ok($$delete from public.member_admin_audit$$,'42501',null,'Audit deletion denied');
+select throws_ok($$insert into public.member_admin_audit(actor_id,target_id,reason) values ('21300000-0000-4000-8000-000000000001','21300000-0000-4000-8000-000000000003','forged')$$,'42501',null,'Direct audit insert denied');
+reset role;
+create function public.test_reject_member_audit() returns trigger language plpgsql as $$begin raise exception 'Owned audit insert failure'; end;$$;
+create trigger test_reject_member_audit before insert on public.member_admin_audit for each row execute function public.test_reject_member_audit();
+set local role authenticated;
+select throws_ok($$select public.admin_disable_member('21300000-0000-4000-8000-000000000003','Admin review')$$,'P0001',null,'Audit failure rejects disable');
+select is((select r->>'status' from jsonb_array_elements(public.admin_member_overview(null)) r where r->>'userId'='21300000-0000-4000-8000-000000000003'),'active','Audit failure rolls back membership');
+select is((select count(*)::integer from public.member_admin_audit),1,'Audit failure creates no event');
+reset role;
+drop trigger test_reject_member_audit on public.member_admin_audit;
+drop function public.test_reject_member_audit();
+set local role authenticated;
+select is(public.admin_disable_member('21300000-0000-4000-8000-000000000003','Admin review')->>'code','disabled','Another admin can be disabled');
+select set_config('request.jwt.claims','{"sub":"21300000-0000-4000-8000-000000000003","role":"authenticated"}',true);
+select throws_ok($$select public.admin_member_overview(null)$$,'42501',null,'Retained disabled admin token loses overview');
+select throws_ok($$select public.admin_disable_member('21300000-0000-4000-8000-000000000001','Cross disable')$$,'42501',null,'Disabled admin cannot cross disable');
+select is((select count(*)::integer from public.member_admin_audit),0,'Disabled admin loses audit reads');
+reset role;
+select * from finish();
+rollback;
