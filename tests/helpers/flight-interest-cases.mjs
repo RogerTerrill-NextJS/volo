@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
 import {createClient} from '@supabase/supabase-js';
 import {signInSession} from './real-auth-session.mjs';
 import {validateLocalApiUrl} from './local-auth-stack.mjs';
@@ -265,6 +266,38 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.deepEqual(await checked(clients.pilot.from('messages').select('body').eq('conversation_id',thread)),[{body}]);
    await stack.setMembership(accounts.pilot.id,{role:'member',status:'disabled'});
    try{assert.deepEqual(await checked(clients.pilot.from('messages').select('body').eq('conversation_id',thread)),[]);assert.deepEqual(await checked(clients.owner.from('messages').select('body').eq('conversation_id',thread)),[{body}]);}finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+  });
+  await checkScenario('message_guarded_rpc_and_realtime_enforce_current_participants_without_delete_events',async()=>{
+   const pair=await acceptedConnection({visibility:'PRIVATE'}),thread=await checked(clients.owner.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
+   const labels=['owner','pilot','other','disabled','absent'],events=Object.fromEntries(labels.map(label=>[label,[]])),channels=[];
+   const send=(label,id,body='Owned realtime message')=>clients[label].rpc('send_conversation_message',{p_conversation_id:thread,p_message_id:id,p_body:body}).retry(false);
+   const delivered=async(count,pilotCount=count)=>{const end=Date.now()+10000;while(Date.now()<end){if(events.owner.length>=count&&events.pilot.length>=pilotCount)return;await delay(100);}assert.fail('Expected participant Realtime delivery not observed: '+events.owner.length+'/'+events.pilot.length+' expected '+count+'/'+pilotCount);};
+   try{
+    await Promise.all(labels.map(async label=>{
+     const refreshed=await clients[label].auth.refreshSession();assert.equal(refreshed.error,null);await clients[label].realtime.setAuth(refreshed.data.session.access_token);
+     const channel=clients[label].channel('owned-message-'+randomUUID(),{config:{postgres_changes_options:{wait:true,timeout:15000}}}).on('postgres_changes',{event:'*',schema:'public',table:'messages'},payload=>events[label].push(payload));channels.push([label,channel]);
+     await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Owned Realtime subscription timed out')),20000);channel.subscribe(status=>{if(status==='SUBSCRIBED'){clearTimeout(timer);resolve();}else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){clearTimeout(timer);if(label==='owner'||label==='pilot')reject(Error('Participant Realtime subscription denied'));else resolve();}});});
+    }));
+    const id=randomUUID(),first=await send('pilot',id);assert.equal(first.error,null);assert.deepEqual(Object.keys(first.data).sort(),['conversationId','createdAt','id','senderId']);assert.equal(first.data.id,id);assert.equal(first.data.senderId,accounts.pilot.id);
+    await delivered(1);assert.equal(events.owner[0].new.body,'Owned realtime message');assert.equal(events.pilot[0].new.sender_id,accounts.pilot.id);
+    const repeated=await send('pilot',id);assert.equal(repeated.error,null);assert.deepEqual(repeated.data,first.data);assert.equal((await send('pilot',id,'Do not overwrite')).error?.code,'22023');
+    for(const label of ['other','disabled','absent'])assert.equal((await send(label,randomUUID())).error?.code,'42501');
+    assert.equal((await clients.pilot.rpc('send_conversation_message',{p_conversation_id:thread,p_message_id:randomUUID(),p_body:'Forged',p_sender_id:accounts.owner.id}).retry(false)).error?.code,'PGRST202');
+    assert.equal((await admin.rpc('send_conversation_message',{p_conversation_id:thread,p_message_id:randomUUID(),p_body:'Service bypass'}).retry(false)).error?.code,'42501');
+    const probe=randomUUID();await stack.createOwnedMessage({id:probe,conversation:thread,sender:accounts.owner.id,body:'Owned retained-token delivery probe',disableAfterInsert:accounts.pilot.id});
+    try{await delivered(2,1);await delay(300);assert.equal(events.pilot.length,1,'Disabled subscribed participant cannot receive committed probe');assert.equal((await send('pilot',randomUUID())).error?.code,'42501');assert.equal((await send('owner',randomUUID())).error?.code,'42501');assert.deepEqual(await checked(clients.pilot.from('messages').select('id').eq('conversation_id',thread)),[]);}finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+    await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:pair.id,p_request_id:pair.request.id}));assert.equal((await send('owner',randomUUID())).error?.code,'42501');
+    await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:pair.id,p_recipient_id:accounts.pilot.id,p_selected:false}));assert.deepEqual(await checked(clients.pilot.from('flights').select('id').eq('id',pair.id)),[]);assert.deepEqual(await checked(clients.pilot.from('messages').select('id').eq('conversation_id',thread).order('id')),[{id},{id:probe}].sort((a,b)=>a.id.localeCompare(b.id)));
+    // Delete only owned local history, then use another authorized insert as a
+    // delivery fence: wildcard subscribers must never receive DELETE payloads.
+    await stack.removeOwnedConversations(accounts.owner.id);
+    const control=await acceptedConnection(),controlThread=await checked(clients.owner.rpc('get_or_create_flight_conversation',{p_request_id:control.request.id}));
+    await checked(clients.owner.rpc('send_conversation_message',{p_conversation_id:controlThread,p_message_id:randomUUID(),p_body:'Owned delivery fence'}));await delivered(3,2);
+    await delay(300);
+    for(const label of ['owner','pilot']){assert.equal(events[label].length,label==='owner'?3:2);assert.ok(events[label].every(event=>event.eventType==='INSERT'));}
+    for(const label of ['other','disabled','absent'])assert.deepEqual(events[label],[],'Unauthorized wildcard subscriber receives no private rows');
+    stack.assertNoCredentialLeaks(JSON.stringify(events));
+   }finally{await Promise.allSettled(channels.map(([label,channel])=>clients[label].removeChannel(channel)));for(const label of labels)clients[label].realtime.disconnect();}
   });
   const cancellationMode=async value=>assert.equal((await app.request('/api/cancellation-control',{method:'POST',body:value})).status,200);
   const cancellationCalls=async()=>(await(await app.request('/api/cancellation-control')).json()).calls;

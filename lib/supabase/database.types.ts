@@ -415,6 +415,9 @@ isOneToOne: false
 "reserve_profile_photo":
 { Args: Record<PropertyKey, never>; Returns: Json
                            },
+"send_conversation_message":
+{ Args: { "p_body": string,"p_conversation_id": string,"p_message_id": string }; Returns: Json
+                           },
 "submit_flight_interest":
 { Args: { "p_flight_id": string,"p_introductory_note"?: string }; Returns: Json
                            },
