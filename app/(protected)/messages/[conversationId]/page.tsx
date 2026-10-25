@@ -8,22 +8,30 @@ import AppShell from '../../_components/app-shell';
 import AccessState from '../../_components/access-state';
 import Composer from './composer';
 import RefreshMessages from './refresh-messages';
+import LiveMessages from './live-messages';
+import {ClearConversationDraft} from './draft';
 export const metadata:Metadata={title:'Flight conversation | Volo',robots:{index:false,follow:false}};
 const linkClass='inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
 const timestamp=new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'long',timeZone:'UTC'});
 export default async function ConversationPage({params,searchParams}:{params:Promise<{conversationId:string}>;searchParams:Promise<{before?:string|string[]}>}){
- const access=await getPageAccess();if(access.status!=='authorized')return <AccessState status={access.status} retryHref="/messages"/>;
- const {conversationId}=await params,{before}=await searchParams,result=await getConversationHistory(conversationId,before),href=`/messages/${encodeURIComponent(conversationId)}`;
+ const {conversationId}=await params,href=`/messages/${encodeURIComponent(conversationId)}`;
+ const access=await getPageAccess();
+ if(access.status!=='authorized'){
+ if(access.status==='forbidden')return <><ClearConversationDraft/><AccessState status="forbidden"/></>;
+ return <section role="alert" className="space-y-4"><h1 className="text-3xl font-semibold">Unable to verify access</h1><p>We cannot verify your access right now. Please try again.</p><RefreshMessages href={href} label="Try again"/><Link href="/messages" prefetch={false} className={linkClass}>Back to conversations</Link></section>;
+ }
+ const {before}=await searchParams,result=await getConversationHistory(conversationId,before);
  if(result.status==='unauthenticated')redirect('/login?reason=authentication-required');
- if(result.status==='forbidden')return <AccessState status="forbidden"/>;
- if(result.status!=='authorized')return <AppShell isAdmin={access.member.role==='admin'}><section role={result.status==='unavailable'?'alert':undefined} className="space-y-4">
+ if(result.status==='forbidden')return <><ClearConversationDraft/><AccessState status="forbidden"/></>;
+ if(result.status!=='authorized')return <AppShell isAdmin={access.member.role==='admin'}>{result.status==='missing'&&<ClearConversationDraft/>}<section role={result.status==='unavailable'?'alert':undefined} className="space-y-4">
   <h1 className="text-3xl font-semibold tracking-tight">{result.status==='unavailable'?'Conversation temporarily unavailable':result.status==='invalid'?'This message page is unavailable':'Conversation unavailable'}</h1>
   <p>{result.status==='unavailable'?'We could not load this conversation. Please try again.':result.status==='invalid'?'Open the latest messages to continue.':'This conversation could not be found or is no longer available to this account.'}</p>
-  {result.status==='unavailable'?<form action={href} method="get"><button className={linkClass}>Try again</button></form>:result.status==='invalid'&&<Link href={href} prefetch={false} className={linkClass}>Latest messages</Link>}
+  {result.status==='unavailable'?<RefreshMessages href={href} label="Try again"/>:result.status==='invalid'&&<Link href={href} prefetch={false} className={linkClass}>Latest messages</Link>}
   <Link href="/messages" prefetch={false} className={linkClass}>Back to conversations</Link>
  </section></AppShell>;
  const {conversation,messages,olderCursor,sendStatus}=result;
  return <AppShell isAdmin={access.member.role==='admin'}>
+  {sendStatus==='closed'&&<ClearConversationDraft/>}
   <Link href="/messages" prefetch={false} className={linkClass}>Back to conversations</Link>
   <header className="space-y-3"><h1 className="text-3xl font-semibold tracking-tight">Flight conversation</h1><p>A private conversation between you and the other pilot in this flight connection.</p>
    <Link href={`/dashboard/connections/${conversation.requestId}`} prefetch={false} className={linkClass}>View flight connection</Link>
@@ -36,8 +44,9 @@ export default async function ConversationPage({params,searchParams}:{params:Pro
    </li>)}</ol>:<p>{before?'No older messages.':sendStatus==='available'?'No messages yet. You can start the conversation below.':'No messages were exchanged in this conversation.'}</p>}
    <nav aria-label="Message pages" className="flex flex-wrap gap-6">{olderCursor&&<Link href={`${href}?before=${encodeURIComponent(olderCursor)}`} prefetch={false} className={linkClass}>Older messages</Link>}{before&&<Link href={href} prefetch={false} className={linkClass}>Latest messages</Link>}</nav>
   </section>
-  {!before&&sendStatus==='available'&&<Composer key={conversation.id} conversationId={conversation.id} initialMessageId={randomUUID()}/>}
+  {!before&&sendStatus==='available'&&<Composer key={conversation.id} conversationId={conversation.id} initialMessageId={randomUUID()} viewerId={access.member.userId}/>}
   {before&&sendStatus==='available'&&<p><Link href={href} prefetch={false} className={linkClass}>Go to latest messages to reply</Link></p>}
+  {!before&&sendStatus==='available'&&<LiveMessages conversationId={conversation.id} viewerId={access.member.userId}/>}
   <RefreshMessages href={href}/>
  </AppShell>;
 }

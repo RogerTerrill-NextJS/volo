@@ -345,7 +345,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
   };
   await checkScenario('chat_page_both_participants_empty_safe_history_and_native_fetched_composer',async()=>{
    const pair=await acceptedConnection(),thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
-   for(const label of ['owner','pilot']){const html=await chatPage(thread,label);assert.match(html,/Flight conversation/);assert.match(html,/No messages yet/);assert.match(html,/Send message/);assert.match(html,/name="message_id"/);}
+   for(const label of ['owner','pilot']){const html=await chatPage(thread,label);assert.match(html,/Flight conversation/);assert.match(html,/No messages yet/);assert.match(html,/Send message/);assert.match(html,/name="message_id"/);assert.match(html,/Connecting live updates/);}
    const list=await app.request('/messages',{session:sessions.pilot});assert.ok((await list.text()).includes('href="/messages/'+thread+'"'));
    const body="chat-screen-canary pilot's <script>alert('text only')</script>\n"+'LongWord'.repeat(60)+' 🛩';
    const sent=await chatAction(thread,{body},{transport:'native'});assert.match(sent,/Message sent/);assert.ok(!sent.includes("<script>alert('text only')</script>"));
@@ -353,6 +353,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
    for(const label of ['owner','pilot']){const html=await chatPage(thread,label);assert.match(html,/chat-screen-canary/);assert.match(html,/chat-owner-reply/);assert.match(html,/Other pilot/);assert.match(html,/You/);assert.match(html,/UTC/);assert.ok(!html.includes("<script>alert('text only')</script>"));assert.ok(html.indexOf('chat-screen-canary')<html.indexOf('chat-owner-reply'));}
    for(const label of ['other','adminNoProfile','noProfile','disabled','absent']){const html=await chatPage(thread,label);assert.ok(!html.includes('chat-screen-canary'));assert.ok(!html.includes('name="body"'));}
    assert.match(await chatPage('invalid'),/Conversation unavailable/);assert.match(await chatPage(randomUUID()),/Conversation unavailable/);
+   const anonymous=await app.request('/messages/'+thread);for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(anonymous.headers.get(field)??'',/no-store/);assert.ok(!(await anonymous.text()).includes('chat-screen-canary'));
   });
   await checkScenario('chat_page_uncertain_same_payload_retry_and_closed_private_read_only_history',async()=>{
    const pair=await acceptedConnection({visibility:'PRIVATE'}),thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
@@ -361,7 +362,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
    try{const html=await chatAction(thread,{body,message_id:message},{transport:'native',formHtml:form});assert.match(html,/Retry same message/);assert.match(html,/readOnly|readonly/);assert.ok(html.includes(body));assert.equal(await messageCalls(),before+1);}finally{await messageMode('off');}
    const retried=await chatAction(thread,{body,message_id:message},{formHtml:form});assert.ok(retried.includes('Message sent.'));assert.equal((await checked(clients.pilot.from('messages').select('id').eq('conversation_id',thread))).length,1);
    const stale=await chatPage(thread);await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:pair.id,p_recipient_id:accounts.pilot.id,p_selected:false}));
-   for(const label of ['owner','pilot']){const html=await chatPage(thread,label);assert.match(html,/Conversation closed/);assert.match(html,/chat-uncertain-private-canary/);assert.ok(!html.includes('name="body"'));assert.ok(!html.includes('Send message'));}
+   for(const label of ['owner','pilot']){const html=await chatPage(thread,label);assert.match(html,/Conversation closed/);assert.match(html,/chat-uncertain-private-canary/);assert.ok(!html.includes('name="body"'));assert.ok(!html.includes('Send message'));assert.ok(!html.includes('Connecting live updates'));}
    await chatAction(thread,{body:'stale-composer-send'},{formHtml:stale});assert.equal((await checked(clients.pilot.from('messages').select('id').eq('conversation_id',thread))).length,1);
    for(const label of ['other','adminNoProfile'])assert.ok(!(await chatPage(thread,label)).includes('chat-uncertain-private-canary'));
   });
@@ -369,7 +370,7 @@ export async function verifyFlightInterest({stack,app,scenario}){
    const pair=await acceptedConnection(),thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
    for(let i=0;i<32;i++)await checked(clients.pilot.rpc('send_conversation_message',{p_conversation_id:thread,p_message_id:randomUUID(),p_body:'chat-paged-'+String(i).padStart(2,'0')}));
    const latest=await chatPage(thread);assert.ok(!latest.includes('chat-paged-00'));assert.match(latest,/chat-paged-31/);const cursor=latest.match(/href="[^" ]+\?before=([^" ]+)"/)?.[1];assert.ok(cursor);
-   const older=await chatPage(thread,'pilot',decodeURIComponent(cursor));assert.match(older,/chat-paged-00/);assert.match(older,/chat-paged-01/);assert.ok(!older.includes('chat-paged-31'));assert.ok(!older.includes('name="body"'));assert.match(older,/Latest messages/);
+   const older=await chatPage(thread,'pilot',decodeURIComponent(cursor));assert.match(older,/chat-paged-00/);assert.match(older,/chat-paged-01/);assert.ok(!older.includes('chat-paged-31'));assert.ok(!older.includes('name="body"'));assert.ok(!older.includes('Connecting live updates'));assert.match(older,/Latest messages/);
    assert.match(await chatPage(thread,'pilot','invalid'),/This message page is unavailable/);
    await messageMode('read-outage');try{const html=await chatPage(thread);assert.match(html,/Conversation temporarily unavailable/);assert.ok(!html.includes('chat-paged-'));assert.match(html,/Try again/);}finally{await messageMode('off');}
    await stack.setMembership(accounts.owner.id,{role:'member',status:'disabled'});try{const html=await chatPage(thread);assert.match(html,/Conversation closed/);assert.match(html,/chat-paged-31/);assert.ok(!html.includes('name="body"'));}finally{await stack.setMembership(accounts.owner.id,{role:'member',status:'active'});}

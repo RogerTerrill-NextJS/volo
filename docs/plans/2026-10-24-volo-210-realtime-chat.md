@@ -1,0 +1,11 @@
+# VOLO-210 Realtime chat plan
+
+Use one ordinary-session Supabase Postgres Changes INSERT subscription, filtered by the latest open conversation UUID. Subscribe only on a server-authorized latest writable chat page. Socket payloads are invalidation hints: discard body data and coalesce fresh router history reads. Persisted, authorized server history remains the sole message source; draft/retry state survives refresh.
+
+Use the installed SDK's confirmed-stream readiness option and built-in reconnect/token-refresh behavior. Catch up on subscription/rejoin, browser online/focus/visibility resume and token refresh. Show connecting/live/reconnecting feedback. Dispose the owned channel and auth listener, cancel queued refreshes, and ignore late callbacks on navigation, closure or identity change; never remove other consumers' channels or disconnect their shared client.
+
+Write failing lifecycle tests first: exact channel/filter/readiness config, matching inserts only, burst coalescing, rejoin catchup, late callback cancellation, no subscribe after early disposal, actor-change teardown and refresh, and failures without payload rendering. Add browser-safe controller + small chat component, then wire it only to latest writable history. Add /messages to the existing private cache path classification (including anonymous requests) with a regression.
+
+Reuse existing actual Realtime participant/disabled/stranger fixtures. Extend the real-session page checks for status mount gating and anonymous no-store. Run targeted unit/static/boundary and real-session tests. Inspect actual browser arrival with a retained draft, reconnect/catchup, switching conversations and closed history using owned local resources. No new broker/store, publication/migration, typing/receipt protocol, hosted writes or production release. Fresh review before PR.
+
+Completed implementation and independent review. Corrected transient initial-session recovery and moved the one form draft into the conversation layout to survive refresh error unmounts. Verified editing and uncertain-send draft recovery in Chrome, actual socket reconnect/catchup, page isolation and mobile wrapping. Detailed checks and limits are recorded in `docs/volo-210-verification.md`.
