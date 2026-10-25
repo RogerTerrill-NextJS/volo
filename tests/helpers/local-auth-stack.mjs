@@ -116,6 +116,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         `do $cleanup$ begin create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
          if to_regclass('public.password_recovery_authorizations') is not null then delete from public.password_recovery_authorizations; end if; delete from public.invitation_confirmation_transports; delete from public.invitation_setup_authorizations; delete from public.invitation_send_proofs; delete from public.invitation_send_attempts; delete from public.invitations;
          drop table if exists public.volo_test_auth_snapshot;
+         if to_regclass('public.member_admin_audit') is not null then delete from public.member_admin_audit; end if;
          delete from public.memberships where user_id in (select id from owned_subjects);
          delete from auth.users where id in (select id from owned_subjects); end $cleanup$;`],30000);
     }catch(cause){failed=true;failedStage=cleanupStage;if(cleanupStage==='database-rows'&&typeof cause.stderr==='string')cleanupDiagnostic=sanitizeDiagnostics(cause.stderr,secrets).replace(/postgres(?:ql)?:\/\/[^\s'"]+/g,'[redacted database URL]').slice(-3000);}

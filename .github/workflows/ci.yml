@@ -67,7 +67,7 @@ jobs:
   auth-integration:
     name: Real Auth and session integration
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v7
         with:
@@ -88,6 +88,12 @@ jobs:
       - name: Verify protected profile photos against real Storage
         timeout-minutes: 15
         run: npm run test:profile-photos
+      - name: Verify guarded member administration
+        timeout-minutes: 10
+        run: npm run test:members:integration
+      - name: Stop only the owned member admin stack
+        if: always()
+        run: node scripts/verify-auth-integration.mjs --cleanup
       - name: Stop only the owned photo stack
         if: always()
         run: node scripts/verify-profile-photos.mjs --cleanup

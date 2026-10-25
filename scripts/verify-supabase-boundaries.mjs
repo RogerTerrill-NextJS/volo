@@ -84,7 +84,7 @@ try {
     assert.match(failure.stdout + failure.stderr, /depends on "server-only".*only available in Server Components|only works in a Server Component|cannot be imported from a Client Component/);
   }
   console.log("PASS: Proxy adapter and Auth transport cannot enter Client Components");
-  for (const moduleName of ["access", "membership-transport", "page-access"]) {
+  for (const moduleName of ["access", "membership-transport", "page-access", "member-admin-query", "member-admin-mutation"]) {
     await put("app/page.jsx", `"use client"; import * as server from "../lib/auth/${moduleName}"; export default function Page() { return <p>{Object.keys(server).join(',')}</p>; }`);
     failure = undefined;
     try { await build(); } catch (error) { failure = error; }

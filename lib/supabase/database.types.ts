@@ -194,6 +194,31 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
+                },"member_admin_audit": {
+                  Row: {
+                    "action": string,"actor_id": string,"created_at": string,"id": string,"reason": string,"target_id": string
+                  }
+                  Insert: {
+                    "action"?: string,"actor_id": string,"created_at": string,"id"?: string,"reason": string,"target_id": string
+                  }
+                  Update: {
+                    "action"?: string,"actor_id"?: string,"created_at"?: string,"id"?: string,"reason"?: string,"target_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "member_admin_audit_actor_id_fkey"
+      columns: ["actor_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    },{
+      foreignKeyName: "member_admin_audit_target_id_fkey"
+      columns: ["target_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    }
+                  ]
                 },"memberships": {
                   Row: {
                     "created_at": string,"disabled_at": string | null,"disabled_reason": string | null,"role": Database["public"]['Enums']["member_role"],"status": Database["public"]['Enums']["membership_status"],"user_id": string
@@ -288,6 +313,12 @@ isOneToOne: false
                            },
 "ack_profile_photo_cleanup":
 { Args: { "claim_token": string,"final_deleted": boolean,"reservation_id": string,"source_deleted": boolean }; Returns: Json
+                           },
+"admin_disable_member":
+{ Args: { "p_reason": string,"p_target_id": string }; Returns: Json
+                           },
+"admin_member_overview":
+{ Args: { "p_after_user_id"?: string }; Returns: Json
                            },
 "attach_profile_photo":
 { Args: { "reservation_id": string }; Returns: Json
