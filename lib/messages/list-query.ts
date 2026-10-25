@@ -1,4 +1,5 @@
 import 'server-only';
+import {validPersistedMessageBody} from './validation.ts';
 import type {AccessResult} from '../auth/access.ts';
 import type {NetworkProfileResult} from '../profiles/directory-query.ts';
 export type ConversationCursor={createdAt:string;id:string};
@@ -43,7 +44,7 @@ export async function listConversations(after:unknown=null,ports:ListPorts=creat
   // before fetching previews and current flight visibility.
   const fresh=await ports.rows(cursor);if(!Array.isArray(fresh)||JSON.stringify(fresh.map(r=>project(r,viewer)))!==JSON.stringify(rows))return {status:'unavailable'};
   const items=await Promise.all(visible.map(async(row,i)=>{const [message,context]=await Promise.all([ports.preview(row.id),ports.flight(row.requestId)]);let preview:string|null=null,flight:ConversationItem['flight']=null;
-   if(message!==null){if(!message||typeof message!=='object'||!('body'in message)||typeof message.body!=='string'||!message.body.isWellFormed()||message.body.includes('\u0000')||[...message.body].length>4000||!message.body.trim())return fail();const chars=[...message.body.replace(/\s+/gu,' ').trim()];preview=chars.slice(0,160).join('')+(chars.length>160?'…':'');}
+   if(message!==null){if(!message||typeof message!=='object'||!('body'in message)||!validPersistedMessageBody(message.body))return fail();const chars=[...message.body.replace(/\s+/gu,' ').trim()];preview=chars.length?chars.slice(0,160).join('')+(chars.length>160?'…':''):'No preview available.';}
    if(context!==null){if(!context||typeof context!=='object'||!('id'in context)||typeof context.id!=='string'||!uuid.test(context.id)||!('departure_airport'in context)||typeof context.departure_airport!=='string'||!('destination_airport'in context)||typeof context.destination_airport!=='string'||![context.departure_airport,context.destination_airport].every(v=>/^[A-Z0-9]{2,8}$/.test(v)))return fail();flight={id:context.id,departure:context.departure_airport,destination:context.destination_airport};}
    return {...row,pilotName:names[i],preview,flight};}));
   const current=await ports.access();if(current.status!=='authorized')return {status:current.status};if(current.member.userId!==viewer)return {status:'forbidden'};

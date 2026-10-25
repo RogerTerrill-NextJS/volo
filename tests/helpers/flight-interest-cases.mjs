@@ -280,6 +280,59 @@ export async function verifyFlightInterest({stack,app,scenario}){
    await stack.setMembership(accounts.pilot.id,{role:'member',status:'disabled'});try{assert.ok(!(await read('pilot')).includes('list-preview-207'));assert.match(await read('owner'),/list-preview-207/);}finally{await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
    const invalid=await app.request('/messages?after=invalid',{session:sessions.owner});assert.match(await invalid.text(),/This conversation page is unavailable/);
   });
+  const messageMode=async value=>assert.equal((await app.request('/api/message-control',{method:'POST',body:value})).status,200);
+  const messageCalls=async()=>(await(await app.request('/api/message-control')).json()).calls;
+  const history=async(thread,label='pilot',before=null)=>{
+   const response=await app.request('/api/message-history?conversation='+thread+(before?'&before='+encodeURIComponent(before):''),{session:sessions[label]});
+   for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
+   const body=await response.text();stack.assertNoCredentialLeaks(body);assert.ok(!body.includes('private-message-error-canary'));return JSON.parse(body);
+  };
+  const send=async(thread,message,body,label='pilot',settings={})=>{
+   const response=await app.sendMessage({conversation_id:thread,message_id:message,body},{session:sessions[label],...settings});
+   for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
+   const text=(await response.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(text);assert.ok(!text.includes('private-message-error-canary'));return {response,body:text};
+  };
+  await checkScenario('message_actions_native_fetched_exact_retry_unicode_and_derived_sender',async()=>{
+   const pair=await acceptedConnection(),thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id})),message=randomUUID(),body="message-action-canary pilot's <script>text</script>\nSecond line 🛩";
+   expectCode(await send(thread,message,body,'pilot',{transport:'native'}),'sent');
+   expectCode(await send(thread,message,body),'sent');
+   const stored=await checked(clients.pilot.from('messages').select('id,sender_id,body').eq('conversation_id',thread));assert.deepEqual(stored,[{id:message,sender_id:accounts.pilot.id,body}]);
+   expectCode(await send(thread,message,body+' changed'),'invalid_input');
+   const maximum='🛩'.repeat(4000),second=randomUUID();const result=await send(thread,second,maximum,'owner');expectCode(result,'sent');assert.ok(!result.body.includes(maximum),'Send confirmation excludes body');
+   const read=await history(thread);assert.equal(read.status,'authorized');assert.equal(read.sendStatus,'available');assert.deepEqual(read.messages.map(m=>m.id),[message,second]);assert.equal(read.messages[1].senderId,accounts.owner.id);assert.equal(read.messages[1].body,maximum);assert.equal(read.olderCursor,null);
+   const actionHtml=await(await app.request('/dashboard/message-fixture',{session:sessions.pilot})).text();
+   for(const body of ['', ' \n\t','x'.repeat(4001)])expectCode(await send(thread,randomUUID(),body,'pilot',{formHtml:actionHtml}),'invalid_input');
+   const beforeCalls=await messageCalls();for(const key of ['sender_id','owner_id','created_at']){const response=await app.sendMessage({conversation_id:thread,message_id:randomUUID(),body:'forged',[key]:accounts.owner.id},{session:sessions.pilot,formHtml:actionHtml});expectCode({body:(await response.text()).replaceAll('&quot;','"')},'invalid_input');}assert.equal(await messageCalls(),beforeCalls);
+  });
+  await checkScenario('message_actions_deny_foreign_closed_and_bad_origin_and_preserve_uncertain_retry_identity',async()=>{
+   const pair=await acceptedConnection({visibility:'PRIVATE'}),thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
+   const before=await messageCalls();for(const label of ['other','adminNoProfile','noProfile'])expectCode(await send(thread,randomUUID(),'Denied',label),'conversation_unavailable');
+   for(const label of ['disabled','absent'])expectCode(await send(thread,randomUUID(),'Denied',label),'forbidden');
+   const rejected=await send(thread,randomUUID(),'Bad origin','pilot',{origin:'https://untrusted.invalid'});assert.ok(!rejected.body.includes('"code":"sent"'));assert.equal(await messageCalls(),before);
+   for(const mode of ['lost','malformed']){
+    const message=randomUUID(),body='uncertain-message-'+mode,prior=await messageCalls();await messageMode(mode);
+    try{expectCode(await send(thread,message,body),'send_unconfirmed');assert.equal(await messageCalls(),prior+1);}finally{await messageMode('off');}
+    expectCode(await send(thread,message,body),'sent');const stored=await checked(clients.pilot.from('messages').select('id').eq('id',message));assert.equal(stored.length,1);
+   }
+   await checked(clients.owner.rpc('change_flight_recipient',{p_flight_id:pair.id,p_recipient_id:accounts.pilot.id,p_selected:false}));
+   const closed=await history(thread);assert.equal(closed.status,'authorized');assert.equal(closed.sendStatus,'closed');assert.equal(closed.messages.length,2);assert.ok(!JSON.stringify(closed).includes(pair.id));
+   const calls=await messageCalls();expectCode(await send(thread,randomUUID(),'Closed'),'conversation_unavailable');assert.equal(await messageCalls(),calls);
+   for(const label of ['other','adminNoProfile','noProfile'])assert.deepEqual(await history(thread,label),{status:'missing'});
+  });
+  await checkScenario('message_history_pages_fail_closed_on_outage_and_mid_read_revocation',async()=>{
+   const pair=await acceptedConnection(),thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
+   const ids=Array.from({length:34},()=>randomUUID());for(const id of ids)await checked(clients.pilot.rpc('send_conversation_message',{p_conversation_id:thread,p_message_id:id,p_body:'Owned paged message '+id}));
+   const first=await history(thread);assert.equal(first.status,'authorized');assert.equal(first.messages.length,30);assert.deepEqual(first.messages.map(m=>m.id),ids.slice(4));assert.ok(first.olderCursor);
+   const second=await history(thread,'pilot',first.olderCursor);assert.equal(second.status,'authorized');assert.deepEqual(second.messages.map(m=>m.id),ids.slice(0,4));assert.equal(second.olderCursor,null);
+   assert.deepEqual(await history(thread,'pilot','invalid'),{status:'invalid'});
+   await messageMode('read-outage');try{assert.deepEqual(await history(thread),{status:'unavailable'});}finally{await messageMode('off');}
+   await stack.setMembership(accounts.owner.id,{role:'member',status:'disabled'});try{const retained=await history(thread);assert.equal(retained.status,'authorized');assert.equal(retained.sendStatus,'closed');expectCode(await send(thread,randomUUID(),'Inactive counterpart'),'forbidden');}finally{await stack.setMembership(accounts.owner.id,{role:'member',status:'active'});}
+   await messageMode('disable-history:'+accounts.pilot.id);try{const denied=await history(thread);assert.notEqual(denied.status,'authorized');assert.equal(denied.messages,undefined);}finally{await messageMode('off');await stack.setMembership(accounts.pilot.id,{role:'member',status:'active'});}
+   assert.equal((await history(thread)).status,'authorized');
+   const invisible=randomUUID();await checked(clients.pilot.rpc('send_conversation_message',{p_conversation_id:thread,p_message_id:invisible,p_body:'\uFEFF'}));
+   const retained=await history(thread);assert.equal(retained.status,'authorized');assert.equal(retained.messages.at(-1).body,'\uFEFF');
+   const list=await app.request('/messages',{session:sessions.pilot});assert.match(await list.text(),/No preview available/);
+  });
   await checkScenario('message_guarded_rpc_and_realtime_enforce_current_participants_without_delete_events',async()=>{
    const pair=await acceptedConnection({visibility:'PRIVATE'}),thread=await checked(clients.owner.rpc('get_or_create_flight_conversation',{p_request_id:pair.request.id}));
    const labels=['owner','pilot','other','disabled','absent'],events=Object.fromEntries(labels.map(label=>[label,[]])),channels=[];
