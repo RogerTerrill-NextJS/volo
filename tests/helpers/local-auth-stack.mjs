@@ -297,15 +297,18 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         requireOwned(id);if(!['member','admin'].includes(role)||!['active','disabled'].includes(status))throw new Error('Invalid membership fixture');
         await api(`/rest/v1/memberships?user_id=eq.${id}`,{method:'PATCH',body:membership(role,status)});
       },
-      async createOwnedMessage({id,conversation,sender,body}){
-        requireOwned(sender);
+      async createOwnedMessage({id,conversation,sender,body,disableAfterInsert}){
+        requireOwned(sender);if(disableAfterInsert!==undefined)requireOwned(disableAfterInsert);
         const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
         if(typeof id!=='string'||!uuid.test(id)||typeof conversation!=='string'||!uuid.test(conversation)||typeof body!=='string'||!body.isWellFormed()||body.includes('\u0000')||!body.trim()||[...body].length>4000)throw new Error('Invalid owned message fixture');
         const text=body.replaceAll("'","''");
-        // One local statement establishes only this owned sender, then inserts
-        // only into that sender's existing participant conversation.
-        await ownedFixtureSql(`with actor as materialized (select set_config('request.jwt.claims',json_build_object('sub','${sender}','role','authenticated')::text,true) claims)
-          insert into public.messages(id,conversation_id,sender_id,body) select '${id}',c.id,'${sender}','${text}' from public.conversations c cross join actor where c.id='${conversation}' and '${sender}'::uuid in (c.owner_id,c.requester_id) and actor.claims is not null;`);
+        // One local statement establishes only this owned sender. The optional
+        // read-authorization probe disables an owned participant after a valid
+        // insert but before commit, so Realtime must recheck current membership.
+        const actor=`actor as materialized (select set_config('request.jwt.claims',json_build_object('sub','${sender}','role','authenticated')::text,true) claims)`;
+        const insert=`insert into public.messages(id,conversation_id,sender_id,body) select '${id}',c.id,'${sender}','${text}' from public.conversations c cross join actor where c.id='${conversation}' and '${sender}'::uuid in (c.owner_id,c.requester_id) and actor.claims is not null`;
+        await ownedFixtureSql(disableAfterInsert===undefined?`with ${actor} ${insert};`:`with ${actor},written as (${insert} returning conversation_id) update public.memberships m set status='disabled',disabled_at=clock_timestamp(),disabled_reason='Owned Realtime authorization probe' from written w join public.conversations c on c.id=w.conversation_id where m.user_id='${disableAfterInsert}' and m.user_id in (c.owner_id,c.requester_id);`);
+
       },
       async removeOwnedConversations(id){
         // History deletion has no service-role grant. Cleanup is restricted to

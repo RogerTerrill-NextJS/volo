@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 
-export async function verifyMessageLocks({sql,session,until}){
- for(const [firstOp,secondOp] of [['store','store'],['store','withdraw'],['withdraw','store'],['store','cancel'],['cancel','store'],['store','remove'],['remove','store']]){
+export async function verifyMessageLocks({sql,session,until,send=false}){
+ for(const [firstOp,secondOp,duplicate=false] of [['store','store'],['store','withdraw'],['withdraw','store'],['store','cancel'],['cancel','store'],['store','remove'],['remove','store'],...(send?[['store','store',true]]:[])]){
   const owner=randomUUID(),requester=randomUUID(),flight=randomUUID(),request=randomUUID(),thread=randomUUID();
-  const label='volo205_'+randomUUID().replaceAll('-',''),firstName=label+'_first',secondName=label+'_second';
+  const retryId=randomUUID();
+  const label=(send?'volo206_':'volo205_')+randomUUID().replaceAll('-',''),firstName=label+'_first',secondName=label+'_second';
   const claims=actor=>`select set_config('request.jwt.claims','{"sub":"${actor}","role":"authenticated"}',true);`;
   let first,second;
   try{
@@ -15,9 +16,8 @@ export async function verifyMessageLocks({sql,session,until}){
     insert into public.flight_recipients(flight_id,user_id) values('${flight}','${requester}');
     insert into public.flight_requests(id,flight_id,requester_id) values('${request}','${flight}','${requester}');update public.flight_requests set status='accepted' where id='${request}';
     insert into public.conversations(id,flight_request_id,owner_id,requester_id) values('${thread}','${request}','${owner}','${requester}');`);
-   // No public sending grant exists yet. This privileged fixture exercises the
-   // same persistence trigger that will defend future guarded sends.
-   const operation=op=>({store:claims(requester)+`insert into public.messages(conversation_id,sender_id,body) values('${thread}','${requester}','Race message');`,withdraw:claims(requester)+`set local role authenticated;select public.withdraw_flight_request('${flight}','${request}');`,cancel:claims(owner)+`set local role authenticated;select public.cancel_flight('${flight}');`,remove:claims(owner)+`set local role authenticated;select public.change_flight_recipient('${flight}','${requester}',false);`})[op];
+   // Exercise both the original persistence defense and the guarded session RPC.
+   const operation=op=>({store:claims(requester)+(send?`set local role authenticated;select public.send_conversation_message('${thread}','${duplicate?retryId:randomUUID()}','Race message');`:`insert into public.messages(conversation_id,sender_id,body) values('${thread}','${requester}','Race message');`),withdraw:claims(requester)+`set local role authenticated;select public.withdraw_flight_request('${flight}','${request}');`,cancel:claims(owner)+`set local role authenticated;select public.cancel_flight('${flight}');`,remove:claims(owner)+`set local role authenticated;select public.change_flight_recipient('${flight}','${requester}',false);`})[op];
    first=session(firstName,`begin;${operation(firstOp)}\n\\echo winner_ready`,{hold:true});
    await until(()=>first.ready()||first.finished(),'First message operation did not become ready');assert.ok(first.ready());
    second=session(secondName,`begin;${operation(secondOp)} commit;`);
@@ -25,9 +25,9 @@ export async function verifyMessageLocks({sql,session,until}){
    if(second.finished())assert.fail('Message competitor exited before lifecycle overlap');
    first.child.stdin.end('commit;\n');const winner=await first.done,loser=await second.done;assert.equal(winner.code,0,winner.stderr);
    if(firstOp!=='store'){assert.notEqual(loser.code,0);assert.match(loser.stderr,/42501/);assert.equal(sql(`select count(*) from public.messages where conversation_id='${thread}';`),'0','Closed-first race cannot append');}
-   else{assert.equal(loser.code,0,loser.stderr);assert.equal(sql(`select count(*) from public.messages where conversation_id='${thread}';`),secondOp==='store'?'2':'1');}
+   else{assert.equal(loser.code,0,loser.stderr);assert.equal(sql(`select count(*) from public.messages where conversation_id='${thread}';`),secondOp==='store'&&!duplicate?'2':'1');}
    if(secondOp!=='store'||firstOp!=='store')assert.equal(sql(`select closed_at is not null from public.conversations where id='${thread}';`),'t','Closure retains only messages committed before its boundary');
-   console.log(`Message ${firstOp}-${secondOp}: competing lifecycle lock observed; history boundary verified`);
+   console.log(`Message ${send?'RPC':'persistence'} ${firstOp}-${secondOp}${duplicate?'-retry':''}: competing lifecycle lock observed; history boundary verified`);
   }finally{
    first?.child.stdin.end();second?.child.stdin.end();sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);await Promise.all([first?.done,second?.done]);
    sql(`delete from public.messages where conversation_id='${thread}';delete from public.conversations where id='${thread}';delete from public.flight_requests where id='${request}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id='${requester}';delete from public.memberships where user_id in ('${owner}','${requester}');delete from auth.users where id in ('${owner}','${requester}');`);
