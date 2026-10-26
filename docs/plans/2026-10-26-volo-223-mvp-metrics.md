@@ -1,0 +1,11 @@
+# VOLO-223 — Small privacy-safe MVP metrics report
+
+Spec: VOLO-223 / VOLO-88. Provide one active-admin-only aggregate query and report using existing persisted records. No analytics service, browsing instrumentation, event warehouse, cohort/filter system or private row access.
+
+Definitions: invited pilots are distinct normalized invitation recipients with an accepted/reconciled provider receipt (not delivery); activated pilots are distinct redeemed invitation subjects. Active members include bootstrap admissions. Complete profiles are schema-valid profile rows, with active profiles shown separately. Posts and requests count retained unique records, including closed/hidden history; requests/resubmissions count the same record once. Current acceptances are status=accepted. Recorded acceptance history counts distinct requests with current acceptance, an accepted notification or an existing conversation; pre-notification closed requests without conversation evidence cannot be reconstructed. Messages count immutable records and distinct conversations with messages. No real-world flying outcome is inferred: participant confirmations are not collected yet and remain separately identified for VOLO-96.
+
+1. Add focused SQL coverage for aggregate definitions, deduplication, history and admin isolation. Observe baseline failure in an owned local database. Add minimal DTO/auth/revocation unit coverage.
+2. Add one no-argument security-definer RPC fenced by current admin membership, returning aggregate counts only in one SELECT snapshot. Add server-only query and a plain admin report with definitions, safe errors and navigation. No new source tables/events or mutations.
+3. Reuse the owned local stack and real-auth app fixtures for authorized report and member/disabled/role-change denials, privacy and reload. Generate types, update the existing upgrade allowlist, run targeted checks and one fresh review, verify local UI, then commit/push/create the requested PR.
+
+Review focus: current admin authorization at SQL/app layers, no private values/row IDs in responses, invitation retry deduplication, current versus historical acceptance, explicit non-collected outcome state, single snapshot counts, no broadened table grants or host writes.

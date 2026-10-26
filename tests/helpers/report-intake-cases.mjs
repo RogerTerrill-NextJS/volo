@@ -7,7 +7,7 @@ import {validateLocalApiUrl} from './local-auth-stack.mjs';
 export async function verifyReportIntake({stack,app,scenario}){
  validateLocalApiUrl(stack.apiUrl,Number(new URL(stack.apiUrl).port));
  const options={auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}},privileged=createClient(stack.apiUrl,stack.serverSecret,options),accounts={},sessions={},clients={},flights=[];
- let privateFlight,networkFlight,requestId,conversation,messageId;
+ let privateFlight,networkFlight,requestId,conversation,messageId,metricsBaseline;
  const checked=async query=>{const r=await query.retry(false);assert.equal(r.error,null,'Owned report fixture operation');return r.data;};
  const safe=async response=>{for(const name of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(name)??'',/no-store/);const text=await response.text();stack.assertNoCredentialLeaks(text);for(const session of Object.values(sessions))session.assertNoCredentialLeaks(text);for(const a of Object.values(accounts))assert.ok(!text.includes(a.email));assert.ok(!text.includes('private-report-canary')&&!text.includes('Uncopied private message canary'));return text;};
  const mode=async value=>assert.equal((await app.request('/api/report-control',{method:'POST',body:value})).status,200);
@@ -19,14 +19,35 @@ export async function verifyReportIntake({stack,app,scenario}){
  const rpc=(label,input)=>clients[label].rpc('submit_report',{p_report_id:input.report_id,p_target_type:input.target_type,p_target_id:input.target_id,p_reason:input.reason}).retry(false);
  const run=(name,fn)=>scenario(name,async()=>{for(const session of Object.values(sessions))await session.refresh();await fn();});
  try{
-  for(const [label,role,status] of [['owner','member','active'],['reporter','member','active'],['other','member','active'],['admin','admin','active'],['disabled','member','disabled'],['absent',null,'active'],['noProfile','member','active']]){
+  for(const [label,role,status] of [['admin','admin','active'],['owner','member','active'],['reporter','member','active'],['other','member','active'],['disabled','member','disabled'],['absent',null,'active'],['noProfile','member','active']]){
    accounts[label]=await stack.createAccount({label:'report-'+label.toLowerCase(),role,status});sessions[label]=await signInSession(stack,accounts[label]);clients[label]=createClient(stack.apiUrl,stack.publicKey,options);assert.equal((await clients[label].auth.signInWithPassword({email:accounts[label].email,password:accounts[label].password})).error,null);
    if(role&&label!=='noProfile')await checked(privileged.from('profiles').insert({user_id:accounts[label].id,display_name:'Owned report '+label,home_airport:'KPAO',pilot_designation:'licensed'}));
+   // Other scenarios in the same owned stack may retain admitted accounts.
+   // Capture the baseline once this fixture has its own authorized admin.
+   if(label==='admin')metricsBaseline=await checked(clients.admin.rpc('admin_mvp_metrics'));
   }
   for(const visibility of ['NETWORK','PRIVATE']){const id=randomUUID();flights.push(id);await checked(privileged.from('flights').insert({id,owner_id:accounts.owner.id,departure_airport:'KPAO',destination_airport:'KSQL',departure_at:new Date(Date.now()+86400000).toISOString(),departure_timezone:'UTC',aircraft_description:'Owned report C172',pilot_places:2,visibility,notes:'Post content is never copied'}));if(visibility==='PRIVATE')privateFlight=id;else networkFlight=id;}
   await checked(privileged.from('flight_recipients').insert({flight_id:privateFlight,user_id:accounts.reporter.id}));
   requestId=randomUUID();await checked(privileged.from('flight_requests').insert({id:requestId,flight_id:privateFlight,requester_id:accounts.reporter.id}));await checked(privileged.from('flight_requests').update({status:'accepted'}).eq('id',requestId));
   const thread=await clients.reporter.rpc('get_or_create_flight_conversation',{p_request_id:requestId}).retry(false);assert.equal(thread.error,null);conversation=thread.data;messageId=randomUUID();assert.equal((await clients.owner.rpc('send_conversation_message',{p_conversation_id:conversation,p_message_id:messageId,p_body:'Uncopied private message canary'}).retry(false)).error,null);
+  await run('metrics_authorized_aggregates_privacy_reload_and_current_role_guards',async()=>{
+   const snapshot=await checked(clients.admin.rpc('admin_mvp_metrics'));const {asOf,...counts}=snapshot;assert.ok(Number.isFinite(Date.parse(asOf)));
+   const {asOf:baselineTime,...expected}=metricsBaseline;assert.ok(Number.isFinite(Date.parse(baselineTime)));
+   for(const [key,delta] of Object.entries({activeMembers:4,completedProfiles:4,activeProfiles:3,flightPosts:2,interestRequests:1,currentAcceptedRequests:1,recordedAcceptedRequests:1,messages:1,messagingConversations:1}))expected[key]+=delta;
+   assert.deepEqual(counts,expected,'The fixture contributes exact deltas without assuming an empty stack');
+   const page=await safe(await app.request('/admin/metrics',{session:sessions.admin}));assert.ok(page.includes('MVP metrics')&&page.includes('Real-world flying outcomes: not collected'));assert.ok(!page.includes('Owned report C172')&&!page.includes('Owned report reporter'));
+   const read=async label=>(await(await app.request('/api/metrics',{session:sessions[label]})).json());
+   const report=await read('admin');assert.equal(report.status,'authorized');const {asOf:date,...reported}=report.report;assert.ok(Number.isFinite(Date.parse(date)));assert.deepEqual(reported,counts);
+   assert.deepEqual(await checked(clients.admin.from('messages').select('body')),[],'Aggregate permission does not expose private messages');
+   for(const label of ['owner','reporter','other','noProfile','disabled','absent']){
+    assert.equal((await read(label)).status,'forbidden');assert.equal((await clients[label].rpc('admin_mvp_metrics').retry(false)).error?.code,'42501');
+    const denied=await safe(await app.request('/admin/metrics',{session:sessions[label]}));assert.ok(!denied.includes('Snapshot')&&!denied.includes('Real-world flying outcomes: not collected'));
+   }
+   await mode('metrics-outage');try{assert.equal((await read('admin')).status,'unavailable');const failure=await safe(await app.request('/admin/metrics',{session:sessions.admin}));assert.ok(failure.includes('Metrics temporarily unavailable'));assert.ok(!failure.includes('private-metrics-error-canary'));}finally{await mode('off');}
+   assert.equal((await read('admin')).status,'authorized');
+   await stack.setMembership(accounts.admin.id,{role:'member',status:'active'});try{assert.equal((await read('admin')).status,'forbidden');assert.equal((await clients.admin.rpc('admin_mvp_metrics').retry(false)).error?.code,'42501');}finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
+   await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});try{assert.equal((await read('admin')).status,'forbidden');assert.equal((await clients.admin.rpc('admin_mvp_metrics').retry(false)).error?.code,'42501');}finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
+  });
   await run('report_intake_origin_membership_input_and_direct_bypass_guards',async()=>{
    const formHtml=await(await app.request('/dashboard/report-fixture',{session:sessions.reporter})).text(),input=fields(randomUUID());
    await sessions.other.setAdmissionMetadata();

@@ -25,6 +25,7 @@ export default function AppShell({ children,isAdmin=false }: { children: React.R
           </Link>}
           {isAdmin && <Link href="/admin/members" prefetch={false} className={navigationClass}>Members</Link>}
           {isAdmin && <Link href="/admin/reports" prefetch={false} className={navigationClass}>Reports</Link>}
+          {isAdmin && <Link href="/admin/metrics" prefetch={false} className={navigationClass}>MVP metrics</Link>}
           {isAdmin && <Link href="/admin/flights" prefetch={false} className={navigationClass}>Flight moderation</Link>}
           <Link href="/" className={navigationClass}>
             Back to home
