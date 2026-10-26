@@ -25,3 +25,11 @@ Real-world flying outcomes are explicitly `not_collected`; acceptance and messag
 All owned disposable database/app resources and temporary credential/state files were cleaned up successfully.
 
 The full suite, destructive prior-schema upgrade, production-scale benchmark and full accessibility audit were not run under the MVP scope. Report scans are intended for the small MVP dataset; performance at production scale is unbenchmarked. CI/Netlify Deploy Preview and production verification remain separate. No hosted migration/data/account/email/settings operation or production publication occurred.
+
+## CI follow-up — seeded and shared fixture counts
+
+CI run 40404745326 failed three metrics assertions because the initial SQL contract assumed an empty database. The fictional seeds correctly add two active members, three complete profiles and two active profiles. Initial local verification omitted the seeded-data variant.
+
+The SQL contract now captures a report baseline through its own authenticated admin, then checks the fixture's exact contributions for every aggregate. The integration fixture uses the same approach because earlier scenarios can retain admitted accounts in the shared owned stack. Deduplication, disabled-user exclusion, acceptance history and privacy/authorization assertions remain intact; report/application logic is unchanged.
+
+The original SQL assertions reproduced the same three CI failures with the real fictional seeds. After correction, all 57 targeted metrics/member-admin checks passed both with and without seeds. The original integration assertion also failed with an existing owned member/profile; the corrected metrics scenario and seven report/support scenarios then passed in that populated stack. Focused fixture lint and whitespace checks passed. These runs used disposable local resources only.
