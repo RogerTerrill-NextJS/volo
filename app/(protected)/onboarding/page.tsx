@@ -15,7 +15,7 @@ export default async function OnboardingPage(){
  if(profile==='complete')redirect('/dashboard?from=profile-onboarding');
  return <AppShell isAdmin={access.member.role==='admin'}>
   <header className="max-w-xl space-y-3"><h1 className="text-3xl font-semibold tracking-tight">{profile==='missing'?'Complete your pilot profile':'Profile temporarily unavailable'}</h1>
-   <p className="text-zinc-600 dark:text-zinc-400">{profile==='missing'?'Tell other pilots a little about yourself. You can continue browsing and complete your profile later.':'We could not check your profile. Try again before submitting.'}</p>
+   <p className="text-zinc-600">{profile==='missing'?'Tell other pilots a little about yourself. You can continue browsing and complete your profile later.':'We could not check your profile. Try again before submitting.'}</p>
   </header>
   {profile==='unavailable'&&<a href="/onboarding" className="w-fit underline underline-offset-4">Try again</a>}
   <ProfileForm unavailable={profile==='unavailable'}/>

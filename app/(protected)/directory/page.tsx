@@ -18,9 +18,9 @@ const linkClass='inline-flex min-h-11 items-center rounded-lg px-4 py-2 font-med
 
 function DirectoryLoading(){
  return <div role="status" aria-live="polite" aria-busy="true" className="space-y-6">
-  <p className="text-zinc-600 dark:text-zinc-400">Loading pilots…</p>
+  <p className="text-zinc-600">Loading pilots…</p>
   <div aria-hidden="true" className="grid gap-6 sm:grid-cols-2">
-   {[0,1,2,3].map(key=><div key={key} className="h-64 rounded-2xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950"/>)}
+   {[0,1,2,3].map(key=><div key={key} className="h-64 rounded-2xl border border-zinc-200 bg-zinc-50"/>)}
   </div>
  </div>;
 }
@@ -47,22 +47,22 @@ async function DirectoryListing({after,criteria}:{after:string|string[]|undefine
  </section>;
  if(result.status==='invalid')return <section className="space-y-4" aria-labelledby="directory-state-heading">
   <h2 id="directory-state-heading" className="text-xl font-semibold">Invalid directory page</h2>
-  <p className="text-zinc-600 dark:text-zinc-400">Use a valid page link and at most 80 characters in each search or filter field.</p>
+  <p className="text-zinc-600">Use a valid page link and at most 80 characters in each search or filter field.</p>
   <Link href={firstPage} prefetch={false} className={linkClass}>Back to first page</Link>
  </section>;
   const validCursor=typeof after==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(after);
   return <section role="alert" className="space-y-4" aria-labelledby="directory-state-heading">
    <h2 id="directory-state-heading" className="text-xl font-semibold">Directory temporarily unavailable</h2>
-   <p className="text-zinc-600 dark:text-zinc-400">We could not load the pilots. Please try again.</p>
+   <p className="text-zinc-600">We could not load the pilots. Please try again.</p>
    <a href={validCursor?directoryHref(normalized,after):firstPage} className={linkClass}>Try again</a>
   </section>;
  }
  return <section className="space-y-6" aria-label="Directory results">
-  {result.rows.length===0?<div className="space-y-3 rounded-2xl border border-zinc-200 p-6 sm:p-8 dark:border-zinc-800">
+  {result.rows.length===0?<div className="space-y-3 rounded-2xl border border-zinc-200 p-6 sm:p-8">
    <h2 className="text-xl font-semibold">{after?'No more pilots on this page':hasCriteria?'No pilots match your search':'No pilots to show yet'}</h2>
-   <p className="text-zinc-600 dark:text-zinc-400">{hasCriteria?'Try a different search or filters, or reset all criteria.':after?'The directory may have changed since this link was created. Return to the first page to browse again.':'Pilots will appear here when their profiles are ready.'}</p>
+   <p className="text-zinc-600">{hasCriteria?'Try a different search or filters, or reset all criteria.':after?'The directory may have changed since this link was created. Return to the first page to browse again.':'Pilots will appear here when their profiles are ready.'}</p>
   </div>:<>
-   <p className="text-sm text-zinc-600 dark:text-zinc-400">{result.rows.length} {result.rows.length===1?'pilot':'pilots'} on this page</p>
+   <p className="text-sm text-zinc-600">{result.rows.length} {result.rows.length===1?'pilot':'pilots'} on this page</p>
    <ul aria-label="Pilots" className="grid gap-6 sm:grid-cols-2">
     {result.rows.map(pilot=><PilotCard key={pilot.user_id} pilot={pilot}/>)}
    </ul>
@@ -85,13 +85,13 @@ export default async function DirectoryPage({searchParams}:{searchParams:Promise
  return <AppShell isAdmin={access.member.role==='admin'}>
   <header className="max-w-xl space-y-3">
    <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Pilot directory</h1>
-   <p className="text-zinc-600 dark:text-zinc-400">Meet pilots in the Volo network. Profile details are self-reported.</p>
+   <p className="text-zinc-600">Meet pilots in the Volo network. Profile details are self-reported.</p>
   </header>
   <Form action="/directory" prefetch={false} className="space-y-5">
    <div className="space-y-3">
     <label htmlFor="directory-search" className="block text-sm font-medium">Name or home airport</label>
     <input key={term} id="directory-search" name="q" type="search" maxLength={inputMaxUnits} defaultValue={term} aria-describedby="directory-search-hint" className="min-h-11 w-full min-w-0 rounded-lg border border-zinc-400 bg-transparent px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-4"/>
-    <p id="directory-search-hint" className="text-sm text-zinc-600 dark:text-zinc-400">Search by part of a pilot’s name or home airport identifier.</p>
+    <p id="directory-search-hint" className="text-sm text-zinc-600">Search by part of a pilot’s name or home airport identifier.</p>
    </div>
    <fieldset className="grid min-w-0 gap-4 sm:grid-cols-3" aria-describedby="directory-filter-hint">
     <legend className="mb-3 text-sm font-semibold">Pilot filters</legend>
@@ -100,9 +100,9 @@ export default async function DirectoryPage({searchParams}:{searchParams:Promise
      <input key={normalized[field]??''} id={`directory-${field}`} name={field} type="text" maxLength={inputMaxUnits} defaultValue={normalized[field]??''} className="min-h-11 w-full min-w-0 rounded-lg border border-zinc-400 bg-transparent px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-4"/>
     </div>)}
    </fieldset>
-   <p id="directory-filter-hint" className="text-sm text-zinc-600 dark:text-zinc-400">Match part of a self-reported label or aircraft description. Pilots must match every populated field. Missing details do not match an active filter. Use up to 80 characters per field.</p>
+   <p id="directory-filter-hint" className="text-sm text-zinc-600">Match part of a self-reported label or aircraft description. Pilots must match every populated field. Missing details do not match an active filter. Use up to 80 characters per field.</p>
    <div className="flex flex-wrap items-center gap-3">
-    <button type="submit" className="min-h-11 rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 dark:bg-zinc-100 dark:text-zinc-900">Search pilots</button>
+    <button type="submit" className="min-h-11 rounded-lg bg-zinc-900 px-4 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4">Search pilots</button>
     {term&&<Link href={directoryHref({...normalized,search:undefined})} prefetch={false} className={linkClass}>Clear search</Link>}
     {hasFilters&&<Link href="/directory" prefetch={false} className={linkClass}>Reset all</Link>}
    </div>

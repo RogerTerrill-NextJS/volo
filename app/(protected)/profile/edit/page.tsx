@@ -18,7 +18,7 @@ export default async function EditProfilePage(){
  if(result.status==='missing')redirect('/onboarding');
  return <AppShell isAdmin={access.member.role==='admin'}>
   <header className="max-w-xl space-y-3"><h1 className="text-3xl font-semibold tracking-tight">{result.status==='complete'?'Edit your pilot profile':'Profile temporarily unavailable'}</h1>
-   <p className="text-zinc-600 dark:text-zinc-400">{result.status==='complete'?'Update the details other pilots see about you.':'We could not load your profile. Try again before submitting.'}</p>
+   <p className="text-zinc-600">{result.status==='complete'?'Update the details other pilots see about you.':'We could not load your profile. Try again before submitting.'}</p>
   </header>
   {result.status==='unavailable'&&<a href="/profile/edit" className="w-fit underline underline-offset-4">Try again</a>}
   {result.status==='complete'&&<ProfilePhotoControls userId={access.member.userId} displayName={result.profile.display_name} initialAvailable={result.photoAvailable}/>}

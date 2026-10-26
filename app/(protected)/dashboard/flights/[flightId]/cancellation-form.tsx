@@ -2,7 +2,7 @@
 import {useActionState,useEffect,useRef} from 'react';
 import {emptyCancellationForm} from '../../../../../lib/flights/cancellation-form-state';
 import {cancelFlight} from './actions';
-const buttonClass='min-h-11 rounded-lg border border-zinc-400 px-4 py-3 font-medium focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:border-zinc-600';
+const buttonClass='min-h-11 rounded-lg border border-zinc-400 px-4 py-3 font-medium focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60';
 export default function CancellationForm({flightId,flightStatus}:{flightId:string;flightStatus:'open'|'cancelled'|'completed'}){
  const permalink=`/dashboard/flights/${flightId}`;
  const [state,submit,pending]=useActionState(cancelFlight,emptyCancellationForm,permalink);
@@ -10,9 +10,9 @@ export default function CancellationForm({flightId,flightStatus}:{flightId:strin
  useEffect(()=>{if(state.revision>0)feedback.current?.focus();},[state.revision]);
  if(flightStatus!=='open'&&state.revision===0)return null;
  const blocked=state.status!=='ready',success=state.status==='cancelled';
- return <section aria-labelledby="cancel-flight-heading" className="min-w-0 space-y-4 rounded-xl border border-zinc-300 p-5 dark:border-zinc-700">
+ return <section aria-labelledby="cancel-flight-heading" className="min-w-0 space-y-4 rounded-xl border border-zinc-300 p-5">
   <h2 id="cancel-flight-heading" className="text-xl font-semibold">Cancel flight</h2>
-  {state.message&&<p ref={feedback} tabIndex={-1} role={success?'status':'alert'} className="rounded-lg border border-zinc-300 p-4 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-zinc-700">{state.message}</p>}
+  {state.message&&<p ref={feedback} tabIndex={-1} role={success?'status':'alert'} className="rounded-lg border border-zinc-300 p-4 focus-visible:outline-2 focus-visible:outline-offset-2">{state.message}</p>}
   {pending&&<p role="status">Cancelling your flight. Please wait.</p>}
   {!success&&<>
    <p id="cancel-flight-help">Cancellation closes all pending and accepted requests and removes this flight from upcoming flights. Flight and request history are retained. To fly a new plan, post a new flight.</p>
@@ -25,7 +25,7 @@ export default function CancellationForm({flightId,flightStatus}:{flightId:strin
       <span>I confirm cancellation of this flight and closure of its active requests.</span>
      </label>
      <div className="flex flex-wrap gap-3">
-      <button type="submit" className={`${buttonClass} bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900`}>{pending?'Cancelling flight…':'Confirm cancellation'}</button>
+      <button type="submit" className={`${buttonClass} bg-zinc-900 text-white`}>{pending?'Cancelling flight…':'Confirm cancellation'}</button>
       <button type="reset" className={buttonClass}>Keep flight</button>
      </div>
     </fieldset>

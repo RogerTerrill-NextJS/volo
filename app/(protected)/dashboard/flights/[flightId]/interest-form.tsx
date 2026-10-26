@@ -17,9 +17,9 @@ export default function InterestForm({flightId,mode}:{flightId:string;mode:Inter
  const editing=['ready','resubmit','editing'].includes(status)||canResubmit,unconfirmed=status==='unconfirmed';
  const message=mode==='closed'?initialMessages.closed:state.revision>0?state.message:initialMessages[mode];
  const error=['error','unconfirmed','withdrawal_unconfirmed','stale','denied','flight_unavailable','editing'].includes(status)&&message!==null;
- return <section aria-labelledby="flight-interest-heading" className="min-w-0 space-y-4 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+ return <section aria-labelledby="flight-interest-heading" className="min-w-0 space-y-4 border-t border-zinc-200 pt-6">
   <h2 id="flight-interest-heading" className="text-xl font-semibold">Join this flight</h2>
-  {message&&<p id="interest-feedback" ref={feedback} tabIndex={-1} role={error?'alert':'status'} className="rounded-lg border border-zinc-300 p-4 focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-zinc-700">{message}</p>}
+  {message&&<p id="interest-feedback" ref={feedback} tabIndex={-1} role={error?'alert':'status'} className="rounded-lg border border-zinc-300 p-4 focus-visible:outline-2 focus-visible:outline-offset-2">{message}</p>}
   {pending&&<p role="status">{withdrawing?'Withdrawing your request…':'Sending your interest…'}</p>}
   {status==='withdrawn'&&!canResubmit&&<p>{initialMessages[mode]}</p>}
   {(editing||unconfirmed)&&<form action={submit} onSubmit={()=>setWithdrawing(false)} aria-busy={pending} className="space-y-4">
@@ -28,14 +28,14 @@ export default function InterestForm({flightId,mode}:{flightId:string;mode:Inter
     <input type="hidden" name="flight_id" value={flightId}/>
     <div className="space-y-2">
      <label htmlFor="interest-note" className="block font-medium">Introduction (optional)</label>
-     <p id="interest-note-help" className="text-sm text-zinc-600 dark:text-zinc-400">Introduce yourself to the posting pilot. Up to 500 characters.</p>
+     <p id="interest-note-help" className="text-sm text-zinc-600">Introduce yourself to the posting pilot. Up to 500 characters.</p>
      <textarea key={state.revision} id="interest-note" name="introductory_note" rows={4} maxLength={1000} defaultValue={state.note}
       aria-describedby={`interest-note-help interest-note-count${status==='editing'&&state.message?' interest-feedback':''}`} aria-invalid={status==='editing'&&state.message?true:undefined}
       onChange={event=>{const length=[...event.currentTarget.value].length;setCount({revision:state.revision,value:length});event.currentTarget.setCustomValidity(length>500?'Use no more than 500 characters.':'');}}
-      className="w-full min-w-0 rounded-lg border border-zinc-300 bg-transparent px-3 py-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60 dark:border-zinc-700"/>
-     <p id="interest-note-count" className="text-sm text-zinc-600 dark:text-zinc-400">{count.revision===state.revision?count.value:[...state.note].length} / 500 characters</p>
+      className="w-full min-w-0 rounded-lg border border-zinc-300 bg-transparent px-3 py-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"/>
+     <p id="interest-note-count" className="text-sm text-zinc-600">{count.revision===state.revision?count.value:[...state.note].length} / 500 characters</p>
     </div>
-    <button type="submit" className="min-h-11 rounded-lg bg-zinc-900 px-5 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900">{pending?'Sending interest…':mode==='resubmit'||status==='withdrawn'?'Submit interest again':'Interested'}</button>
+    <button type="submit" className="min-h-11 rounded-lg bg-zinc-900 px-5 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60">{pending?'Sending interest…':mode==='resubmit'||status==='withdrawn'?'Submit interest again':'Interested'}</button>
    </fieldset>
   </form>}
   {['pending','accepted'].includes(status)&&<form action={submit} onSubmit={()=>setWithdrawing(true)} aria-busy={pending} className="space-y-3">
@@ -43,7 +43,7 @@ export default function InterestForm({flightId,mode}:{flightId:string;mode:Inter
    <fieldset disabled={pending}>
     <legend className="sr-only">Withdraw your flight request</legend>
     <input type="hidden" name="flight_id" value={flightId}/><input type="hidden" name="intent" value="withdraw"/>
-    <button type="submit" className="min-h-11 rounded-lg border border-zinc-400 px-5 py-3 font-medium focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:border-zinc-600">{pending&&withdrawing?'Withdrawing request…':'Withdraw request'}</button>
+    <button type="submit" className="min-h-11 rounded-lg border border-zinc-400 px-5 py-3 font-medium focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60">{pending&&withdrawing?'Withdrawing request…':'Withdraw request'}</button>
    </fieldset>
   </form>}
   {(status==='profile_required'||(status==='withdrawn'&&mode==='profile_required'))&&<Link href="/onboarding" prefetch={false} className={linkClass}>Complete your pilot profile</Link>}

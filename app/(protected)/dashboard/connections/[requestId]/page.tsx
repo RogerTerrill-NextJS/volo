@@ -34,12 +34,12 @@ export default async function ConnectionPage({params}:{params:Promise<{requestId
     <p>{hidden?'This flight was hidden by an administrator. Its active requests are closed.':history.status==='withdrawn'?'The joining pilot withdrew this request.':flight?.status==='cancelled'?'This flight has been cancelled.':'This request has been cancelled.'}</p>
     <p>This request is closed. It does not provide an active connection or permission to send messages. Your permitted request history remains available here.</p>
    </header>
-   <section aria-labelledby="closed-request-history" className="min-w-0 space-y-4 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8 dark:border-zinc-800">
+   <section aria-labelledby="closed-request-history" className="min-w-0 space-y-4 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8">
     <h2 id="closed-request-history" className="text-2xl font-semibold">Request history</h2>
     <p>{history.isOwner?'You are the posting pilot.':'You are the joining pilot.'}</p>
     <h3 className="text-lg font-semibold">Introduction</h3><p className="whitespace-pre-line">{history.note||'No introduction provided.'}</p>
    </section>
-   {flight?<section aria-labelledby="closed-flight" className="min-w-0 space-y-4 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8 dark:border-zinc-800">
+   {flight?<section aria-labelledby="closed-flight" className="min-w-0 space-y-4 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8">
     <h2 id="closed-flight" className="text-2xl font-semibold">{flight.departure_airport} → {flight.destination_airport}</h2>
     <p>{flight.status==='cancelled'?'Flight cancelled':flight.status==='completed'?'Flight completed':flight.isPast?'Past departure':'Flight open'}</p>
     {departure&&<p><time dateTime={flight.departure_at}>{departure.localDate} at {departure.localTime} · {departure.timeZone} ({departure.utcOffset})</time></p>}
@@ -65,14 +65,14 @@ export default async function ConnectionPage({params}:{params:Promise<{requestId
   <Link href={`/dashboard/flights/${flight.id}`} prefetch={false} className={linkClass}>Back to flight</Link>
   <header className="space-y-3"><h1 className="text-3xl font-semibold tracking-tight">Accepted connection</h1><p>{connection.isOwner?'You are the posting pilot. This pilot has been accepted for your flight.':'Your request has been accepted by the posting pilot.'}</p></header>
   <ContactForm requestId={connection.requestId}/>
-  <section aria-labelledby="connection-flight" className="min-w-0 space-y-6 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8 dark:border-zinc-800">
+  <section aria-labelledby="connection-flight" className="min-w-0 space-y-6 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8">
    <p>{flight.visibility==='PRIVATE'?'Private':'Network'} · {flight.isPast?'Past departure':'Open'}</p>
    <h2 id="connection-flight" className="text-2xl font-semibold">{flight.departure_airport} → {flight.destination_airport}</h2>
    {flight.isPast&&<p>The scheduled departure time has passed.</p>}
    <dl className="grid gap-6 sm:grid-cols-2"><div><dt>Departure local time</dt><dd>{departure?<time dateTime={flight.departure_at}>{departure.localDate} at {departure.localTime}<span className="block">{departure.timeZone} ({departure.utcOffset})</span></time>:'Departure time unavailable'}</dd></div><div><dt>Aircraft</dt><dd>{flight.aircraft_description}</dd></div><div><dt>Joining-pilot capacity</dt><dd>{flight.pilot_places} {flight.pilot_places===1?'place':'places'}, excluding the posting pilot</dd></div></dl>
    <div className="space-y-2"><h3 className="text-lg font-semibold">Flight notes</h3><p className="whitespace-pre-line">{flight.notes||'No notes provided.'}</p></div>
   </section>
-  <section aria-labelledby="connected-pilot" className="min-w-0 space-y-6 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8 dark:border-zinc-800">
+  <section aria-labelledby="connected-pilot" className="min-w-0 space-y-6 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8">
    <h2 id="connected-pilot" className="text-2xl font-semibold">{connection.isOwner?'Joining pilot':'Posting pilot'}</h2>
    {pilot?<><div className="flex flex-wrap items-center gap-4"><ProfilePhoto userId={pilot.user_id} displayName={pilot.display_name} available={pilot.photoAvailable}/><div className="min-w-0"><h3 className="text-xl font-semibold">{pilot.display_name}</h3><Link href={`/directory/${pilot.user_id}`} prefetch={false} className={linkClass}>View pilot profile</Link></div></div><p className="text-sm">Profile details are self-reported.</p><PilotDetails pilot={pilot} className="grid gap-6 sm:grid-cols-2"/></>:<p>Pilot profile temporarily unavailable. The accepted flight connection is still available.</p>}
   </section>

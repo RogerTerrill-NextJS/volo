@@ -236,7 +236,14 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       await cp(path.join(root,'app/globals.css'),path.join(directory,'app/globals.css'));
       await cp(path.join(root,'postcss.config.mjs'),path.join(directory,'postcss.config.mjs'));
     }
-    await put('app/layout.tsx',browser?"import './globals.css';export default function Layout({children}:{children:React.ReactNode}){return <html lang=\"en\" className=\"h-full antialiased\"><body className=\"min-h-full flex flex-col\">{children}</body></html>}":'export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}' );
+    if(browser){
+      // Keep real viewport metadata and layout in visual checks, without fetching Google fonts.
+      const layout=await readFile(path.join(root,'app/layout.tsx'),'utf8');
+      await put('app/layout.tsx',layout
+        .replace('import { Geist, Geist_Mono } from "next/font/google";','')
+        .replace(/const geist(?:Sans|Mono) = Geist(?:_Mono)?\(\{[\s\S]*?\}\);/g,'')
+        .replace('${geistSans.variable} ${geistMono.variable} ',''));
+    }else await put('app/layout.tsx','export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}');
     await cp(path.join(root,'app/page.tsx'),path.join(directory,'app/page.tsx'));
     await cp(path.join(root,'app/api/health'),path.join(directory,'app/api/health'),{recursive:true});
     if(photos)await put('app/api/photo-control/route.ts',`type State=typeof globalThis & {__voloPhotoMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','delete-failure','upload-failure','attach-lost'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloPhotoMode=mode;return Response.json({fixture:true});}`);

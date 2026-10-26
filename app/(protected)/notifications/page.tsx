@@ -18,9 +18,9 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
  if(result.status==='forbidden')return <AccessState status="forbidden"/>;
  const permalink=typeof after==='string'?`/notifications?after=${encodeURIComponent(after)}`:'/notifications';
  return <AppShell isAdmin={access.member.role==='admin'}>
-  <header className="space-y-3"><h1 className="text-3xl font-semibold tracking-tight">Notifications</h1><p>Flight requests, acceptances and messages for your account.</p><p className="text-sm text-zinc-600 dark:text-zinc-400">Newest first. Notifications stay unread until you mark them as read.</p></header>
+  <header className="space-y-3"><h1 className="text-3xl font-semibold tracking-tight">Notifications</h1><p>Flight requests, acceptances and messages for your account.</p><p className="text-sm text-zinc-600">Newest first. Notifications stay unread until you mark them as read.</p></header>
   {result.status==='unavailable'?<section role="alert" className="space-y-3"><h2 className="text-xl font-semibold">Notifications temporarily unavailable</h2><p>We could not load your notifications. Please try again.</p><form action="/notifications" method="get"><button className={linkClass}>Try again</button></form></section>:result.status==='invalid'?<section className="space-y-3"><h2 className="text-xl font-semibold">This notification page is unavailable</h2><Link href="/notifications" prefetch={false} className={linkClass}>Back to latest notifications</Link></section>:<>
-   {result.rows.length?<ul aria-label="Notifications" className="space-y-4">{result.rows.map(row=><li key={row.id} className="min-w-0 space-y-3 rounded-2xl border border-zinc-200 p-5 dark:border-zinc-800">
+   {result.rows.length?<ul aria-label="Notifications" className="space-y-4">{result.rows.map(row=><li key={row.id} className="min-w-0 space-y-3 rounded-2xl border border-zinc-200 p-5">
     <h2 className="text-xl font-semibold">{labels[row.eventType]}</h2><p className="text-sm font-medium">{row.readAt?'Read':'Unread'}</p>
     <p className="text-sm">Received <time dateTime={row.createdAt}>{new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(new Date(row.createdAt))} (UTC)</time></p>
     <Link href={`/notifications/${row.id}`} prefetch={false} className={linkClass}>{targetLabels[row.eventType]}</Link>

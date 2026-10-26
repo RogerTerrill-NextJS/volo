@@ -4,7 +4,7 @@ import type {ProfileFormState} from '../../../lib/profiles/form-state';
 import {validateProfile,type ProfileFieldErrors} from '../../../lib/profiles/validation';
 
 const empty:ProfileFormState={revision:0,values:{},fieldErrors:{},message:null,reload:false};
-const inputClass='w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-zinc-700';
+const inputClass='w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2';
 
 export default function ProfileForm({unavailable=false,initial=empty,save,permalink,submitLabel}:{unavailable?:boolean;initial?:ProfileFormState;save:(previous:ProfileFormState,form:FormData)=>Promise<ProfileFormState>;permalink:string;submitLabel:string}){
  const [state,action,pending]=useActionState(save,initial,permalink);
@@ -28,8 +28,8 @@ export default function ProfileForm({unavailable=false,initial=empty,save,permal
    <label htmlFor={id} className="block text-sm font-medium">{label}</label>
    {rows?<textarea id={id} name={field} rows={rows} defaultValue={state.values[field]??''} aria-invalid={errors[field]?true:undefined} aria-describedby={description} className={inputClass}/>
     :<input id={id} name={field} required autoComplete={field==='display_name'?'nickname':'off'} autoCapitalize={field==='home_airport'?'characters':'words'} defaultValue={state.values[field]??''} aria-invalid={errors[field]?true:undefined} aria-describedby={description} className={inputClass}/>}
-   <p id={`${id}-help`} className="text-sm text-zinc-600 dark:text-zinc-400">{help}</p>
-   {errors[field]&&<p id={`${id}-error`} className="text-sm text-red-700 dark:text-red-400">{errors[field]}</p>}
+   <p id={`${id}-help`} className="text-sm text-zinc-600">{help}</p>
+   {errors[field]&&<p id={`${id}-error`} className="text-sm text-red-700">{errors[field]}</p>}
   </div>;
  }
  // A fresh failed read offers retry only. A failed native POST must still render
@@ -45,7 +45,7 @@ export default function ProfileForm({unavailable=false,initial=empty,save,permal
   <fieldset id="profile-pilot_designation" tabIndex={-1} aria-describedby={errors.pilot_designation?'profile-pilot_designation-error':undefined} aria-invalid={errors.pilot_designation?true:undefined} className="space-y-3">
    <legend className="text-sm font-medium">Pilot eligibility (required)</legend>
    <label className="flex min-h-11 items-center gap-3"><input type="checkbox" name="pilot_designation" value="licensed" required defaultChecked={state.values.pilot_designation==='licensed'} className="h-5 w-5"/>I am a licensed pilot</label>
-   {errors.pilot_designation&&<p id="profile-pilot_designation-error" className="text-sm text-red-700 dark:text-red-400">{errors.pilot_designation}</p>}
+   {errors.pilot_designation&&<p id="profile-pilot_designation-error" className="text-sm text-red-700">{errors.pilot_designation}</p>}
   </fieldset>
   <h2 className="text-xl font-semibold">More about your flying (optional)</h2>
   {text('certificates','Certificates','Self-reported. Enter one per line; up to 20, each 1–80 characters.',3)}
@@ -53,7 +53,7 @@ export default function ProfileForm({unavailable=false,initial=empty,save,permal
   {text('aircraft_access','Aircraft access','Tell other pilots what aircraft you can access. Up to 500 characters.',3)}
   {text('flying_interests','Flying interests','What kind of flying interests you? Up to 500 characters.',3)}
   {text('bio','Bio','Introduce yourself. Up to 2,000 characters.',5)}
-  <button disabled={pending||state.reload} type="submit" className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900">{pending?'Saving profile…':submitLabel}</button>
+  <button disabled={pending||state.reload} type="submit" className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60">{pending?'Saving profile…':submitLabel}</button>
   <p role="status" className="text-sm empty:hidden">{pending?'Saving your profile. Please wait.':''}</p>
  </form>;
 }

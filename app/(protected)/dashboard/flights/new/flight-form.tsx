@@ -6,22 +6,22 @@ import {validateFlightWithRecipients} from '../../../../../lib/flights/recipient
 import RecipientPicker,{type SelectedPilot} from './recipient-picker';
 import {validateEditInput} from '../../../../../lib/flights/edit-input';
 
-const inputClass='w-full min-w-0 rounded-lg border border-zinc-300 bg-transparent px-3 py-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-zinc-700';
+const inputClass='w-full min-w-0 rounded-lg border border-zinc-300 bg-transparent px-3 py-3 text-base focus-visible:outline-2 focus-visible:outline-offset-2';
 type Feedback={fieldErrors:FlightFormState['fieldErrors'];message:string};
 
 function VisibilityChoice({visibility,onChange,error}:{visibility:string;onChange:(value:string)=>void;error?:string}){
- return <fieldset id="flight-visibility" tabIndex={-1} aria-invalid={error?true:undefined} aria-describedby={`flight-visibility-help${error?' flight-visibility-error':''}`} className="min-w-0 space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+ return <fieldset id="flight-visibility" tabIndex={-1} aria-invalid={error?true:undefined} aria-describedby={`flight-visibility-help${error?' flight-visibility-error':''}`} className="min-w-0 space-y-3 rounded-xl border border-zinc-200 p-4">
   <legend className="px-1 text-sm font-medium">Who can see this flight? (required)</legend>
-  <p id="flight-visibility-help" className="text-sm text-zinc-600 dark:text-zinc-400">Choose one audience before publishing.</p>
+  <p id="flight-visibility-help" className="text-sm text-zinc-600">Choose one audience before publishing.</p>
   <label className="flex min-h-11 items-start gap-3 py-2">
    <input type="radio" name="visibility" value="NETWORK" required checked={visibility==='NETWORK'} onChange={()=>onChange('NETWORK')} aria-describedby="flight-network-help" className="mt-1 h-5 w-5 shrink-0"/>
-   <span><span className="block font-medium">Network</span><span id="flight-network-help" className="text-sm text-zinc-600 dark:text-zinc-400">All active Volo members can see this flight.</span></span>
+   <span><span className="block font-medium">Network</span><span id="flight-network-help" className="text-sm text-zinc-600">All active Volo members can see this flight.</span></span>
   </label>
   <label className="flex min-h-11 items-start gap-3 py-2">
    <input type="radio" name="visibility" value="PRIVATE" required checked={visibility==='PRIVATE'} onChange={()=>onChange('PRIVATE')} aria-describedby="flight-private-help" className="mt-1 h-5 w-5 shrink-0"/>
-   <span><span className="block font-medium">Private</span><span id="flight-private-help" className="text-sm text-zinc-600 dark:text-zinc-400">Only you and your selected pilots can see this flight.</span></span>
+   <span><span className="block font-medium">Private</span><span id="flight-private-help" className="text-sm text-zinc-600">Only you and your selected pilots can see this flight.</span></span>
   </label>
-  {error&&<p id="flight-visibility-error" className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+  {error&&<p id="flight-visibility-error" className="text-sm text-red-700">{error}</p>}
  </fieldset>;
 }
 
@@ -47,7 +47,7 @@ export default function FlightForm({publish,edit}:{publish:(previous:FlightFormS
   submitting.current=true;setLocal(null);
  }
  function description(field:FlightField){return `flight-${field}-help${errors[field]?` flight-${field}-error`:''}`;}
- function error(field:FlightField){return errors[field]&&<p id={`flight-${field}-error`} className="text-sm text-red-700 dark:text-red-400">{errors[field]}</p>;}
+ function error(field:FlightField){return errors[field]&&<p id={`flight-${field}-error`} className="text-sm text-red-700">{errors[field]}</p>;}
  function input(field:Exclude<FlightField,'departure_occurrence'|'visibility'|'notes'>,label:string,help:string,type='text'){
   return <div className="min-w-0 space-y-2">
    <label htmlFor={`flight-${field}`} className="block text-sm font-medium">{label} (required)</label>
@@ -56,11 +56,11 @@ export default function FlightForm({publish,edit}:{publish:(previous:FlightFormS
     inputMode={type==='number'?'numeric':undefined} list={field==='departure_timezone'?'flight-timezones':undefined}
     placeholder={field==='departure_timezone'?'America/Los_Angeles':field.endsWith('airport')?'KPAO':undefined}
     aria-invalid={errors[field]?true:undefined} aria-describedby={description(field)} className={inputClass}/>
-   <p id={`flight-${field}-help`} className="text-sm text-zinc-600 dark:text-zinc-400">{help}</p>{error(field)}
+   <p id={`flight-${field}-help`} className="text-sm text-zinc-600">{help}</p>{error(field)}
   </div>;
  }
  return <div className="w-full max-w-xl min-w-0 space-y-6">
-  {edit&&<section aria-labelledby="edit-guidance" className="space-y-3 rounded-xl border border-zinc-300 p-4 dark:border-zinc-700"><h2 id="edit-guidance" className="font-semibold">Allowed changes</h2><p>{edit.acceptedCount>0?`${edit.acceptedCount} accepted pilot${edit.acceptedCount===1?'':'s'}. You can update notes and capacity. Cancel and repost the flight to change airports, departure time, timezone or aircraft.`:'You can update the flight plan, notes and capacity. If a pilot is accepted before you save, material changes will require cancellation and reposting.'}</p><p>Capacity must stay at or above the accepted pilot count. Visibility remains {edit.visibility==='PRIVATE'?'Private':'Network'}; audience and status are unchanged by editing.</p></section>}
+  {edit&&<section aria-labelledby="edit-guidance" className="space-y-3 rounded-xl border border-zinc-300 p-4"><h2 id="edit-guidance" className="font-semibold">Allowed changes</h2><p>{edit.acceptedCount>0?`${edit.acceptedCount} accepted pilot${edit.acceptedCount===1?'':'s'}. You can update notes and capacity. Cancel and repost the flight to change airports, departure time, timezone or aircraft.`:'You can update the flight plan, notes and capacity. If a pilot is accepted before you save, material changes will require cancellation and reposting.'}</p><p>Capacity must stay at or above the accepted pilot count. Visibility remains {edit.visibility==='PRIVATE'?'Private':'Network'}; audience and status are unchanged by editing.</p></section>}
   <div ref={feedback} tabIndex={-1} role={message?(['created','updated'].includes(state.status)&&!local?'status':'alert'):undefined} className="space-y-3 break-words empty:hidden">
    {message&&<p>{message}</p>}
    {Object.keys(errors).length>0&&<ul className="list-disc space-y-2 pl-5">{Object.entries(errors).map(([field,text])=><li key={field}><a href={`#flight-${field}`} className="underline underline-offset-4">{text}</a></li>)}</ul>}
@@ -87,16 +87,16 @@ export default function FlightForm({publish,edit}:{publish:(previous:FlightFormS
      <select disabled={Boolean(edit&&edit.acceptedCount>0)} id="flight-departure_occurrence" name="departure_occurrence" defaultValue={state.values.departure_occurrence??''} aria-describedby={description('departure_occurrence')} aria-invalid={errors.departure_occurrence?true:undefined} className={inputClass}>
       <option value="">No occurrence selected</option><option value="earlier">Earlier occurrence</option><option value="later">Later occurrence</option>
      </select>
-     <p id="flight-departure_occurrence-help" className="text-sm text-zinc-600 dark:text-zinc-400">When clocks move back, a local time can occur twice. If prompted, choose the earlier or later occurrence. Times skipped by a clock change cannot be posted.</p>{error('departure_occurrence')}
+     <p id="flight-departure_occurrence-help" className="text-sm text-zinc-600">When clocks move back, a local time can occur twice. If prompted, choose the earlier or later occurrence. Times skipped by a clock change cannot be posted.</p>{error('departure_occurrence')}
     </div>
     {input('aircraft_description','Aircraft','Describe the aircraft. Up to 500 characters.')}
     {input('pilot_places','Joining-pilot places','Number of available pilot places, excluding you. Enter a whole number greater than zero.','number')}
     <div className="space-y-2">
      <label htmlFor="flight-notes" className="block text-sm font-medium">Notes (optional)</label>
      <textarea id="flight-notes" name="notes" rows={5} defaultValue={state.values.notes??''} aria-invalid={errors.notes?true:undefined} aria-describedby={description('notes')} className={inputClass}/>
-     <p id="flight-notes-help" className="text-sm text-zinc-600 dark:text-zinc-400">Anything else joining pilots should know. Up to 2,000 characters.</p>{error('notes')}
+     <p id="flight-notes-help" className="text-sm text-zinc-600">Anything else joining pilots should know. Up to 2,000 characters.</p>{error('notes')}
     </div>
-    <button type="submit" disabled={pending||blocked} className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900">{edit?(pending?'Saving flight…':'Save changes'):(pending?'Publishing flight…':'Publish flight')}</button>
+    <button type="submit" disabled={pending||blocked} className="w-full rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-60">{edit?(pending?'Saving flight…':'Save changes'):(pending?'Publishing flight…':'Publish flight')}</button>
    </fieldset>
    <p role="status" className="text-sm empty:hidden">{pending?(edit?'Saving your flight. Please wait.':'Publishing your flight. Please wait.'):''}</p>
   </form>}
