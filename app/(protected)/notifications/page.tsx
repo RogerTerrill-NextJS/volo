@@ -9,6 +9,7 @@ import MarkRead from './mark-read';
 export const dynamic='force-dynamic';
 export const metadata:Metadata={title:'Notifications | Volo',robots:{index:false,follow:false}};
 const labels={request_received:'New flight request',request_accepted:'Flight request accepted',message_received:'New message'};
+const targetLabels={request_received:'View flight requests',request_accepted:'View connection',message_received:'Open conversation'};
 const linkClass='inline-flex min-h-11 items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
 export default async function NotificationsPage({searchParams}:{searchParams:Promise<{after?:string|string[]}>}){
  const access=await getPageAccess();if(access.status!=='authorized')return <AccessState status={access.status} retryHref="/notifications"/>;
@@ -22,6 +23,7 @@ export default async function NotificationsPage({searchParams}:{searchParams:Pro
    {result.rows.length?<ul aria-label="Notifications" className="space-y-4">{result.rows.map(row=><li key={row.id} className="min-w-0 space-y-3 rounded-2xl border border-zinc-200 p-5 dark:border-zinc-800">
     <h2 className="text-xl font-semibold">{labels[row.eventType]}</h2><p className="text-sm font-medium">{row.readAt?'Read':'Unread'}</p>
     <p className="text-sm">Received <time dateTime={row.createdAt}>{new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeStyle:'short',timeZone:'UTC'}).format(new Date(row.createdAt))} (UTC)</time></p>
+    <Link href={`/notifications/${row.id}`} prefetch={false} className={linkClass}>{targetLabels[row.eventType]}</Link>
     {!row.readAt&&<MarkRead id={row.id} permalink={permalink}/>}
    </li>)}</ul>:<section className="space-y-3"><h2 className="text-xl font-semibold">{after?'No older notifications':'No notifications yet'}</h2><p>New flight requests, acceptances and messages will appear here.</p></section>}
    <nav aria-label="Notification pages" className="flex flex-wrap gap-6">{after&&<Link href="/notifications" prefetch={false} className={linkClass}>Back to latest notifications</Link>}{result.nextCursor&&<Link href={`/notifications?after=${encodeURIComponent(result.nextCursor)}`} prefetch={false} className={linkClass}>Older notifications</Link>}</nav>
