@@ -27,6 +27,22 @@ export async function verifyReportIntake({stack,app,scenario}){
   await checked(privileged.from('flight_recipients').insert({flight_id:privateFlight,user_id:accounts.reporter.id}));
   requestId=randomUUID();await checked(privileged.from('flight_requests').insert({id:requestId,flight_id:privateFlight,requester_id:accounts.reporter.id}));await checked(privileged.from('flight_requests').update({status:'accepted'}).eq('id',requestId));
   const thread=await clients.reporter.rpc('get_or_create_flight_conversation',{p_request_id:requestId}).retry(false);assert.equal(thread.error,null);conversation=thread.data;messageId=randomUUID();assert.equal((await clients.owner.rpc('send_conversation_message',{p_conversation_id:conversation,p_message_id:messageId,p_body:'Uncopied private message canary'}).retry(false)).error,null);
+  await run('metrics_authorized_aggregates_privacy_reload_and_current_role_guards',async()=>{
+   const snapshot=await checked(clients.admin.rpc('admin_mvp_metrics'));const {asOf,...counts}=snapshot;assert.ok(Number.isFinite(Date.parse(asOf)));
+   assert.deepEqual(counts,{invitedPilots:0,activatedPilots:0,activeMembers:5,completedProfiles:5,activeProfiles:4,flightPosts:2,interestRequests:1,currentAcceptedRequests:1,recordedAcceptedRequests:1,messages:1,messagingConversations:1,outcomes:'not_collected'});
+   const page=await safe(await app.request('/admin/metrics',{session:sessions.admin}));assert.ok(page.includes('MVP metrics')&&page.includes('Real-world flying outcomes: not collected'));assert.ok(!page.includes('Owned report C172')&&!page.includes('Owned report reporter'));
+   const read=async label=>(await(await app.request('/api/metrics',{session:sessions[label]})).json());
+   const report=await read('admin');assert.equal(report.status,'authorized');const {asOf:date,...reported}=report.report;assert.ok(Number.isFinite(Date.parse(date)));assert.deepEqual(reported,counts);
+   assert.deepEqual(await checked(clients.admin.from('messages').select('body')),[],'Aggregate permission does not expose private messages');
+   for(const label of ['owner','reporter','other','noProfile','disabled','absent']){
+    assert.equal((await read(label)).status,'forbidden');assert.equal((await clients[label].rpc('admin_mvp_metrics').retry(false)).error?.code,'42501');
+    const denied=await safe(await app.request('/admin/metrics',{session:sessions[label]}));assert.ok(!denied.includes('Snapshot')&&!denied.includes('Real-world flying outcomes: not collected'));
+   }
+   await mode('metrics-outage');try{assert.equal((await read('admin')).status,'unavailable');const failure=await safe(await app.request('/admin/metrics',{session:sessions.admin}));assert.ok(failure.includes('Metrics temporarily unavailable'));assert.ok(!failure.includes('private-metrics-error-canary'));}finally{await mode('off');}
+   assert.equal((await read('admin')).status,'authorized');
+   await stack.setMembership(accounts.admin.id,{role:'member',status:'active'});try{assert.equal((await read('admin')).status,'forbidden');assert.equal((await clients.admin.rpc('admin_mvp_metrics').retry(false)).error?.code,'42501');}finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
+   await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});try{assert.equal((await read('admin')).status,'forbidden');assert.equal((await clients.admin.rpc('admin_mvp_metrics').retry(false)).error?.code,'42501');}finally{await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
+  });
   await run('report_intake_origin_membership_input_and_direct_bypass_guards',async()=>{
    const formHtml=await(await app.request('/dashboard/report-fixture',{session:sessions.reporter})).text(),input=fields(randomUUID());
    await sessions.other.setAdmissionMetadata();

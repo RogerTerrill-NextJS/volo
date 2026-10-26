@@ -401,6 +401,9 @@ isOneToOne: false
 "admin_member_overview":
 { Args: { "p_after_user_id"?: string }; Returns: Json
                            },
+"admin_mvp_metrics":
+{ Args: Record<PropertyKey, never>; Returns: Json
+                           },
 "attach_profile_photo":
 { Args: { "reservation_id": string }; Returns: Json
                            },
