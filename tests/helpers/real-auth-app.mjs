@@ -139,6 +139,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       if(url.pathname==='/rest/v1/conversations'&&globalThis.__voloMessageMode==='open-read-outage')return Response.json({code:'private-message-error-canary'},{status:503});
       if(url.pathname==='/rest/v1/rpc/send_conversation_message'){globalThis.__voloMessageCalls=(globalThis.__voloMessageCalls??0)+1;if(globalThis.__voloMessageMode==='delay')await new Promise(resolve=>setTimeout(resolve,3000));}
       if(url.pathname==='/rest/v1/messages'&&globalThis.__voloMessageMode==='read-outage')return Response.json({code:'private-message-error-canary'},{status:503});
+      if(url.pathname==='/rest/v1/rpc/admin_disable_member'&&globalThis.__voloMemberAdminMode==='delay')await new Promise(resolve=>setTimeout(resolve,3000));
       if(url.pathname==='/rest/v1/rpc/admin_disable_member'&&globalThis.__voloMemberAdminMode?.startsWith('disable-actor:')){
         const subject=globalThis.__voloMemberAdminMode.slice(14);globalThis.__voloMemberAdminMode='off';
         const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned admin race'})});
@@ -237,7 +238,9 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
     if(memberAdmin){
-      await put('app/api/member-admin-control/route.ts',`type State=typeof globalThis & {__voloMemberAdminMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','overview-malformed'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMemberAdminMode=mode;return Response.json({ok:true});}`);
+      await put('app/api/member-admin-control/route.ts',`type State=typeof globalThis & {__voloMemberAdminMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','overview-malformed','delay','action-lost'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMemberAdminMode=mode;return Response.json({ok:true});}`);
+      const memberActionPath=path.join(directory,'app/(protected)/admin/members/actions.ts');
+      await writeFile(memberActionPath,(await readFile(memberActionPath,'utf8')).replace(" if(state.status==='disabled')refresh();"," if(state.status==='disabled'&&(globalThis as typeof globalThis & {__voloMemberAdminMode?:string}).__voloMemberAdminMode==='action-lost')throw Error('Owned member action response lost');\n if(state.status==='disabled')refresh();"));
       await put('app/admin/member-fixture/page.tsx',`import {disableMember} from '../../../lib/auth/member-admin-actions';import Form from '../../form';export default function Page(){return <main><Form action={disableMember} label="Disable member"/></main>}`);
       await put('app/api/member-overview/route.ts',`import {listAdminMembers} from '../../../lib/auth/member-admin-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const value=await listAdminMembers(new URL(request.url).searchParams.get('after')??undefined);const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(value,{headers});}`);
     }
@@ -280,10 +283,11 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       const headers=new Headers(additional);if(session)headers.set('Cookie',session.cookieHeader());
       const response=await fetch(destination,{method,headers,body,redirect:'manual',signal:AbortSignal.any([AbortSignal.timeout(15000),...(signal?[signal]:[])])});session?.applyResponse(response);return response;
     };
-    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId,formIntent}={})=>{
+    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId,formIntent,formTargetId}={})=>{
         let html=formHtml??await (await request(route,{session})).text();
         if(formIntent){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="intent"')&&match[1].includes('value="'+formIntent+'"'));if(!selected)throw new Error('Owned intent form missing');html=selected[1];}
         if(formRequestId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="request_id"')&&match[1].includes('value="'+formRequestId+'"'));if(!selected)throw new Error('Owned decision form missing');html=selected[1];}
+        if(formTargetId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="target_id"')&&match[1].includes('value="'+formTargetId+'"'));if(!selected)throw new Error('Owned member control missing');html=selected[1];}
         const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
         const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
         const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
@@ -317,6 +321,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       },
       sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
       disableMember(fields,settings={}){return invokeFlightAction('/admin/member-fixture',fields,settings);},
+      memberPageAction(id,fields,{after,fromTargetId=id,...settings}={}){return invokeFlightAction('/admin/members'+(after?'?after='+after:''),{target_id:id,reason:'Owned UI safety review',confirmation:'disable',...fields},{...settings,formTargetId:fromTargetId});},
       connectionPageAction(id,fields,{fromRequestId=id,...settings}={}){return invokeFlightAction('/dashboard/connections/'+fromRequestId,{request_id:id,...fields},{...settings,formRequestId:fromRequestId});},
       async chatPageAction(thread,fields,{formHtml,...settings}={}){
         const route='/messages/'+thread,html=formHtml??await(await request(route,settings)).text();
