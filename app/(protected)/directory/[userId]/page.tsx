@@ -1,5 +1,6 @@
 import type {Metadata} from 'next';
 import Link from 'next/link';
+import {reportHref} from '../../../../lib/reports/links';
 import {notFound,redirect} from 'next/navigation';
 import {getPageAccess} from '../../../../lib/auth/page-access';
 import {getNetworkProfile} from '../../../../lib/profiles/directory-query';
@@ -42,6 +43,7 @@ export default async function NetworkProfilePage({params}:{params:Promise<{userI
    </header>
    <p className="text-sm text-zinc-600 dark:text-zinc-400">Profile details are self-reported.</p>
    <PilotDetails pilot={pilot} className="grid gap-6 sm:grid-cols-2"/>
+   <Link href={reportHref('pilot',pilot.user_id)??'/reports'} prefetch={false} className={linkClass}>Report this pilot</Link>
   </article>
  </AppShell>;
 }

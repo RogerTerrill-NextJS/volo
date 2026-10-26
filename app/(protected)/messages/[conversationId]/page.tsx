@@ -1,6 +1,7 @@
 import type {Metadata} from 'next';
 import {randomUUID} from 'node:crypto';
 import Link from 'next/link';
+import {reportHref} from '../../../../lib/reports/links';
 import {redirect} from 'next/navigation';
 import {getPageAccess} from '../../../../lib/auth/page-access';
 import {getConversationHistory} from '../../../../lib/messages/history-query';
@@ -41,6 +42,7 @@ export default async function ConversationPage({params,searchParams}:{params:Pro
    {messages.length?<ol aria-label="Messages, oldest first" className="space-y-4">{messages.map(message=><li key={message.id} id={`message-${message.id}`} className={`min-w-0 space-y-2 rounded-2xl border border-zinc-200 p-4 [overflow-wrap:anywhere] dark:border-zinc-800 ${message.senderId===access.member.userId?'sm:ml-12':'sm:mr-12'}`}>
     <div className="flex flex-wrap items-baseline justify-between gap-2"><span className="font-semibold">{message.senderId===access.member.userId?'You':'Other pilot'}</span><time dateTime={message.createdAt} className="text-sm text-zinc-600 dark:text-zinc-400">{timestamp.format(new Date(message.createdAt))}</time></div>
     <p className="whitespace-pre-wrap">{message.body}</p>{!message.body.trim()&&<p className="text-sm text-zinc-600 dark:text-zinc-400">Message contains no visible text.</p>}
+    <Link href={reportHref('message',message.id)??'/reports'} prefetch={false} className={linkClass}>Report this message<span className="sr-only"> from {message.senderId===access.member.userId?'you':'the other pilot'} at {timestamp.format(new Date(message.createdAt))}</span></Link>
    </li>)}</ol>:<p>{before?'No older messages.':sendStatus==='available'?'No messages yet. You can start the conversation below.':'No messages were exchanged in this conversation.'}</p>}
    <nav aria-label="Message pages" className="flex flex-wrap gap-6">{olderCursor&&<Link href={`${href}?before=${encodeURIComponent(olderCursor)}`} prefetch={false} className={linkClass}>Older messages</Link>}{before&&<Link href={href} prefetch={false} className={linkClass}>Latest messages</Link>}</nav>
   </section>

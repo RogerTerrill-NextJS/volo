@@ -17,11 +17,13 @@ export default function AppShell({ children,isAdmin=false }: { children: React.R
           <Link href="/directory" prefetch={false} className={navigationClass}>
             Pilot directory
           </Link>
+          <Link href="/reports" prefetch={false} className={navigationClass}>Report and support</Link>
           <Link href="/profile/edit" prefetch={false} className={navigationClass}>My profile</Link>
           {isAdmin && <Link href="/admin/invitations" prefetch={false} className={navigationClass}>
             Invitations
           </Link>}
           {isAdmin && <Link href="/admin/members" prefetch={false} className={navigationClass}>Members</Link>}
+          {isAdmin && <Link href="/admin/reports" prefetch={false} className={navigationClass}>Reports</Link>}
           {isAdmin && <Link href="/admin/flights" prefetch={false} className={navigationClass}>Flight moderation</Link>}
           <Link href="/" className={navigationClass}>
             Back to home

@@ -51,10 +51,35 @@ export async function verifyReportIntake({stack,app,scenario}){
    assert.equal((await checked(clients.reporter.from('messages').select('body').eq('id',messageId).single())).body,'Uncopied private message canary');
    assert.equal((await clients.admin.from('reports').update({reason:'Rewrite'}).eq('id',native.report_id).retry(false)).error?.code,'42501');assert.equal((await clients.admin.from('reports').delete().eq('id',native.report_id).retry(false)).error?.code,'42501');
   });
+  await run('report_support_actual_entry_links_native_fetched_and_founder_privacy',async()=>{
+   assert.match(await safe(await app.request('/reports',{session:sessions.reporter})),/Start from the item/);
+   const link=(kind,id)=>'/reports?target_type='+kind+'&amp;target_id='+id;
+   assert.ok((await safe(await app.request('/directory/'+accounts.owner.id,{session:sessions.reporter}))).includes(link('pilot',accounts.owner.id)));
+   assert.ok((await safe(await app.request('/dashboard/flights/'+privateFlight,{session:sessions.reporter}))).includes(link('flight',privateFlight)));
+   const history=await(await app.request('/messages/'+conversation,{session:sessions.reporter})).text();stack.assertNoCredentialLeaks(history);assert.ok(history.includes(link('message',messageId)));
+   const canonical=await app.request('/reports?target_type=pilot&target_id='+accounts.owner.id,{session:sessions.reporter});assert.equal(canonical.status,307);const destination=new URL(canonical.headers.get('location'),app.origin);assert.equal(destination.origin,app.origin);assert.ok(destination.searchParams.get('report_id'));
+   for(const [kind,target,transport] of [['pilot',accounts.owner.id,'native'],['flight',networkFlight,'fetched']]){
+    const input=fields(randomUUID(),kind,target,'<script>Owned report text</script>'),result=await safe(await app.reportPageAction(input,{session:sessions.reporter,transport}));assert.match(result,/Report received/);assert.ok(!result.includes('name="reason"'));const recovered=await safe(await app.request('/reports?'+new URLSearchParams({target_type:kind,target_id:target,report_id:input.report_id}),{session:sessions.reporter}));assert.match(recovered,/Report received/);assert.ok(!recovered.includes('name="reason"'));
+   }
+   const adminPage=await safe(await app.request('/admin/reports',{session:sessions.admin}));assert.ok(adminPage.includes('&lt;script&gt;Owned report text&lt;/script&gt;'));assert.ok(!adminPage.includes('<script>Owned report text</script>'));assert.match(adminPage,/Message references do not grant access/);assert.ok(!adminPage.includes('/messages/'+conversation));
+   for(const label of ['reporter','disabled','absent']){const denied=await safe(await app.request('/admin/reports',{session:sessions[label]}));assert.ok(!denied.includes('Owned report text')&&!denied.includes('Reporter member ID'));}
+   const own=(await reports('reporter'))[0],foreign=await safe(await app.request('/reports?'+new URLSearchParams({target_type:own.target_type,target_id:own.target_id,report_id:own.id}),{session:sessions.admin}));assert.ok(!foreign.includes('Report received')&&!foreign.includes(own.reason));
+   const invalid=await safe(await app.request('/reports?target_type=message&target_id=bad',{session:sessions.reporter}));assert.match(invalid,/This report link is unavailable/);assert.ok(!invalid.includes('name="reason"'));
+  });
+  await run('report_support_uncertain_native_receipt_recovery_and_stale_authority',async()=>{
+   for(const fault of ['lost','malformed']){
+    const input=fields(randomUUID()),route='/reports?'+new URLSearchParams({target_type:input.target_type,target_id:input.target_id,report_id:input.report_id});await mode(fault);
+    try{const result=await safe(await app.reportPageAction(input,{session:sessions.reporter,transport:'native'}));assert.match(result,/Check report status/);assert.ok(!result.includes('name="reason"'));}finally{await mode('off');}
+    assert.match(await safe(await app.request(route,{session:sessions.reporter})),/Report received/);assert.equal((await reports('reporter')).filter(r=>r.id===input.report_id).length,1);
+   }
+   const input=fields(randomUUID()),route='/reports?'+new URLSearchParams({target_type:input.target_type,target_id:input.target_id,report_id:input.report_id}),formHtml=await safe(await app.request(route,{session:sessions.reporter}));await mode('disable-actor:'+accounts.reporter.id);
+   try{const result=await safe(await app.reportPageAction(input,{session:sessions.reporter,formHtml}));assert.ok(!result.includes('Report received'));assert.ok(!(await reports('admin')).some(r=>r.id===input.report_id));}finally{await mode('off');await stack.setMembership(accounts.reporter.id,{role:'member',status:'active'});}
+   await mode('list-malformed');try{const result=await safe(await app.request(route,{session:sessions.reporter}));assert.match(result,/Report status temporarily unavailable/);assert.ok(!result.includes('name="reason"'));}finally{await mode('off');}
+  });
   await run('report_intake_current_target_visibility_and_retained_message_history',async()=>{
-   const receipt=(await reports('reporter')).find(r=>r.target_type==='flight');
+   const receipt=(await reports('reporter')).find(r=>r.target_type==='flight'&&r.target_id===privateFlight);
    assert.equal((await clients.owner.rpc('change_flight_recipient',{p_flight_id:privateFlight,p_recipient_id:accounts.reporter.id,p_selected:false}).retry(false)).error,null);
-   code(await act('reporter',fields(randomUUID(),'flight',privateFlight)),'target_unavailable');code(await act('reporter',fields(receipt.id,'flight',privateFlight)),'already_reported');
+   code(await act('reporter',fields(randomUUID(),'flight',privateFlight)),'target_unavailable');code(await act('reporter',fields(receipt.id,'flight',privateFlight)),'already_reported');assert.match(await safe(await app.request('/reports?'+new URLSearchParams({target_type:'flight',target_id:privateFlight,report_id:receipt.id}),{session:sessions.reporter})),/Report received/);
    code(await act('reporter',fields(randomUUID(),'message',messageId)),'reported');assert.deepEqual(await checked(clients.reporter.from('flights').select('id').eq('id',privateFlight)),[]);
    assert.equal((await clients.admin.rpc('admin_hide_flight',{p_flight_id:networkFlight,p_reason:'Owned moderation test'}).retry(false)).error,null);
    code(await act('reporter',fields(randomUUID(),'flight',networkFlight)),'target_unavailable');code(await act('owner',fields(randomUUID(),'flight',networkFlight)),'reported');
@@ -68,6 +93,7 @@ export async function verifyReportIntake({stack,app,scenario}){
   });
   await run('report_intake_bounded_reads_and_revoked_admin_reporter_access',async()=>{
    for(let i=0;i<52;i++)assert.equal((await rpc('reporter',fields(randomUUID()))).error,null);
+   const founder=await safe(await app.request('/admin/reports',{session:sessions.admin}));assert.match(founder,/Next reports/);const cursor=founder.match(/href="\/admin\/reports\?after=([a-f0-9-]+)"/)?.[1];assert.ok(cursor);assert.match(await safe(await app.request('/admin/reports?after='+cursor,{session:sessions.admin})),/First report page/);assert.match(await safe(await app.request('/admin/reports?after=bad',{session:sessions.admin})),/This report page is unavailable/);
    const first=await list();assert.equal(first.rows.length,50);assert.ok(first.nextCursor);const second=await list('reporter',first.nextCursor);assert.equal(second.status,'authorized');assert.ok(second.rows.length>0);assert.ok(second.rows.every(r=>r.id>first.nextCursor));assert.equal((await list('reporter','invalid')).status,'invalid');
    await mode('list-malformed');try{assert.equal((await list()).status,'unavailable');}finally{await mode('off');}
    await stack.setMembership(accounts.admin.id,{role:'member',status:'active'});assert.deepEqual(await reports('admin'),[]);assert.equal((await list('admin')).rows.length,0);await stack.setMembership(accounts.admin.id,{role:'admin',status:'disabled'});assert.equal((await list('admin')).status,'forbidden');
