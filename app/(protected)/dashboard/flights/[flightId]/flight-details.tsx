@@ -1,5 +1,6 @@
 import type {ReactNode} from 'react';
 import Link from 'next/link';
+import {reportHref} from '../../../../../lib/reports/links';
 import type {DetailFlight} from '../../../../../lib/flights/detail-query';
 import type {DirectoryProfile} from '../../../../../lib/profiles/directory-query';
 import {formatFeedDeparture} from '../../../../../lib/flights/feed-view';
@@ -40,5 +41,6 @@ export default function FlightDetails({flight,pilot,ownerActions,joinerActions}:
    </div>:<p className="text-zinc-600 dark:text-zinc-400">Posting pilot information unavailable.</p>}
   </section>
   {joinerActions}
+  <Link href={reportHref('flight',flight.id)??'/reports'} prefetch={false} className={linkClass}>Report this flight</Link>
  </article>;
 }
