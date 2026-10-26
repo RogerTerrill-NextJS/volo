@@ -66,6 +66,7 @@ test('invitation_fixture_changes_refuse_unowned_rows_before_transport',async()=>
   stack=await h.start();const before=h.requests.length,calls=h.calls.length;
   await assert.rejects(stack.setInvitationTestState('00000000-0000-4000-8000-000000000001','old'),/Invitation not owned/);
   await assert.rejects(stack.createOwnedSessionLink('00000000-0000-4000-8000-000000000001'),/Account is not owned/);
+  await assert.rejects(stack.removeOwnedReports('00000000-0000-4000-8000-000000000001'),/Account is not owned/);
   assert.equal(h.requests.length,before);assert.equal(h.calls.length,calls);
  }finally{await stack?.close();await h.dispose();}
 });

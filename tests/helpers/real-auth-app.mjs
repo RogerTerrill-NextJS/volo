@@ -151,7 +151,17 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
         if(!changed.ok)throw Error('Owned moderation race rejected');
       }
       if(url.pathname==='/rest/v1/rpc/admin_hide_flight'&&globalThis.__voloModerationMode==='delay')await new Promise(resolve=>setTimeout(resolve,3000));
+      if(url.pathname==='/rest/v1/rpc/submit_report'&&globalThis.__voloReportMode?.startsWith('disable-actor:')){
+        const subject=globalThis.__voloReportMode.slice(14);globalThis.__voloReportMode='off';
+        const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned report race'})});
+        if(!changed.ok)throw Error('Owned report race rejected');
+      }
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/submit_report'){
+        if(globalThis.__voloReportMode==='lost'){await response.text();throw Error('Owned report response lost');}
+        if(globalThis.__voloReportMode==='malformed'){await response.text();return Response.json({code:'reported',reportId:'private-report-canary'});}
+      }
+      if(url.pathname==='/rest/v1/reports'&&globalThis.__voloReportMode==='list-malformed'){await response.text();return Response.json([{body:'private-report-canary'}]);}
       if(url.pathname==='/rest/v1/rpc/admin_hide_flight'){
         if(globalThis.__voloModerationMode==='lost'){await response.text();throw Error('Owned moderation response lost');}
         if(globalThis.__voloModerationMode==='malformed'){await response.text();return Response.json({code:'hidden',flightId:'private-moderation-canary'});}
@@ -249,6 +259,9 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
     if(memberAdmin){
+      await put('app/api/report-control/route.ts',`type State=typeof globalThis & {__voloReportMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','list-malformed'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloReportMode=mode;return Response.json({ok:true});}`);
+      await put('app/dashboard/report-fixture/page.tsx',`import {submitReport} from '../../../lib/reports/actions';import Form from '../../form';export default function Page(){return <main><Form action={submitReport} label="Report fixture"/></main>}`);
+      await put('app/api/report-list/route.ts',`import {listReports} from '../../../lib/reports/query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const value=await listReports(new URL(request.url).searchParams.get('after')??undefined);const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(value,{headers});}`);
       await put('app/api/moderation-control/route.ts',`type State=typeof globalThis & {__voloModerationMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','overview-malformed','delay','action-lost'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloModerationMode=mode;return Response.json({ok:true});}`);
       const moderationActionPath=path.join(directory,'app/(protected)/admin/flights/actions.ts');
       await writeFile(moderationActionPath,(await readFile(moderationActionPath,'utf8')).replace(" if(state.status==='hidden')refresh();"," if(state.status==='hidden'&&(globalThis as typeof globalThis & {__voloModerationMode?:string}).__voloModerationMode==='action-lost')throw Error('Owned moderation action response lost');\n if(state.status==='hidden')refresh();"));
@@ -339,6 +352,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       },
       sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
       moderationPageAction(id,fields,{after,fromFlightId=id,...settings}={}){return invokeFlightAction('/admin/flights'+(after?'?after='+after:''),{flight_id:id,reason:'Owned UI safety review',confirmation:'hide',...fields},{...settings,formFlightId:fromFlightId});},
+      submitReport(fields,settings={}){return invokeFlightAction('/dashboard/report-fixture',fields,settings);},
       hideFlight(fields,settings={}){return invokeFlightAction('/admin/moderation-fixture',fields,settings);},
       disableMember(fields,settings={}){return invokeFlightAction('/admin/member-fixture',fields,settings);},
       memberPageAction(id,fields,{after,fromTargetId=id,...settings}={}){return invokeFlightAction('/admin/members'+(after?'?after='+after:''),{target_id:id,reason:'Owned UI safety review',confirmation:'disable',...fields},{...settings,formTargetId:fromTargetId});},

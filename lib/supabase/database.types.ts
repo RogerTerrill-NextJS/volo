@@ -327,6 +327,25 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"reports": {
+                  Row: {
+                    "created_at": string,"id": string,"reason": string,"reporter_id": string,"target_id": string,"target_type": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"id": string,"reason": string,"reporter_id": string,"target_id": string,"target_type": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"reason"?: string,"reporter_id"?: string,"target_id"?: string,"target_type"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "reports_reporter_id_fkey"
+      columns: ["reporter_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    }
+                  ]
                 }
           }
           Views: {
@@ -485,6 +504,9 @@ isOneToOne: false
                            },
 "submit_flight_interest":
 { Args: { "p_flight_id": string,"p_introductory_note"?: string }; Returns: Json
+                           },
+"submit_report":
+{ Args: { "p_reason": string,"p_report_id": string,"p_target_id": string,"p_target_type": string }; Returns: Json
                            },
 "withdraw_flight_request":
 { Args: { "p_flight_id": string,"p_request_id": string }; Returns: Json
