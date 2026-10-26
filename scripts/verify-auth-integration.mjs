@@ -11,6 +11,7 @@ import {verifyFlightRls} from '../tests/helpers/flight-rls-cases.mjs';
 import {verifyFlightCreation} from '../tests/helpers/flight-create-cases.mjs';
 import {verifyFlightInterest} from '../tests/helpers/flight-interest-cases.mjs';
 import {verifyFlightModeration} from '../tests/helpers/flight-moderation-cases.mjs';
+import {verifyReportIntake} from '../tests/helpers/report-intake-cases.mjs';
 import {verifyMemberAdmin} from '../tests/helpers/member-admin-cases.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
@@ -38,6 +39,7 @@ try{
       setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,memberAdmin:true,flights:true});
       setupStage='member-admin';await verifyMemberAdmin({stack,app,scenario});
       setupStage='flight-moderation';await verifyFlightModeration({stack,app,scenario});
+      setupStage='report-intake';await verifyReportIntake({stack,app,scenario});
     }else if(process.argv.includes('--flight-interest')){
       setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,interest:true,flights:true});
       setupStage='flight-interest';await verifyFlightInterest({stack,app,scenario});
