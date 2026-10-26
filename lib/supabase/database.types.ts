@@ -418,6 +418,9 @@ isOneToOne: false
 "get_or_create_flight_conversation":
 { Args: { "p_request_id": string }; Returns: string
                            },
+"is_flight_hidden_for_participant":
+{ Args: { "p_flight_id": string }; Returns: boolean
+                           },
 "list_directory_profiles":
 { Args: { "p_after"?: string,"p_aircraft"?: string,"p_certificate"?: string,"p_page_size"?: number,"p_rating"?: string,"p_search"?: string }; Returns: {
               "aircraft_access": string,"bio": string,"certificates": (string)[],"display_name": string,"flying_interests": string,"home_airport": string,"photo_available": boolean,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"user_id": string

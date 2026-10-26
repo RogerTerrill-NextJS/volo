@@ -22,6 +22,7 @@ export default function AppShell({ children,isAdmin=false }: { children: React.R
             Invitations
           </Link>}
           {isAdmin && <Link href="/admin/members" prefetch={false} className={navigationClass}>Members</Link>}
+          {isAdmin && <Link href="/admin/flights" prefetch={false} className={navigationClass}>Flight moderation</Link>}
           <Link href="/" className={navigationClass}>
             Back to home
           </Link>

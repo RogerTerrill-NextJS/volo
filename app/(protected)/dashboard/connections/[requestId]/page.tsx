@@ -11,6 +11,7 @@ import ProfilePhoto from '../../../_components/profile-photo';
 import PilotDetails from '../../../_components/pilot-details';
 import {getConnectionConversation} from '../../../../../lib/messages/connection-query';
 import ContactForm from './contact-form';
+import {getFlightModerationState} from '../../../../../lib/flights/moderation-state-query';
 export const metadata:Metadata={title:'Flight connection | Volo',robots:{index:false,follow:false}};
 const linkClass='inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4';
 export default async function ConnectionPage({params}:{params:Promise<{requestId:string}>}){
@@ -20,13 +21,17 @@ export default async function ConnectionPage({params}:{params:Promise<{requestId
  if(result.status==='unauthenticated')redirect('/login?reason=authentication-required');
  if(result.status==='forbidden')return <AccessState status="forbidden"/>;
  if(result.status==='closed'){
+  const moderation=await getFlightModerationState(result.history.flightId);
+  if(moderation.status==='unauthenticated')redirect('/login?reason=authentication-required');
+  if(moderation.status==='forbidden')return <AccessState status="forbidden"/>;
+  const hidden=moderation.status==='authorized'&&moderation.hidden;
   const {history,flight}=result,departure=flight?formatFeedDeparture(flight.departure_at,flight.departure_timezone):null,conversation=await getConnectionConversation(history.requestId);
   if(conversation.status==='unauthenticated')redirect('/login?reason=authentication-required');
   if(conversation.status==='forbidden')return <AccessState status="forbidden"/>;
   return <AppShell isAdmin={access.member.role==='admin'}>
    <Link href="/dashboard/flights" prefetch={false} className={linkClass}>Back to upcoming flights</Link>
    <header className="space-y-3"><h1 className="text-3xl font-semibold tracking-tight">{history.status==='withdrawn'?'Request withdrawn':'Request cancelled'}</h1>
-    <p>{history.status==='withdrawn'?'The joining pilot withdrew this request.':flight?.status==='cancelled'?'The posting pilot cancelled this flight.':'This request has been cancelled.'}</p>
+    <p>{hidden?'This flight was hidden by an administrator. Its active requests are closed.':history.status==='withdrawn'?'The joining pilot withdrew this request.':flight?.status==='cancelled'?'This flight has been cancelled.':'This request has been cancelled.'}</p>
     <p>This request is closed. It does not provide an active connection or permission to send messages. Your permitted request history remains available here.</p>
    </header>
    <section aria-labelledby="closed-request-history" className="min-w-0 space-y-4 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8 dark:border-zinc-800">
@@ -41,7 +46,7 @@ export default async function ConnectionPage({params}:{params:Promise<{requestId
     <p>{flight.aircraft_description}</p>
     <Link href={`/dashboard/flights/${flight.id}`} prefetch={false} className={linkClass}>{history.status==='withdrawn'&&!history.isOwner&&flight.status==='open'&&!flight.isPast?'View flight and resubmission eligibility':'View flight'}</Link>
     {history.status==='withdrawn'&&flight.status==='open'&&<p>A new request requires fresh acceptance from the posting pilot.</p>}
-   </section>:<p>Flight details are no longer available to this account. Retained request history does not restore access to a private flight.</p>}
+   </section>:<p>Flight details are no longer available to this account. Retained request history does not restore access to a private or hidden flight.</p>}
    <section aria-labelledby="closed-conversation-history" className="space-y-3"><h2 id="closed-conversation-history" className="text-xl font-semibold">Conversation history</h2>
     {conversation.status==='authorized'?<Link href={`/messages/${conversation.conversationId}`} prefetch={false} className={linkClass}>View conversation history</Link>:<p>{conversation.status==='unavailable'?'Conversation history is temporarily unavailable. Check connection status to try again.':'No conversation history is available for this connection.'}</p>}
    </section>
