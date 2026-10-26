@@ -479,6 +479,9 @@ isOneToOne: false
 "lock_photo_owner":
 { Args: { "owner": string }; Returns: boolean
                            },
+"mark_notification_read":
+{ Args: { "p_notification_id": string }; Returns: Json
+                           },
 "mark_profile_photo_ready":
 { Args: { "reservation_id": string }; Returns: Json
                            },

@@ -13,6 +13,7 @@ export default function AppShell({ children,isAdmin=false }: { children: React.R
             Dashboard
           </Link>
           <Link href="/dashboard/flights" prefetch={false} className={navigationClass}>Upcoming flights</Link>
+          <Link href="/notifications" prefetch={false} className={navigationClass}>Notifications</Link>
           <Link href="/messages" prefetch={false} className={navigationClass}>Messages</Link>
           <Link href="/directory" prefetch={false} className={navigationClass}>
             Pilot directory
