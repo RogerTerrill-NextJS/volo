@@ -116,6 +116,7 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
         `do $cleanup$ begin create temporary table owned_subjects as select id from public.invitation_send_attempts where kind='initial';
          if to_regclass('public.password_recovery_authorizations') is not null then delete from public.password_recovery_authorizations; end if; delete from public.invitation_confirmation_transports; delete from public.invitation_setup_authorizations; delete from public.invitation_send_proofs; delete from public.invitation_send_attempts; delete from public.invitations;
          drop table if exists public.volo_test_auth_snapshot;
+         if to_regclass('public.notifications') is not null then delete from public.notifications; end if;
          if to_regclass('public.reports') is not null then delete from public.reports; end if;
          if to_regclass('public.flight_moderation_audit') is not null then delete from public.flight_moderation_audit; end if;
          if to_regclass('public.member_admin_audit') is not null then delete from public.member_admin_audit; end if;
