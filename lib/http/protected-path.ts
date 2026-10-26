@@ -6,6 +6,7 @@ export function isProtectedPagePath(pathname: string): boolean {
     || pathname === "/account/setup" || pathname === "/account/setup/"
     || pathname === "/dashboard" || pathname.startsWith("/dashboard/")
     || pathname === "/reports" || pathname.startsWith("/reports/")
+    || pathname === "/notifications" || pathname.startsWith("/notifications/")
     || pathname === "/messages" || pathname.startsWith("/messages/")
     || pathname === "/directory" || pathname.startsWith("/directory/")
     || pathname === "/admin" || pathname.startsWith("/admin/");

@@ -36,6 +36,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     await cp(path.join(root,'app/reset-password'),path.join(directory,'app/reset-password'),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'protected-layout.tsx'));
     await cp(path.join(root,'app/(protected)/admin'),path.join(directory,'app/(protected)/admin'),{recursive:true});
+    await cp(path.join(root,'app/(protected)/notifications'),path.join(directory,'app/(protected)/notifications'),{recursive:true});
     await cp(path.join(root,'app/(protected)/_components'),path.join(directory,'app/(protected)/_components'),{recursive:true});
     await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/(protected)/layout.tsx'));
     if(photos){
@@ -90,6 +91,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
           if(!changed.ok)throw new Error('Owned eligibility race setup rejected');
         }
       }
+      if(url.pathname==='/rest/v1/notifications'&&(!init?.method||init.method==='GET')&&globalThis.__voloInterestMode==='notification-read-outage')return Response.json({code:'private-notification-error-canary'},{status:503});
       if(url.pathname==='/rest/v1/flight_requests'&&(!init?.method||init.method==='GET')&&globalThis.__voloInterestMode==='read-outage')return Response.json({code:'private-interest-error-canary'},{status:503});
       if(url.pathname==='/rest/v1/rpc/get_network_profile'&&globalThis.__voloInterestMode?.startsWith('profile-timeout:')&&String(init?.body??'').includes(globalThis.__voloInterestMode.slice('profile-timeout:'.length)))await new Promise(resolve=>setTimeout(resolve,5500));
       if(url.pathname==='/rest/v1/rpc/submit_flight_interest'){
@@ -219,6 +221,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       }
       if(globalThis.__voloFlightCreateMode==='malformed'&&['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){await response.text();return Response.json('private-flight-error-canary');}
       if(globalThis.__voloFlightCreateMode==='lost'&&['/rest/v1/rpc/create_flight','/rest/v1/rpc/create_private_flight'].includes(url.pathname)){await response.text();throw new Error('Owned fixture discarded committed create response');}
+      if(url.pathname==='/rest/v1/rpc/mark_notification_read'&&globalThis.__voloInterestMode==='notification-lost'){await response.text();throw new Error('Owned notification receipt lost');}
       if(url.pathname==='/rest/v1/rpc/submit_flight_interest'){
         if(globalThis.__voloInterestMode==='malformed'){await response.text();return Response.json({code:'submitted',requestId:'private-interest-error-canary',status:'pending'});}
         if(globalThis.__voloInterestMode==='lost'){await response.text();throw new Error('Owned fixture discarded committed interest response');}
@@ -305,7 +308,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/api/decision-control/route.ts',`type State=typeof globalThis & {__voloDecisionMode?:string;__voloDecisionCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed'].includes(mode)&&!/^disable:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloDecisionMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloDecisionCalls??0});}`);
       await cp(path.join(root,'app/(protected)/onboarding'),path.join(directory,'app/(protected)/onboarding'),{recursive:true});
       await put('app/dashboard/interest-fixture/page.tsx',`import {submitFlightInterest} from '../../../lib/flights/actions';import Form from '../../form';export default function Page(){return <main><Form action={submitFlightInterest} label="Interested fixture"/></main>}`);
-      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage'].includes(mode)&&!/^(disable|full|profile-timeout):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
+      await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage','notification-read-outage','notification-lost'].includes(mode)&&!/^(disable|full|profile-timeout):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
     }
     if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
     if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));
@@ -318,11 +321,12 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       const headers=new Headers(additional);if(session)headers.set('Cookie',session.cookieHeader());
       const response=await fetch(destination,{method,headers,body,redirect:'manual',signal:AbortSignal.any([AbortSignal.timeout(15000),...(signal?[signal]:[])])});session?.applyResponse(response);return response;
     };
-    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId,formIntent,formTargetId,formFlightId}={})=>{
+    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId,formIntent,formTargetId,formFlightId,formNotificationId}={})=>{
         let html=formHtml??await (await request(route,{session})).text();
         if(formIntent){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="intent"')&&match[1].includes('value="'+formIntent+'"'));if(!selected)throw new Error('Owned intent form missing');html=selected[1];}
         if(formRequestId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="request_id"')&&match[1].includes('value="'+formRequestId+'"'));if(!selected)throw new Error('Owned decision form missing');html=selected[1];}
         if(formTargetId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="target_id"')&&match[1].includes('value="'+formTargetId+'"'));if(!selected)throw new Error('Owned member control missing');html=selected[1];}
+        if(formNotificationId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="notification_id"')&&match[1].includes('value="'+formNotificationId+'"'));if(!selected)throw new Error('Owned notification control missing');html=selected[1];}
         if(formFlightId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="flight_id"')&&match[1].includes('value="'+formFlightId+'"'));if(!selected)throw new Error('Owned moderation form missing');html=selected[1];}
         const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
         const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
@@ -369,6 +373,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         const messageId=decode(input?.match(/value="([^"]*)"/)?.[1]??'');
         return invokeFlightAction(route,{conversation_id:thread,message_id:messageId,...fields},{...settings,formHtml:html});
       },
+      notificationAction(id,settings={}){return invokeFlightAction('/notifications',{notification_id:id},{formNotificationId:id,...settings});},
       submitInterest(fields,settings={}){return invokeFlightAction('/dashboard/interest-fixture',fields,settings);},
       cancellationPageAction(id,fields,settings={}){return invokeFlightAction('/dashboard/flights/'+id,{flight_id:id,intent:'cancel',confirmation:'cancel',...fields},{...settings,formIntent:'cancel'});},
       async editPageAction(id,overrides,{formHtml,...settings}={}){

@@ -57,6 +57,44 @@ export async function verifyFlightInterest({stack,app,scenario}){
    assert.ok(notices.every(n=>n.recipient_id===accounts.owner.id&&n.event_type==='request_received'&&n.read_at===null));
    assert.equal((await checked(clients.pilot.from('notifications').select('*').in('request_id',result.map(r=>r.id)))).length,0,'Requester cannot read owner notifications');
   });
+  let notificationForm,firstNotice,secondNotice;
+  await checkScenario('notifications_recipient_native_mark_and_refresh_preserve_first_read',async()=>{
+   const notices=await checked(clients.owner.from('notifications').select('*').order('created_at',{ascending:false}).order('id',{ascending:false}));
+   [firstNotice,secondNotice]=notices;assert.equal(notices.length,2);
+   const response=await app.request('/notifications',{session:sessions.owner});notificationForm=await response.text();
+   for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
+   assert.ok(notificationForm.includes('New flight request')&&notificationForm.includes('Unread'));
+   assert.ok(!notificationForm.includes('Private hello'));
+   const result=await app.notificationAction(firstNotice.id,{session:sessions.owner,transport:'native',formHtml:notificationForm});
+   assert.equal(result.status,200);
+   const marked=await checked(clients.owner.from('notifications').select('*').eq('id',firstNotice.id).single());assert.ok(marked.read_at);
+   const retry=await app.notificationAction(firstNotice.id,{session:sessions.owner,formHtml:notificationForm});
+   assert.equal(retry.status,200);
+   assert.deepEqual(await checked(clients.owner.from('notifications').select('*').eq('id',firstNotice.id).single()),marked);
+   const refreshed=await(await app.request('/notifications',{session:sessions.owner})).text();assert.ok(refreshed.includes('Read'));
+  });
+  await checkScenario('notifications_other_recipient_and_admin_cannot_read_or_mark',async()=>{
+   const before=await checked(clients.owner.from('notifications').select('*').order('id'));
+   for(const label of ['pilot','other']){
+    assert.equal((await checked(clients[label].from('notifications').select('*'))).length,0);
+    const page=await(await app.request('/notifications',{session:sessions[label]})).text();assert.ok(page.includes('No notifications yet'));assert.ok(!page.includes('name="notification_id"'));
+    const rpc=await checked(clients[label].rpc('mark_notification_read',{p_notification_id:secondNotice.id}));assert.deepEqual(rpc,{code:'notification_unavailable'});
+    const denied=await app.notificationAction(secondNotice.id,{session:sessions[label],formHtml:notificationForm});assert.equal(denied.status,200);const deniedBody=(await denied.text()).replaceAll('&quot;','"');stack.assertNoCredentialLeaks(deniedBody);assert.ok(deniedBody.includes('"code":"notification_unavailable"'));
+   }
+   await app.notificationAction(secondNotice.id,{session:sessions.owner,origin:null,formHtml:notificationForm});
+   assert.deepEqual(await checked(clients.owner.from('notifications').select('*').order('id')),before);
+  });
+  await checkScenario('notifications_uncertain_marker_and_read_outage_reload_safely',async()=>{
+   await mode('notification-lost');
+   const result=await app.notificationAction(secondNotice.id,{session:sessions.owner,formHtml:notificationForm});const body=await result.text();assert.ok(body.includes('"code":"read_unconfirmed"'));assert.ok(!body.includes('private-notification-error-canary'));
+   await mode('off');
+   const marked=await checked(clients.owner.from('notifications').select('*').eq('id',secondNotice.id).single());assert.ok(marked.read_at);
+   const refreshed=await(await app.request('/notifications',{session:sessions.owner})).text();assert.ok(refreshed.includes('Read'));assert.ok(!refreshed.includes('name="notification_id"'));
+   await mode('notification-read-outage');
+   const unavailable=await(await app.request('/notifications',{session:sessions.owner})).text();assert.ok(unavailable.includes('Notifications temporarily unavailable'));assert.ok(!unavailable.includes('private-notification-error-canary'));assert.ok(!unavailable.includes('New flight request'));
+   await mode('off');
+   const invalid=await(await app.request('/notifications?after=bad',{session:sessions.owner})).text();assert.ok(invalid.includes('This notification page is unavailable'));
+  });
   await checkScenario('interest_action_current_access_origin_and_input_guards',async()=>{
    await deny(null,network,'unauthenticated');
    for(const label of ['disabled','absent'])await deny(label,network,'forbidden');

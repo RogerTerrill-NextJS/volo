@@ -63,7 +63,7 @@ select is((select count(*)::integer from public.notifications),0,'Unrelated memb
 select pg_temp.actor(4);
 select is((select count(*)::integer from public.notifications),0,'Administrator has no recipient bypass');
 select throws_ok($$insert into public.notifications(event_type,request_id) values('request_received','21930000-0000-4000-8000-000000000001')$$,'42501',null,'Admin cannot forge notifications');
-select throws_ok($$update public.notifications set read_at=now()$$,'42501',null,'Mark-read direct writes remain closed before VOLO-221');
+select throws_ok($$update public.notifications set read_at=now()$$,'42501',null,'Mark-read direct writes remain closed');
 select throws_ok($$delete from public.notifications$$,'42501',null,'Direct deletion closed');
 select pg_temp.actor(6);
 select is((select count(*)::integer from public.notifications),0,'Unadmitted identity reads no notifications');
