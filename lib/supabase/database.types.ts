@@ -282,6 +282,37 @@ isOneToOne: false
       referencedColumns: ["user_id"]
     }
                   ]
+                },"notifications": {
+                  Row: {
+                    "created_at": string,"event_key": string,"event_type": string,"id": string,"message_id": string | null,"read_at": string | null,"recipient_id": string,"request_id": string | null
+                  }
+                  Insert: {
+                    "created_at"?: string,"event_key": string,"event_type": string,"id"?: string,"message_id"?: string | null,"read_at"?: string | null,"recipient_id": string,"request_id"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"event_key"?: string,"event_type"?: string,"id"?: string,"message_id"?: string | null,"read_at"?: string | null,"recipient_id"?: string,"request_id"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notifications_message_id_fkey"
+      columns: ["message_id"]
+isOneToOne: false
+      referencedRelation: "messages"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_recipient_id_fkey"
+      columns: ["recipient_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    },{
+      foreignKeyName: "notifications_request_id_fkey"
+      columns: ["request_id"]
+isOneToOne: false
+      referencedRelation: "flight_requests"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"password_recovery_authorizations": {
                   Row: {
                     "consumed_at": string | null,"created_at": string,"email_key": string,"expires_at": string,"lookup_digest": string,"origin": string,"session_id": string,"subject": string
