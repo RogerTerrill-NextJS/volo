@@ -186,6 +186,39 @@ export async function verifyFlightInterest({stack,app,scenario}){
    expectCode(await invoke('pilot',id,{introductory_note:'connection-private-note-canary'}),'submitted');
    const request=(await rows()).find(r=>r.flight_id===id);await checked(clients.owner.rpc('decide_flight_request',{p_flight_id:id,p_request_id:request.id,p_decision:'accepted'}));return {id,request};
   };
+
+  await checkScenario('notification_targets_recheck_recipient_and_current_feature_access_without_marking',async()=>{
+   const {id,request}=await acceptedConnection({visibility:'PRIVATE'});
+   const received=await checked(clients.owner.from('notifications').select('*').eq('request_id',request.id).eq('event_type','request_received').single());
+   const accepted=await checked(clients.pilot.from('notifications').select('*').eq('request_id',request.id).eq('event_type','request_accepted').single());
+   const open=async(notice,label,href)=>{
+    const response=await app.request('/notifications/'+notice.id,{session:sessions[label]});
+    for(const field of ['cache-control','cdn-cache-control','netlify-cdn-cache-control'])assert.match(response.headers.get(field)??'',/no-store/);
+    const body=await response.text();stack.assertNoCredentialLeaks(body);
+    if(response.headers.get('location'))assert.equal(response.headers.get('location'),href);
+    else assert.ok(body.includes('url='+href)||body.includes('NEXT_REDIRECT;replace;'+href+';'),'Streamed notification redirect reaches the fixed feature path');
+    return (await app.request(href,{session:sessions[label]})).text();
+   };
+   const list=await(await app.request('/notifications',{session:sessions.owner})).text();assert.ok(list.includes('/notifications/'+received.id));assert.ok(list.includes('View flight requests'));
+   assert.ok((await open(received,'owner','/dashboard/flights/'+id+'#incoming-heading')).includes('Incoming requests'));
+   assert.ok((await open(accepted,'pilot','/dashboard/connections/'+request.id)).includes('Accepted connection'));
+   for(const label of ['other','pilot']){
+    const denied=await(await app.request('/notifications/'+received.id,{session:sessions[label]})).text();
+    assert.ok(denied.includes('Notification target unavailable'));assert.ok(!denied.includes('connection-private-note-canary'));
+   }
+   const thread=await checked(clients.pilot.rpc('get_or_create_flight_conversation',{p_request_id:request.id})),message=randomUUID();
+   await checked(clients.pilot.rpc('send_conversation_message',{p_conversation_id:thread,p_message_id:message,p_body:'notification-target-message-canary'}));
+   const messageNotice=await checked(clients.owner.from('notifications').select('*').eq('message_id',message).single());
+   assert.ok((await open(messageNotice,'owner','/messages/'+thread)).includes('notification-target-message-canary'));
+   await mode('notification-read-outage');
+   const unavailable=await(await app.request('/notifications/'+received.id,{session:sessions.owner})).text();assert.ok(unavailable.includes('Notification target temporarily unavailable'));assert.ok(!unavailable.includes('private-notification-error-canary'));
+   await mode('off');
+   await checked(clients.pilot.rpc('withdraw_flight_request',{p_flight_id:id,p_request_id:request.id}));
+   expectCode(await invoke('pilot',id,{introductory_note:'Fresh unaccepted target request'}),'submitted');
+   const stale=await open(accepted,'pilot','/dashboard/connections/'+request.id);
+   assert.ok(stale.includes('Connection unavailable'));assert.ok(!stale.includes('connection-private-note-canary'));assert.ok(!stale.includes('notification-target-message-canary'));
+   for(const [notice,label] of [[received,'owner'],[accepted,'pilot'],[messageNotice,'owner']])assert.deepEqual(await checked(clients[label].from('notifications').select('*').eq('id',notice.id).single()),notice,'Following notification links never marks or rewrites the event');
+  });
   await checkScenario('connection_real_session_only_approved_pair_without_admin_or_pending_bypass',async()=>{
    const {id,request}=await acceptedConnection({visibility:'PRIVATE',pilot_places:2});
    await checked(admin.from('flight_recipients').insert({flight_id:id,user_id:accounts.other.id}));expectCode(await invoke('other',id),'submitted');
