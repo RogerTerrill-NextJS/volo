@@ -52,6 +52,10 @@ export async function verifyFlightInterest({stack,app,scenario}){
    expectCode(await invoke('pilot',privateFlight,{introductory_note:'Private hello'}),'submitted');
    const result=await rows();assert.equal(result.length,2);assert.ok(result.every(r=>r.requester_id===accounts.pilot.id&&r.status==='pending'));
    assert.equal(result.find(r=>r.flight_id===privateFlight).introductory_note,'Private hello');
+   const notices=await checked(clients.owner.from('notifications').select('*').in('request_id',result.map(r=>r.id)));
+   assert.equal(notices.length,2,'Real-session submissions notify the actual owner');
+   assert.ok(notices.every(n=>n.recipient_id===accounts.owner.id&&n.event_type==='request_received'&&n.read_at===null));
+   assert.equal((await checked(clients.pilot.from('notifications').select('*').in('request_id',result.map(r=>r.id)))).length,0,'Requester cannot read owner notifications');
   });
   await checkScenario('interest_action_current_access_origin_and_input_guards',async()=>{
    await deny(null,network,'unauthenticated');

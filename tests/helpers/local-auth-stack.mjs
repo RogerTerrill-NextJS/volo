@@ -317,8 +317,9 @@ export async function createLocalAuthStack({repositoryRoot,stateFile=path.join(e
       async removeOwnedConversations(id){
         // History deletion has no service-role grant. Cleanup is restricted to
         // this disposable stack and an account created by this exact test run.
+        // Clear retained notification targets before owned message/request cleanup.
         requireOwned(id);
-        await ownedFixtureSql(`do $cleanup$ begin delete from public.messages where conversation_id in (select id from public.conversations where owner_id='${id}' or requester_id='${id}');delete from public.conversations where owner_id='${id}' or requester_id='${id}';end $cleanup$;`);
+        await ownedFixtureSql(`do $cleanup$ begin delete from public.notifications where request_id in (select r.id from public.flight_requests r join public.flights f on f.id=r.flight_id where f.owner_id='${id}' or r.requester_id='${id}') or message_id in (select m.id from public.messages m join public.conversations c on c.id=m.conversation_id where c.owner_id='${id}' or c.requester_id='${id}');delete from public.messages where conversation_id in (select id from public.conversations where owner_id='${id}' or requester_id='${id}');delete from public.conversations where owner_id='${id}' or requester_id='${id}';end $cleanup$;`);
       },
       async removeOwnedFlightModeration(id){
         requireOwned(id);

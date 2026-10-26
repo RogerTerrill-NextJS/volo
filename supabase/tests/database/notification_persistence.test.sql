@@ -16,7 +16,7 @@ update public.memberships set status='disabled',disabled_at=now(),disabled_reaso
 insert into public.flights(id,owner_id,departure_airport,destination_airport,departure_at,departure_timezone,aircraft_description,pilot_places,visibility,notes) values('21920000-0000-4000-8000-000000000001','21900000-0000-4000-8000-000000000001','KPAO','KSQL',now()+interval '2 days','UTC','Notification C172',2,'PRIVATE','Private post notification canary');
 insert into public.flight_recipients(flight_id,user_id) values('21920000-0000-4000-8000-000000000001','21900000-0000-4000-8000-000000000002');
 insert into public.flight_requests(id,flight_id,requester_id) values('21930000-0000-4000-8000-000000000001','21920000-0000-4000-8000-000000000001','21900000-0000-4000-8000-000000000002');
-select is((select count(*)::integer from public.notifications),0,'Owning operations do not generate before VOLO-220');
+select is((select count(*)::integer from public.notifications),0,'Privileged source fixtures do not generate operation events');
 insert into public.notifications(id,event_type,request_id,event_key,created_at) values('21960000-0000-4000-8000-000000000001','request_received','21930000-0000-4000-8000-000000000001','forged-key','2000-01-01');
 select is((select recipient_id::text from public.notifications where id='21960000-0000-4000-8000-000000000001'),'21900000-0000-4000-8000-000000000001','Request recipient is authoritative owner');
 select ok((select event_key like 'request_received:21930000-0000-4000-8000-000000000001:%' and created_at>'2026-01-01' and read_at is null from public.notifications where id='21960000-0000-4000-8000-000000000001'),'Canonical event key, server chronology and unread initial state');
@@ -41,7 +41,7 @@ set local role authenticated;
 select pg_temp.actor(2);
 select public.send_conversation_message('21940000-0000-4000-8000-000000000001','21950000-0000-4000-8000-000000000001','Private message notification canary');
 reset role;
-insert into public.notifications(id,event_type,message_id) values('21960000-0000-4000-8000-000000000003','message_received','21950000-0000-4000-8000-000000000001');
+-- The guarded message operation generated this event atomically.
 select is((select recipient_id::text from public.notifications where event_type='message_received'),'21900000-0000-4000-8000-000000000001','Message recipient is the other immutable participant');
 select is((select event_key from public.notifications where event_type='message_received'),'message_received:21950000-0000-4000-8000-000000000001','Message retry identity is immutable message UUID');
 insert into public.notifications(event_type,message_id) values('message_received','21950000-0000-4000-8000-000000000001') on conflict(recipient_id,event_key) do nothing;
@@ -51,8 +51,7 @@ set local role authenticated;
 select pg_temp.actor(1);
 select public.send_conversation_message('21940000-0000-4000-8000-000000000001','21950000-0000-4000-8000-000000000002','Reciprocal private notification canary');
 reset role;
-select is((select count(*)::integer from public.notifications),3,'Message operation remains unwired before VOLO-220');
-insert into public.notifications(event_type,message_id) values('message_received','21950000-0000-4000-8000-000000000002');
+select is((select count(*)::integer from public.notifications),4,'Reciprocal message operation generates its event');
 select is((select recipient_id::text from public.notifications where message_id='21950000-0000-4000-8000-000000000002'),'21900000-0000-4000-8000-000000000002','Owner message notifies requester, never its sender');
 set local role authenticated;
 select pg_temp.actor(1);

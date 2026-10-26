@@ -26,11 +26,12 @@ export async function verifyMessageLocks({sql,session,until,send=false}){
    first.child.stdin.end('commit;\n');const winner=await first.done,loser=await second.done;assert.equal(winner.code,0,winner.stderr);
    if(firstOp!=='store'){assert.notEqual(loser.code,0);assert.match(loser.stderr,/42501/);assert.equal(sql(`select count(*) from public.messages where conversation_id='${thread}';`),'0','Closed-first race cannot append');}
    else{assert.equal(loser.code,0,loser.stderr);assert.equal(sql(`select count(*) from public.messages where conversation_id='${thread}';`),secondOp==='store'&&!duplicate?'2':'1');}
+   if(send)assert.equal(sql(`select count(*) from public.notifications where message_id in (select id from public.messages where conversation_id='${thread}');`),sql(`select count(*) from public.messages where conversation_id='${thread}';`),'Exactly one notification per committed message, including concurrent UUID retry');
    if(secondOp!=='store'||firstOp!=='store')assert.equal(sql(`select closed_at is not null from public.conversations where id='${thread}';`),'t','Closure retains only messages committed before its boundary');
    console.log(`Message ${send?'RPC':'persistence'} ${firstOp}-${secondOp}${duplicate?'-retry':''}: competing lifecycle lock observed; history boundary verified`);
   }finally{
    first?.child.stdin.end();second?.child.stdin.end();sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);await Promise.all([first?.done,second?.done]);
-   sql(`delete from public.messages where conversation_id='${thread}';delete from public.conversations where id='${thread}';delete from public.flight_requests where id='${request}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id='${requester}';delete from public.memberships where user_id in ('${owner}','${requester}');delete from auth.users where id in ('${owner}','${requester}');`);
+   sql(`delete from public.notifications where request_id in (select id from public.flight_requests where flight_id='${flight}') or message_id in (select m.id from public.messages m join public.conversations c on c.id=m.conversation_id join public.flight_requests r on r.id=c.flight_request_id where r.flight_id='${flight}');delete from public.messages where conversation_id='${thread}';delete from public.conversations where id='${thread}';delete from public.flight_requests where id='${request}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id='${requester}';delete from public.memberships where user_id in ('${owner}','${requester}');delete from auth.users where id in ('${owner}','${requester}');`);
   }
  }
 }
@@ -68,7 +69,7 @@ export async function verifyConversationLocks({sql,session,until}){
    console.log(`Conversation ${firstOp}-${secondOp}: competing flight lock observed; unique thread and closure verified`);
   }finally{
    first?.child.stdin.end();second?.child.stdin.end();sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);await Promise.all([first?.done,second?.done]);
-   sql(`delete from public.conversations where flight_request_id='${request}';delete from public.flight_requests where id='${request}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id='${requester}';delete from public.memberships where user_id in ('${owner}','${requester}');delete from auth.users where id in ('${owner}','${requester}');`);
+   sql(`delete from public.notifications where request_id in (select id from public.flight_requests where flight_id='${flight}') or message_id in (select m.id from public.messages m join public.conversations c on c.id=m.conversation_id join public.flight_requests r on r.id=c.flight_request_id where r.flight_id='${flight}');delete from public.conversations where flight_request_id='${request}';delete from public.flight_requests where id='${request}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id='${requester}';delete from public.memberships where user_id in ('${owner}','${requester}');delete from auth.users where id in ('${owner}','${requester}');`);
   }
  }
 }
@@ -131,7 +132,7 @@ export async function verifyFlightCancellationLocks({sql,session,until}){
    first?.child.stdin.end();second?.child.stdin.end();
    sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
    await Promise.all([first?.done,second?.done]);
-   sql(`delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}');delete from public.memberships where user_id in ('${owner}','${requester}');delete from auth.users where id in ('${owner}','${requester}');`);
+   sql(`delete from public.notifications where request_id in (select id from public.flight_requests where flight_id='${flight}') or message_id in (select m.id from public.messages m join public.conversations c on c.id=m.conversation_id join public.flight_requests r on r.id=c.flight_request_id where r.flight_id='${flight}');delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}');delete from public.memberships where user_id in ('${owner}','${requester}');delete from auth.users where id in ('${owner}','${requester}');`);
   }
  }
 }
@@ -182,7 +183,7 @@ export async function verifyFlightEditLocks({sql,session,until}){
   }finally{
    first?.child.stdin.end();second?.child.stdin.end();sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
    await Promise.all([first?.done,second?.done]);
-   sql(`delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
+   sql(`delete from public.notifications where request_id in (select id from public.flight_requests where flight_id='${flight}') or message_id in (select m.id from public.messages m join public.conversations c on c.id=m.conversation_id join public.flight_requests r on r.id=c.flight_request_id where r.flight_id='${flight}');delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
   }
  }
 }
@@ -239,7 +240,7 @@ export async function verifyRequestWithdrawalLocks({sql,session,until}){
    first?.child.stdin.end();second?.child.stdin.end();
    sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
    await Promise.all([first?.done,second?.done]);
-   sql(`delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
+   sql(`delete from public.notifications where request_id in (select id from public.flight_requests where flight_id='${flight}') or message_id in (select m.id from public.messages m join public.conversations c on c.id=m.conversation_id join public.flight_requests r on r.id=c.flight_request_id where r.flight_id='${flight}');delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
   }
  }
 }
@@ -295,6 +296,7 @@ export async function verifyRequestLocks({sql,session,until,submission=false}) {
     assert.notEqual(result.code,0,'Competing invalid request mutation must fail');
     assert.match(result.stderr,kind==='duplicate'?/23505/:/23514/);
    }
+   if(submission)assert.equal(sql(`select count(*) from public.notifications where event_type='request_received' and request_id in (select id from public.flight_requests where flight_id='${flight}');`),['duplicate','request-first'].includes(kind)?'1':'0','Concurrent submission emits once only for a successful pending occurrence');
    if(kind==='capacity')assert.equal(sql(`select count(*) from public.flight_requests where flight_id='${flight}' and status='accepted';`),'1');
    if(kind==='duplicate')assert.equal(sql(`select count(*) from public.flight_requests where flight_id='${flight}';`),'1');
    if(kind==='full-first')assert.equal(sql(`select count(*) from public.flight_requests where flight_id='${flight}' and requester_id='${requester}';`),'0');
@@ -305,7 +307,7 @@ export async function verifyRequestLocks({sql,session,until,submission=false}) {
    first?.child.stdin.end();second?.child.stdin.end();
    sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
    await Promise.all([first?.done,second?.done]);
-   sql(`delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
+   sql(`delete from public.notifications where request_id in (select id from public.flight_requests where flight_id='${flight}') or message_id in (select m.id from public.messages m join public.conversations c on c.id=m.conversation_id join public.flight_requests r on r.id=c.flight_request_id where r.flight_id='${flight}');delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
   }
  }
 }
@@ -358,12 +360,13 @@ export async function verifyRequestDecisionLocks({sql,session,until}) {
     const snapshot=winner.stdout.split('\n').flatMap(line=>{try{return [JSON.parse(line)];}catch{return [];}}).find(value=>value?.snapshot)?.snapshot;
     assert.deepEqual(stored,snapshot,'Waiting retry/conflict preserves the entire first-decided record');
    }
+   assert.equal(sql(`select count(*) from public.notifications where event_type='request_accepted' and request_id in (select id from public.flight_requests where flight_id='${flight}');`),['decline-accept','removal-accept'].includes(kind)?'0':'1','Concurrent decision emits once only for a successful acceptance');
    console.log(`Decision RPC ${kind}: observed competing lock and verified safe result/final state`);
   }finally{
    first?.child.stdin.end();second?.child.stdin.end();
    sql(`select pg_terminate_backend(pid) from pg_stat_activity where application_name in ('${firstName}','${secondName}') and pid<>pg_backend_pid();`);
    await Promise.all([first?.done,second?.done]);
-   sql(`delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
+   sql(`delete from public.notifications where request_id in (select id from public.flight_requests where flight_id='${flight}') or message_id in (select m.id from public.messages m join public.conversations c on c.id=m.conversation_id join public.flight_requests r on r.id=c.flight_request_id where r.flight_id='${flight}');delete from public.flight_requests where flight_id='${flight}';delete from public.flight_recipients where flight_id='${flight}';delete from public.flights where id='${flight}';delete from public.profiles where user_id in ('${owner}','${requester}','${other}');delete from public.memberships where user_id in ('${owner}','${requester}','${other}');delete from auth.users where id in ('${owner}','${requester}','${other}');`);
   }
  }
 }
