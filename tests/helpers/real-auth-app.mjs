@@ -150,6 +150,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
         const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned moderation race'})});
         if(!changed.ok)throw Error('Owned moderation race rejected');
       }
+      if(url.pathname==='/rest/v1/rpc/admin_hide_flight'&&globalThis.__voloModerationMode==='delay')await new Promise(resolve=>setTimeout(resolve,3000));
       const response=await original(input,{...init,redirect:'error'});
       if(url.pathname==='/rest/v1/rpc/admin_hide_flight'){
         if(globalThis.__voloModerationMode==='lost'){await response.text();throw Error('Owned moderation response lost');}
@@ -248,7 +249,9 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
     if(memberAdmin){
-      await put('app/api/moderation-control/route.ts',`type State=typeof globalThis & {__voloModerationMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','overview-malformed'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloModerationMode=mode;return Response.json({ok:true});}`);
+      await put('app/api/moderation-control/route.ts',`type State=typeof globalThis & {__voloModerationMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','overview-malformed','delay','action-lost'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloModerationMode=mode;return Response.json({ok:true});}`);
+      const moderationActionPath=path.join(directory,'app/(protected)/admin/flights/actions.ts');
+      await writeFile(moderationActionPath,(await readFile(moderationActionPath,'utf8')).replace(" if(state.status==='hidden')refresh();"," if(state.status==='hidden'&&(globalThis as typeof globalThis & {__voloModerationMode?:string}).__voloModerationMode==='action-lost')throw Error('Owned moderation action response lost');\n if(state.status==='hidden')refresh();"));
       await put('app/admin/moderation-fixture/page.tsx',`import {hideFlight} from '../../../lib/flights/moderation-actions';import Form from '../../form';export default function Page(){return <main><Form action={hideFlight} label="Hide flight"/></main>}`);
       await put('app/api/moderation-overview/route.ts',`import {listAdminFlights} from '../../../lib/flights/moderation-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const value=await listAdminFlights(new URL(request.url).searchParams.get('after')??undefined);const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(value,{headers});}`);
       await put('app/api/moderation-feed/route.ts',`import {listUpcomingFlights} from '../../../lib/flights/feed-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(await listUpcomingFlights(),{headers});}`);
@@ -297,11 +300,12 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       const headers=new Headers(additional);if(session)headers.set('Cookie',session.cookieHeader());
       const response=await fetch(destination,{method,headers,body,redirect:'manual',signal:AbortSignal.any([AbortSignal.timeout(15000),...(signal?[signal]:[])])});session?.applyResponse(response);return response;
     };
-    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId,formIntent,formTargetId}={})=>{
+    const invokeFlightAction=async(route,fields,{session,transport='fetched',origin:requestOrigin=origin,postRoute=route,formHtml,formRequestId,formIntent,formTargetId,formFlightId}={})=>{
         let html=formHtml??await (await request(route,{session})).text();
         if(formIntent){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="intent"')&&match[1].includes('value="'+formIntent+'"'));if(!selected)throw new Error('Owned intent form missing');html=selected[1];}
         if(formRequestId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="request_id"')&&match[1].includes('value="'+formRequestId+'"'));if(!selected)throw new Error('Owned decision form missing');html=selected[1];}
         if(formTargetId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="target_id"')&&match[1].includes('value="'+formTargetId+'"'));if(!selected)throw new Error('Owned member control missing');html=selected[1];}
+        if(formFlightId){const selected=[...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)].find(match=>match[1].includes('name="flight_id"')&&match[1].includes('value="'+formFlightId+'"'));if(!selected)throw new Error('Owned moderation form missing');html=selected[1];}
         const reserved=[...html.matchAll(/<input\b[^>]*>/g)].flatMap(input=>{const name=input[0].match(/name="(\$ACTION_[^"]+)"/)?.[1];return name?[[decode(name),decode(input[0].match(/value="([^"]*)"/)?.[1]??'')]]:[];});
         const actionId=JSON.parse(reserved.find(([name])=>name.endsWith(':0'))[1]).id;
         const headers=new Headers();if(requestOrigin!==null)headers.set('Origin',requestOrigin);
@@ -334,6 +338,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
       sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
+      moderationPageAction(id,fields,{after,fromFlightId=id,...settings}={}){return invokeFlightAction('/admin/flights'+(after?'?after='+after:''),{flight_id:id,reason:'Owned UI safety review',confirmation:'hide',...fields},{...settings,formFlightId:fromFlightId});},
       hideFlight(fields,settings={}){return invokeFlightAction('/admin/moderation-fixture',fields,settings);},
       disableMember(fields,settings={}){return invokeFlightAction('/admin/member-fixture',fields,settings);},
       memberPageAction(id,fields,{after,fromTargetId=id,...settings}={}){return invokeFlightAction('/admin/members'+(after?'?after='+after:''),{target_id:id,reason:'Owned UI safety review',confirmation:'disable',...fields},{...settings,formTargetId:fromTargetId});},

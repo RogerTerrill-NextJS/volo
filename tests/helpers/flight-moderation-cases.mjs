@@ -16,11 +16,13 @@ export async function verifyFlightModeration({stack,app,scenario}){
   for(const session of Object.values(sessions))session.assertNoCredentialLeaks(text);
   for(const a of Object.values(accounts))assert.ok(!text.includes(a.email));
   assert.ok(!text.includes('private-moderation-canary')&&!text.includes('Private retained conversation canary'));
-  return text.replaceAll('&quot;','"');
+  return text;
  };
  const act=async(label,flight,fields={},settings={})=>safe(await app.hideFlight({flight_id:flight,reason:'Owned moderation safety review',confirmation:'hide',...fields},{session:sessions[label],...settings}));
- const code=(text,expected)=>assert.ok(text.includes('"code":"'+expected+'"'),'Moderation outcome '+expected);
+ const code=(text,expected)=>assert.ok(text.replaceAll('&quot;','"').includes('"code":"'+expected+'"'),'Moderation outcome '+expected);
  const overview=async(label='admin',after)=>JSON.parse(await safe(await app.request('/api/moderation-overview'+(after?'?after='+after:''),{session:sessions[label]})));
+ const page=async(label='admin',after)=>safe(await app.request('/admin/flights'+(after?'?after='+after:''),{session:sessions[label]}));
+ const card=(html,id)=>html.match(new RegExp('<article\\b[^>]*id="flight-'+id+'"[^>]*>([\\s\\S]*?)</article>'))?.[1]??assert.fail('Owned moderation card missing');
  const readFlight=id=>checked(privileged.from('flights').select('*').eq('id',id).single());
  const audits=async id=>checked(clients.admin.from('flight_moderation_audit').select('*').eq('flight_id',id));
  const rpc=(label,name,args)=>clients[label].rpc(name,args).retry(false);
@@ -43,6 +45,7 @@ export async function verifyFlightModeration({stack,app,scenario}){
    if(role)await checked(privileged.from('profiles').insert({user_id:accounts[label].id,display_name:'Owned moderation '+label,home_airport:'KPAO',pilot_designation:'licensed'}));
   }
   await run('flight_moderation_current_admin_action_overview_and_direct_bypass_guards',async()=>{
+   assert.match(await page(),/No flights to moderate/);
    const flight=await createFlight('PRIVATE'),before=await readFlight(flight),formHtml=await(await app.request('/admin/moderation-fixture',{session:sessions.admin})).text();
    await sessions.owner.setAdmissionMetadata();
    for(const label of ['owner','other','disabled','absent']){
@@ -111,11 +114,36 @@ export async function verifyFlightModeration({stack,app,scenario}){
     rpc('requester','send_conversation_message',{p_conversation_id:conversation,p_message_id:message,p_body:'Concurrent permitted-before-closure message'}),
    ]);
    assert.deepEqual(results.slice(0,2).map(r=>r.data?.code).sort(),['already_hidden','hidden']);assert.equal(results[0].data.moderatedAt,results[1].data.moderatedAt);
-   assert.ok(['accepted','request_conflict'].includes(results[2].data?.code));assert.ok(results[3].error===null||results[3].error?.code==='42501');
+   assert.equal(results[2].error,null);assert.ok(['decided','request_conflict'].includes(results[2].data?.code));if(results[2].data?.code==='decided'){assert.equal(results[2].data.status,'accepted');assert.equal(results[2].data.requestId,pending);}assert.ok(results[3].error===null||results[3].error?.code==='42501');
    assert.equal((await audits(flight)).length,1);assert.equal((await readFlight(flight)).status,'cancelled');
    assert.equal((await checked(privileged.from('flight_requests').select('*').eq('flight_id',flight))).filter(r=>['pending','accepted'].includes(r.status)).length,0);
    assert.ok((await checked(clients.requester.from('conversations').select('closed_at').eq('id',conversation).single())).closed_at);
    assert.equal((await rpc('requester','send_conversation_message',{p_conversation_id:conversation,p_message_id:randomUUID(),p_body:'After concurrent hide'})).error?.code,'42501');
+  });
+  await run('flight_moderation_page_native_fetched_and_participant_feedback',async()=>{
+   const native=await createFlight('PRIVATE'),fetched=await createFlight(),accepted=await request(native,'requester','accepted'),pending=await request(native,'pending'),conversation=await thread(accepted);
+   await checked(privileged.from('flights').update({notes:'<script>Owned post text</script>'}).eq('id',native));
+   let html=await page();assert.ok(html.includes('href="/admin/flights"'));assert.ok(html.includes('&lt;script&gt;Owned post text&lt;/script&gt;'));assert.ok(!html.includes('<script>Owned post text</script>'));
+   for(const label of ['owner','other','disabled','absent']){const denied=await page(label);assert.ok(!denied.includes('name="flight_id"')&&!denied.includes('Owned post text'));}
+   const result=await safe(await app.moderationPageAction(native,{}, {session:sessions.admin,transport:'native'}));assert.match(card(result,native),/Flight hidden/);assert.ok(!card(result,native).includes('name="reason"'));assert.ok(card(result,fetched).includes('name="reason"'),'Native state is isolated to target');
+   const sent=await safe(await app.moderationPageAction(fetched,{}, {session:sessions.admin}));assert.ok(sent.includes('"status":"hidden"'));html=await page();assert.ok(!card(html,fetched).includes('name="flight_id"'));
+   const owner=await safe(await app.request('/dashboard/flights/'+native,{session:sessions.owner}));assert.match(owner,/Flight hidden by an administrator/);assert.ok(!owner.includes('Owned UI safety review'));
+   for(const [label,id] of [['requester',accepted],['pending',pending],['owner',accepted]]){
+    const closed=await safe(await app.request('/dashboard/connections/'+id,{session:sessions[label]}));assert.match(closed,/This flight was hidden by an administrator/);assert.match(closed,/Request cancelled/);assert.ok(!closed.includes('Owned post text')||label==='owner');assert.ok(!closed.includes('Owned UI safety review'));assert.ok(!closed.includes('The posting pilot cancelled this flight.'));
+    if(label==='requester')assert.ok(closed.includes('/messages/'+conversation));
+   }
+   const hiddenDetail=await app.request('/dashboard/flights/'+native,{session:sessions.requester});assert.ok([200,404].includes(hiddenDetail.status));const hiddenBody=await safe(hiddenDetail);assert.ok(!hiddenBody.includes('Owned post text'));
+  });
+  await run('flight_moderation_page_uncertainty_paging_and_stale_admin',async()=>{
+   const extras=[];for(let n=0;n<52;n++)extras.push(await createFlight());
+   const first=await overview(),cursor=first.nextCursor;assert.ok(cursor);assert.equal(first.rows.length,50);assert.ok((await page()).includes('href="/admin/flights?after='+cursor+'"'));
+   const second=await overview('admin',cursor),target=second.rows.find(r=>extras.includes(r.id)).id;
+   assert.match(await page('admin',cursor),/First flight page/);assert.match(await page('admin','invalid'),/This flight page is unavailable/);assert.match(await page('admin','ffffffff-ffff-ffff-ffff-ffffffffffff'),/No more flights/);
+   const html=await page('admin',cursor);await mode('lost');try{const result=await safe(await app.moderationPageAction(target,{}, {session:sessions.admin,transport:'native',after:cursor,formHtml:html}));const row=card(result,target);assert.match(row,/Check flight status/);assert.ok(row.includes('name="after" value="'+cursor+'"'));assert.ok(!row.includes('name="reason"'));}finally{await mode('off');}
+   assert.ok(!card(await page('admin',cursor),target).includes('name="flight_id"'));
+   await mode('overview-malformed');try{const unavailable=await page();assert.match(unavailable,/Flight moderation temporarily unavailable/);assert.ok(!unavailable.includes('name="flight_id"'));}finally{await mode('off');}
+   const staleTarget=first.rows.find(r=>extras.includes(r.id)).id,stale=await page();await mode('disable-actor:'+accounts.admin.id);
+   try{const result=await safe(await app.moderationPageAction(staleTarget,{}, {session:sessions.admin,formHtml:stale}));assert.ok(!result.includes('"status":"hidden"'));assert.equal((await readFlight(staleTarget)).moderated_at,null);}finally{await mode('off');await stack.setMembership(accounts.admin.id,{role:'admin',status:'active'});}
   });
  }finally{
   await mode('off');
