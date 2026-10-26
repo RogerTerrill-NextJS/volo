@@ -16,3 +16,11 @@ An exact report UUID/payload retry confirms the original receipt, including afte
 - Route generation, TypeScript, focused ESLint and server-only import checks passed. Independent review found the timing window described above and confirmed the second receipt lookup addresses it. Owned fixtures were cleaned up.
 
 The full suite, unrelated SQL matrices and destructive upgrade run were not repeated under the MVP policy. CI and Netlify Deploy Preview verification remain separate and pending. No hosted migration application, accounts/data/email/settings changes or production publishing occurred.
+
+## CI follow-up — member pagination fixture
+
+The first PR run passed the build/unit and database jobs but failed `member_admin_page_uncertain_recovery_paging_and_stale_actor` in the shared Auth job before report intake ran. That scenario created 52 extra members, then fetched the first page to submit a stale-admin action for an original randomly ordered member. If that member landed on page two, the fixture threw `Owned member control missing` before reaching the authorization check.
+
+A deterministic local reproduction selected the known second-page target while retaining the first-page form and failed at that exact fixture lookup. The correction keeps that second-page target, reloads its form with the saved cursor and submits with the same cursor. It still disables the acting administrator immediately before the mutation and checks that the target remains active; no authorization assertion or product behavior was relaxed.
+
+With the correction, all 17 scenarios in the shared member/moderation/report runner passed (5 member, 7 moderation, 5 report), including the deterministic second-page stale-admin case. Focused ESLint and diff checks passed. The failing regression and final verification both used disposable owned local stacks; resources were cleaned up. No production code or hosted state changed in this follow-up. The pushed correction requires a fresh CI result; the original failed run is not treated as passing.
