@@ -9,7 +9,7 @@ export default function AccessState({ status,retryHref='/dashboard' }: { status:
       <h1 className="text-3xl font-semibold tracking-tight">
         {unavailable ? "Unable to verify access" : "Access denied"}
       </h1>
-      <p className="max-w-xl text-zinc-600 dark:text-zinc-400">
+      <p className="max-w-xl text-zinc-600">
         {unavailable
           ? "We cannot verify your access right now. Please try again."
           : "Your account does not currently have access to this workspace."}

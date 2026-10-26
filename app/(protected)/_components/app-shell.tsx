@@ -6,7 +6,7 @@ const navigationClass="inline-flex min-h-11 items-center rounded-lg px-2 py-2 un
 export default function AppShell({ children,isAdmin=false }: { children: React.ReactNode;isAdmin?:boolean }) {
   return (
     <ProtectedNavigation>
-      <header className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800">
+      <header className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-6">
         <span className="text-xl font-semibold tracking-tight">Volo</span>
         <nav aria-label="App navigation" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium">
           <Link href="/dashboard" prefetch={false} className={navigationClass}>

@@ -14,5 +14,5 @@ export default function LiveMessages({conversationId,viewerId}:{conversationId:s
   return()=>{window.removeEventListener('online',resume);window.removeEventListener('focus',resume);window.removeEventListener('offline',offline);window.removeEventListener('pagehide',leave);document.removeEventListener('visibilitychange',visible);void watcher.close();};
  },[conversationId,viewerId,router,clear]);
  const text={connecting:'Connecting live updates…',live:'Live updates connected.',reconnecting:'Live updates interrupted. Reconnecting… You can still refresh this conversation.',unavailable:'Live updates are temporarily unavailable. Refresh the conversation to check for messages.'}[status];
- return <p role="status" aria-live="polite" className="text-sm text-zinc-600 dark:text-zinc-400">{text}</p>;
+ return <p role="status" aria-live="polite" className="text-sm text-zinc-600">{text}</p>;
 }

@@ -25,12 +25,12 @@ export default async function AccountSetupPage({searchParams}:{searchParams:Prom
  const message=setupResultMessage(query.result);
  return <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 px-6 py-12 sm:py-16">
   <div className="space-y-3">
-   <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Volo</p>
+   <p className="text-sm font-medium text-zinc-600">Volo</p>
    <h1 className="text-3xl font-semibold tracking-tight">{status==='form'?'Complete your account':status==='unavailable'?'Setup is temporarily unavailable':'Invitation required'}</h1>
-   <p className="text-zinc-600 dark:text-zinc-400">{status==='form'?'Choose a password to finish setting up your invited account.':status==='unavailable'?'We could not check your invitation. Wait a moment, then try again.':'Open your invitation email to continue. If your setup session has ended, ask the person who invited you to renew your invitation.'}</p>
+   <p className="text-zinc-600">{status==='form'?'Choose a password to finish setting up your invited account.':status==='unavailable'?'We could not check your invitation. Wait a moment, then try again.':'Open your invitation email to continue. If your setup session has ended, ask the person who invited you to renew your invitation.'}</p>
   </div>
   {status==='form'&&csrf?<PasswordSetupForm csrf={csrf} message={message}/>:<>
-   {status==='unavailable'&&<a href="/account/setup" className="w-fit rounded-lg border border-zinc-300 px-4 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-4 dark:border-zinc-700">Try again</a>}
+   {status==='unavailable'&&<a href="/account/setup" className="w-fit rounded-lg border border-zinc-300 px-4 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-4">Try again</a>}
    <Link href="/" prefetch={false} className="w-fit text-sm font-medium underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">Back to home</Link>
   </>}
  </main>;

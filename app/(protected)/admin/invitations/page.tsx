@@ -15,18 +15,18 @@ export default async function InvitationsPage(){
  return <AppShell isAdmin>
   <header className="space-y-3">
    <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Invitations</h1>
-   <p className="text-zinc-600 dark:text-zinc-400">Latest 50 invitations, newest first. Accepted for sending does not confirm delivery.</p>
-   <p className="text-sm text-zinc-600 dark:text-zinc-400">Invitations do not expire with age. Renewing a provider link replaces the previous setup link; it does not extend invitation eligibility.</p>
+   <p className="text-zinc-600">Latest 50 invitations, newest first. Accepted for sending does not confirm delivery.</p>
+   <p className="text-sm text-zinc-600">Invitations do not expire with age. Renewing a provider link replaces the previous setup link; it does not extend invitation eligibility.</p>
   </header>
   <SendInvitationForm/>
-  <section aria-label="Invitation list" className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+  <section aria-label="Invitation list" className="rounded-2xl border border-zinc-200 bg-white p-6">
    {result.rows.length===0?<p>No invitations yet.</p>:<div className="overflow-x-auto">
     <table className="w-full text-left text-sm">
      <caption className="sr-only">Invitation status and current send outcome</caption>
-     <thead><tr className="border-b border-zinc-200 dark:border-zinc-800">
+     <thead><tr className="border-b border-zinc-200">
       {['Recipient','Invitation status','Send state','Last update (UTC)','Action'].map(label=><th key={label} scope="col" className="px-3 py-3 font-semibold">{label}</th>)}
      </tr></thead>
-     <tbody>{result.rows.map(row=><tr key={row.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-900">
+     <tbody>{result.rows.map(row=><tr key={row.id} className="border-b border-zinc-100 last:border-0">
       <td className="break-all px-3 py-4">{row.email}</td>
       <td className="px-3 py-4">{row.invitationStatus}</td>
       <td className="px-3 py-4">{row.sendStatus}</td>
@@ -35,7 +35,7 @@ export default async function InvitationsPage(){
      </tr>)}</tbody>
     </table>
    </div>}
-   {result.hasMore&&<p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Older invitations are not shown.</p>}
+   {result.hasMore&&<p className="mt-4 text-sm text-zinc-600">Older invitations are not shown.</p>}
   </section>
  </AppShell>;
 }

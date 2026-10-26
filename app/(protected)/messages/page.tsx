@@ -15,12 +15,12 @@ export default async function MessagesPage({searchParams}:{searchParams:Promise<
  return <AppShell isAdmin={access.member.role==='admin'}>
   <header className="space-y-3"><h1 className="text-3xl font-semibold tracking-tight">Messages</h1><p>Your private conversations from accepted flight requests.</p></header>
   {result.status==='unavailable'?<section role="alert" className="space-y-3"><h2 className="text-xl font-semibold">Conversations temporarily unavailable</h2><p>We could not load your conversations. Please try again.</p><form action="/messages" method="get"><button className={linkClass}>Try again</button></form></section>:result.status==='invalid'?<section className="space-y-3"><h2 className="text-xl font-semibold">This conversation page is unavailable</h2><Link href="/messages" prefetch={false} className={linkClass}>Back to latest conversations</Link></section>:<>
-   <p className="text-sm text-zinc-600 dark:text-zinc-400">Newest conversations first.</p>
-   {result.rows.length?<ul aria-label="Conversations" className="space-y-4">{result.rows.map(row=><li key={row.id} className="min-w-0 space-y-3 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] dark:border-zinc-800">
+   <p className="text-sm text-zinc-600">Newest conversations first.</p>
+   {result.rows.length?<ul aria-label="Conversations" className="space-y-4">{result.rows.map(row=><li key={row.id} className="min-w-0 space-y-3 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere]">
     <h2 className="text-xl font-semibold">{row.pilotName||'Pilot profile unavailable'}</h2>
     <p>{row.flight?`${row.flight.departure} → ${row.flight.destination}`:'Flight details are no longer available to this account.'}</p>
     {row.closed&&<p className="text-sm font-medium">Conversation closed · History retained</p>}
-    <p className="text-zinc-600 dark:text-zinc-400">{row.preview||'No messages yet.'}</p>
+    <p className="text-zinc-600">{row.preview||'No messages yet.'}</p>
     <p className="text-sm">Started <time dateTime={row.createdAt}>{new Intl.DateTimeFormat('en-US',{dateStyle:'medium',timeZone:'UTC'}).format(new Date(row.createdAt))} (UTC)</time></p>
     <Link href={`/messages/${row.id}`} prefetch={false} className={linkClass}>Open conversation<span className="sr-only"> with {row.pilotName||'pilot'}</span></Link>
     <Link href={`/dashboard/connections/${row.requestId}`} prefetch={false} className={linkClass}>View flight connection<span className="sr-only"> with {row.pilotName||'pilot'}</span></Link>
