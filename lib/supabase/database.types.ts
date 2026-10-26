@@ -36,6 +36,31 @@ isOneToOne: false
       referencedColumns: ["user_id"]
     }
                   ]
+                },"flight_moderation_audit": {
+                  Row: {
+                    "action": string,"actor_id": string,"created_at": string,"flight_id": string,"id": string,"reason": string
+                  }
+                  Insert: {
+                    "action"?: string,"actor_id": string,"created_at": string,"flight_id": string,"id"?: string,"reason": string
+                  }
+                  Update: {
+                    "action"?: string,"actor_id"?: string,"created_at"?: string,"flight_id"?: string,"id"?: string,"reason"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "flight_moderation_audit_actor_id_fkey"
+      columns: ["actor_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    },{
+      foreignKeyName: "flight_moderation_audit_flight_id_fkey"
+      columns: ["flight_id"]
+isOneToOne: true
+      referencedRelation: "flights"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"flight_recipients": {
                   Row: {
                     "added_at": string,"flight_id": string,"user_id": string
@@ -88,13 +113,13 @@ isOneToOne: false
                   ]
                 },"flights": {
                   Row: {
-                    "aircraft_description": string,"created_at": string,"departure_airport": string,"departure_at": string,"departure_local_date": string,"departure_timezone": string,"destination_airport": string,"id": string,"notes": string | null,"owner_id": string,"pilot_places": number,"status": Database["public"]['Enums']["flight_status"],"updated_at": string,"visibility": Database["public"]['Enums']["flight_visibility"]
+                    "aircraft_description": string,"created_at": string,"departure_airport": string,"departure_at": string,"departure_local_date": string,"departure_timezone": string,"destination_airport": string,"id": string,"moderated_at": string | null,"notes": string | null,"owner_id": string,"pilot_places": number,"status": Database["public"]['Enums']["flight_status"],"updated_at": string,"visibility": Database["public"]['Enums']["flight_visibility"]
                   }
                   Insert: {
-                    "aircraft_description": string,"created_at"?: string,"departure_airport": string,"departure_at": string,"departure_local_date": string,"departure_timezone": string,"destination_airport": string,"id"?: string,"notes"?: string | null,"owner_id"?: string,"pilot_places": number,"status"?: Database["public"]['Enums']["flight_status"],"updated_at"?: string,"visibility": Database["public"]['Enums']["flight_visibility"]
+                    "aircraft_description": string,"created_at"?: string,"departure_airport": string,"departure_at": string,"departure_local_date": string,"departure_timezone": string,"destination_airport": string,"id"?: string,"moderated_at"?: string | null,"notes"?: string | null,"owner_id"?: string,"pilot_places": number,"status"?: Database["public"]['Enums']["flight_status"],"updated_at"?: string,"visibility": Database["public"]['Enums']["flight_visibility"]
                   }
                   Update: {
-                    "aircraft_description"?: string,"created_at"?: string,"departure_airport"?: string,"departure_at"?: string,"departure_local_date"?: string,"departure_timezone"?: string,"destination_airport"?: string,"id"?: string,"notes"?: string | null,"owner_id"?: string,"pilot_places"?: number,"status"?: Database["public"]['Enums']["flight_status"],"updated_at"?: string,"visibility"?: Database["public"]['Enums']["flight_visibility"]
+                    "aircraft_description"?: string,"created_at"?: string,"departure_airport"?: string,"departure_at"?: string,"departure_local_date"?: string,"departure_timezone"?: string,"destination_airport"?: string,"id"?: string,"moderated_at"?: string | null,"notes"?: string | null,"owner_id"?: string,"pilot_places"?: number,"status"?: Database["public"]['Enums']["flight_status"],"updated_at"?: string,"visibility"?: Database["public"]['Enums']["flight_visibility"]
                   }
                   Relationships: [
                     {
@@ -316,6 +341,12 @@ isOneToOne: false
                            },
 "admin_disable_member":
 { Args: { "p_reason": string,"p_target_id": string }; Returns: Json
+                           },
+"admin_flight_overview":
+{ Args: { "p_after_flight_id"?: string }; Returns: Json
+                           },
+"admin_hide_flight":
+{ Args: { "p_flight_id": string,"p_reason": string }; Returns: Json
                            },
 "admin_member_overview":
 { Args: { "p_after_user_id"?: string }; Returns: Json

@@ -88,7 +88,7 @@ jobs:
       - name: Verify protected profile photos against real Storage
         timeout-minutes: 15
         run: npm run test:profile-photos
-      - name: Verify guarded member administration
+      - name: Verify guarded member and flight administration
         timeout-minutes: 10
         run: npm run test:members:integration
       - name: Stop only the owned member admin stack
