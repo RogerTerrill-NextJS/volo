@@ -145,7 +145,17 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
         const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned admin race'})});
         if(!changed.ok)throw Error('Owned admin race setup rejected');
       }
+      if(url.pathname==='/rest/v1/rpc/admin_hide_flight'&&globalThis.__voloModerationMode?.startsWith('disable-actor:')){
+        const subject=globalThis.__voloModerationMode.slice(14);globalThis.__voloModerationMode='off';
+        const changed=await original(${JSON.stringify(stack.apiUrl+'/rest/v1/memberships?user_id=eq.')}+subject,{method:'PATCH',headers:{apikey:${JSON.stringify(stack.serverSecret)},Authorization:${JSON.stringify('Bearer '+stack.serverSecret)},'content-type':'application/json'},body:JSON.stringify({status:'disabled',disabled_at:new Date().toISOString(),disabled_reason:'Owned moderation race'})});
+        if(!changed.ok)throw Error('Owned moderation race rejected');
+      }
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/admin_hide_flight'){
+        if(globalThis.__voloModerationMode==='lost'){await response.text();throw Error('Owned moderation response lost');}
+        if(globalThis.__voloModerationMode==='malformed'){await response.text();return Response.json({code:'hidden',flightId:'private-moderation-canary'});}
+      }
+      if(url.pathname==='/rest/v1/rpc/admin_flight_overview'&&globalThis.__voloModerationMode==='overview-malformed'){await response.text();return Response.json([{messages:'private-moderation-canary'}]);}
       if(url.pathname==='/rest/v1/rpc/admin_disable_member'){
         if(globalThis.__voloMemberAdminMode==='lost'){await response.text();throw Error('Owned disable response lost');}
         if(globalThis.__voloMemberAdminMode==='malformed'){await response.text();return Response.json({code:'disabled',userId:'private-member-admin-canary'});}
@@ -238,6 +248,10 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
     await put('app/form.tsx',`'use client';import {useActionState} from 'react';export default function Form({action,label}:{action:(previous:unknown,form:FormData)=>Promise<unknown>;label:string}){const [state,submit]=useActionState(action,null);return <form action={submit}><input name="value" defaultValue="valid"/><button>{label}</button><output>{JSON.stringify(state)}</output></form>;}`);
     await put('app/forms/page.tsx',`import {mutate,adminMutate} from '../actions';import Form from '../form';export default function Page(){return <main><Form action={mutate} label="Write"/><Form action={adminMutate} label="Admin"/></main>}`);
     if(memberAdmin){
+      await put('app/api/moderation-control/route.ts',`type State=typeof globalThis & {__voloModerationMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','overview-malformed'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloModerationMode=mode;return Response.json({ok:true});}`);
+      await put('app/admin/moderation-fixture/page.tsx',`import {hideFlight} from '../../../lib/flights/moderation-actions';import Form from '../../form';export default function Page(){return <main><Form action={hideFlight} label="Hide flight"/></main>}`);
+      await put('app/api/moderation-overview/route.ts',`import {listAdminFlights} from '../../../lib/flights/moderation-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const value=await listAdminFlights(new URL(request.url).searchParams.get('after')??undefined);const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(value,{headers});}`);
+      await put('app/api/moderation-feed/route.ts',`import {listUpcomingFlights} from '../../../lib/flights/feed-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(){const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(await listUpcomingFlights(),{headers});}`);
       await put('app/api/member-admin-control/route.ts',`type State=typeof globalThis & {__voloMemberAdminMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','overview-malformed','delay','action-lost'].includes(mode)&&!/^disable-actor:[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMemberAdminMode=mode;return Response.json({ok:true});}`);
       const memberActionPath=path.join(directory,'app/(protected)/admin/members/actions.ts');
       await writeFile(memberActionPath,(await readFile(memberActionPath,'utf8')).replace(" if(state.status==='disabled')refresh();"," if(state.status==='disabled'&&(globalThis as typeof globalThis & {__voloMemberAdminMode?:string}).__voloMemberAdminMode==='action-lost')throw Error('Owned member action response lost');\n if(state.status==='disabled')refresh();"));
@@ -320,6 +334,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
         return invokeFlightAction(page?'/dashboard/flights/new':'/dashboard/flight-create-fixture',fields,settings);
       },
       sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
+      hideFlight(fields,settings={}){return invokeFlightAction('/admin/moderation-fixture',fields,settings);},
       disableMember(fields,settings={}){return invokeFlightAction('/admin/member-fixture',fields,settings);},
       memberPageAction(id,fields,{after,fromTargetId=id,...settings}={}){return invokeFlightAction('/admin/members'+(after?'?after='+after:''),{target_id:id,reason:'Owned UI safety review',confirmation:'disable',...fields},{...settings,formTargetId:fromTargetId});},
       connectionPageAction(id,fields,{fromRequestId=id,...settings}={}){return invokeFlightAction('/dashboard/connections/'+fromRequestId,{request_id:id,...fields},{...settings,formRequestId:fromRequestId});},
