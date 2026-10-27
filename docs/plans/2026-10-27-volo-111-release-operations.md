@@ -1,0 +1,7 @@
+# VOLO-111 — Release operations and non-publishing rehearsal
+
+Execute inline from merged VOLO-230 (`d51c9df`). Ticket VOLO-111 / parent VOLO-93 calls for one operational checklist, frontend rollback rehearsal and owner-led usage review. It does not authorize production publication, hosted data/Auth/email/settings changes or database recovery (VOLO-112).
+
+1. Read existing release/deployment/environment/cache runbooks and current official Netlify rollback/credit/usage and Supabase compute documentation. Inspect the existing Netlify project read-only; record the published pointer/lock, a historical artifact's identity/permalink/Publish control and public health body. Stop before Publish, unlock, trigger/retry, configuration or billing changes; confirm the published pointer/lock afterward.
+2. Make `docs/release-workflow.md` the short operational entry point: exact batch/CI/preview and backend compatibility, deliberate locked publication, post-release smoke, existing-artifact frontend rollback, Roger's usage checks/pause decision and a record template. Remove stale credit balance/quota guidance. Keep historical deployment facts dated and link the current checklist rather than duplicating it.
+3. Record factual rehearsal results/limits in `docs/volo-111-verification.md`, independently review the documentation, check local links/diff and commit the reviewable change. No application tests for documentation-only work; no hosted production rehearsal or new service/environment.

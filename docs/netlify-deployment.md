@@ -1,6 +1,6 @@
 # Netlify deployment
 
-VOLO-108 verification, October 6, 2026.
+Historical VOLO-108 verification, October 6, 2026. Use the [release, rollback and usage checklist](release-workflow.md) for current operations; the dated build/HTTP evidence below does not identify the currently published frontend.
 
 ## Repository and build settings
 
@@ -77,13 +77,4 @@ the documentation commit recording this result follows the tested revision.
 
 ## Verify the next deployment
 
-1. Open a focused pull request into `main` and wait for CI and its Netlify preview.
-2. Confirm the deploy matches the pull request's latest commit, uses the Next.js
-   runtime, and packages the server handler successfully.
-3. Check the preview homepage, direct `/dashboard` access, and `/api/health`.
-4. Record the preview URL and result in the ticket before releasing through the
-   [release workflow](release-workflow.md).
-
-See [Deploy Preview routing verification](preview-verification.md) for VOLO-109's
-HTTP suite, browser checklist, and recorded results. VOLO-110 covers sessions,
-callbacks, and private caching.
+Follow the single [release checklist](release-workflow.md), including all current CI jobs, exact preview/main commit matching, shared-Supabase write boundaries, locked batch publication and post-release evidence. Use [Deploy Preview routing verification](preview-verification.md) and [private cache verification](private-caching.md) for detailed checks. The [VOLO-111 non-publishing rehearsal](volo-111-verification.md) records observed controls and their limits; frontend rollback does not recover database state.
