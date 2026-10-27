@@ -12,11 +12,11 @@ import { startAuthFixture, seedSession, cookieHeader, fixtureKey } from "./helpe
 const { unstable_doesMiddlewareMatch: unstable_doesProxyMatch } = nextTesting;
 
 test("Proxy matcher covers application requests and excludes exact public assets", () => {
-  for (const url of ["/", "/dashboard", "/dashboard/report.csv", "/manifest.webmanifest/private", "/manifest.webmanifest-extra", "/icon.svg/private", "/pwa/icon-192.png/private", "/pwa/private.png", "/apple-icon.png/private", "/auth/confirm/child", "/auth/confirm-extra", "/login", "/api/private", "/api/health-extra", "/file.svg/private", "/_next/data/build/dashboard.json"]) {
+  for (const url of ["/", "/dashboard", "/dashboard/report.csv", "/sw.js/private", "/sw.js-extra", "/manifest.webmanifest/private", "/manifest.webmanifest-extra", "/icon.svg/private", "/pwa/icon-192.png/private", "/pwa/private.png", "/apple-icon.png/private", "/auth/confirm/child", "/auth/confirm-extra", "/login", "/api/private", "/api/health-extra", "/file.svg/private", "/_next/data/build/dashboard.json"]) {
     for(const headers of [{},{rsc:"1"},{"next-router-prefetch":"1"}])
       assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url,headers}),true,url);
   }
-  for (const url of ["/auth/reset-password", "/auth/reset-password/", "/auth/recovery", "/auth/recovery/", "/auth/logout", "/auth/logout/", "/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/manifest.webmanifest","/icon.svg","/apple-icon.png","/pwa/icon-192.png","/pwa/icon-512.png","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
+  for (const url of ["/auth/reset-password", "/auth/reset-password/", "/auth/recovery", "/auth/recovery/", "/auth/logout", "/auth/logout/", "/auth/login", "/auth/login/", "/auth/confirm", "/auth/confirm/", "/_next/static/app.js","/_next/image","/api/health","/api/health/","/sw.js","/manifest.webmanifest","/icon.svg","/apple-icon.png","/pwa/icon-192.png","/pwa/icon-512.png","/favicon.ico","/robots.txt","/sitemap.xml","/file.svg","/globe.svg","/next.svg","/vercel.svg","/window.svg"])
     assert.equal(unstable_doesProxyMatch({config,nextConfig:{},url}),false,url);
 });
 
