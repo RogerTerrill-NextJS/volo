@@ -12,6 +12,7 @@ import {verifyFlightCreation} from '../tests/helpers/flight-create-cases.mjs';
 import {verifyFlightInterest} from '../tests/helpers/flight-interest-cases.mjs';
 import {verifyFlightModeration} from '../tests/helpers/flight-moderation-cases.mjs';
 import {verifyReportIntake} from '../tests/helpers/report-intake-cases.mjs';
+import {verifyDatabaseRecovery} from '../tests/helpers/database-recovery-cases.mjs';
 import {verifyFlightOutcomes} from '../tests/helpers/flight-outcome-cases.mjs';
 import {verifyAccountDeletion} from '../tests/helpers/account-deletion-cases.mjs';
 import {verifyMemberAdmin} from '../tests/helpers/member-admin-cases.mjs';
@@ -34,10 +35,16 @@ function privatePolicy(response){
 }
 function assertClean(text){stack.assertNoCredentialLeaks(text);for(const session of sessions)session.assertNoCredentialLeaks(text);for(const password of invitationPasswords)check(!text.includes(password),'invitation password must not leak');}
 try{
-  if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
+  if(process.argv.includes('--cleanup')){
+    const targets=[cleanupOwnedStack(root)];
+    if(process.argv.includes('--recovery'))targets.push(cleanupOwnedStack(root,{stateFile:path.join(evidenceDirectory(root),'recovery-owned-target.json')}));
+    const cleanup=await Promise.allSettled(targets);if(cleanup.some(result=>result.status==='rejected'))throw Error('Owned integration cleanup failed');
+  }else{
     const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
     stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal,applicationOrigin});
-    if(process.argv.includes('--flight-outcomes')){
+    if(process.argv.includes('--recovery')){
+      setupStage='database-recovery';await verifyDatabaseRecovery({source:stack,repositoryRoot:root,signal:cancellation.signal,scenario});
+    }else if(process.argv.includes('--flight-outcomes')){
       setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,memberAdmin:true,flights:true});
       setupStage='flight-outcomes';await verifyFlightOutcomes({stack,app,scenario});
     }else if(process.argv.includes('--account-deletion')){
