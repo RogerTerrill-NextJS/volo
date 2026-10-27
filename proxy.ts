@@ -54,5 +54,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!auth/confirm/?$|auth/login/?$|auth/logout/?$|auth/recovery/?$|auth/reset-password/?$|account/complete/?$|_next/static(?:/|$)|_next/image(?:/|$)|api/health/?$|(?:manifest\\.webmanifest|icon\\.svg|apple-icon\\.png|pwa/icon-(?:192|512)\\.png|favicon\\.ico|robots\\.txt|sitemap\\.xml|file\\.svg|globe\\.svg|next\\.svg|vercel\\.svg|window\\.svg)$).*)"],
+  matcher: ["/((?!auth/confirm/?$|auth/login/?$|auth/logout/?$|auth/recovery/?$|auth/reset-password/?$|account/complete/?$|_next/static(?:/|$)|_next/image(?:/|$)|api/health/?$|(?:sw\\.js|manifest\\.webmanifest|icon\\.svg|apple-icon\\.png|pwa/icon-(?:192|512)\\.png|favicon\\.ico|robots\\.txt|sitemap\\.xml|file\\.svg|globe\\.svg|next\\.svg|vercel\\.svg|window\\.svg)$).*)"],
 };

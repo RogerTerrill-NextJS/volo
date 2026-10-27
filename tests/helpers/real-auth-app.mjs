@@ -233,6 +233,9 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
       return response;
     };}`);
     if(browser){
+      await cp(path.join(root,'app/_components'),path.join(directory,'app/_components'),{recursive:true});
+      await cp(path.join(root,'public'),path.join(directory,'public'),{recursive:true});
+      for(const name of ['manifest.ts','icon.svg','apple-icon.png','favicon.ico'])await cp(path.join(root,'app',name),path.join(directory,'app',name));
       await cp(path.join(root,'app/globals.css'),path.join(directory,'app/globals.css'));
       await cp(path.join(root,'postcss.config.mjs'),path.join(directory,'postcss.config.mjs'));
     }

@@ -49,7 +49,8 @@ try {
   await cp(path.join(root,"lib"),path.join(fixture,"lib"),{recursive:true});
   await cp(path.join(root,"tsconfig.json"),path.join(fixture,"tsconfig.json"));
   await put("package.json",JSON.stringify({private:true,type:"module"}));
-  await put("next.config.mjs",`export default {outputFileTracingRoot:${JSON.stringify(fixture)}};`);
+  await put('next.config.ts',(await readFile(path.join(root,'next.config.ts'),'utf8'))
+    .replace('const nextConfig: NextConfig = {',`const nextConfig: NextConfig = {outputFileTracingRoot:${JSON.stringify(fixture)},`));
   const proxySource = await readFile(path.join(root,"proxy.ts"),"utf8");
   // Add a fixture-only replacement branch to the real entry; retain its exact matcher/helper.
   await put("proxy.ts",proxySource.replace(
@@ -68,6 +69,8 @@ try {
   for(const name of ['manifest.ts','icon.svg','apple-icon.png','favicon.ico'])
     await cp(path.join(root,'app',name),path.join(fixture,'app',name));
   await cp(path.join(root,'public/pwa'),path.join(fixture,'public/pwa'),{recursive:true});
+  await cp(path.join(root,'app/_components'),path.join(fixture,'app/_components'),{recursive:true});
+  await cp(path.join(root,'public/sw.js'),path.join(fixture,'public/sw.js'));
   await put("app/page.jsx",`import {createServerSupabaseClient} from '../lib/supabase/server';
     export default async function Page(){const client=await createServerSupabaseClient({cookieMode:'read-only'});
     const {data}=await client.auth.getUser();return <p>{'fictional-user:'+(data.user?.id||'anonymous')}</p>;}`);
@@ -158,7 +161,14 @@ try {
   for(const route of ["/auth/confirm","/api/health","/file.svg"])assert.equal((await request(route,malformed)).status,200);
   assert.equal(auth.calls.length,anonymousBefore);
   console.log("PASS: invalid sessions denied; scoped cleanup preserves PKCE; anonymous/public/asset traffic skips Auth");
-  const assets=['/manifest.webmanifest','/icon.svg','/apple-icon.png','/pwa/icon-192.png','/pwa/icon-512.png','/favicon.ico'];
+  const assets=['/sw.js','/manifest.webmanifest','/icon.svg','/apple-icon.png','/pwa/icon-192.png','/pwa/icon-512.png','/favicon.ico'];
+  const worker=await request('/sw.js');assert.equal(worker.status,200);
+  assert.equal(await worker.text(),await readFile(path.join(root,'public/sw.js'),'utf8'));
+  assert.match(worker.headers.get('content-type'),/application\/javascript/);
+  assert.match(worker.headers.get('cache-control'),/no-store/);
+  for(const header of ['cdn-cache-control','netlify-cdn-cache-control'])assert.equal(worker.headers.get(header),'no-store');
+  assert.equal(worker.headers.get('x-content-type-options'),'nosniff');
+  assert.match(worker.headers.get('content-security-policy'),/connect-src 'self'/);
   const metadata=await (await request('/')).text();
   assert.match(metadata,/<link rel="manifest" href="\/manifest.webmanifest"/);
   assert.match(metadata,/<link rel="apple-touch-icon"[^>]*href="\/apple-icon.png/);
@@ -197,6 +207,12 @@ try {
     const count=auth.calls.length;await delay(250);assert.equal(auth.calls.length,count,"No detached SDK retry");
     for(const route of ["/api/health","/file.svg"])assert.equal((await request(route,jar)).status,200);
     assert.equal(auth.calls.length,count);
+  }
+  if(process.env.VOLO_PROXY_BROWSER==='1'){
+    await writeFile('/tmp/volo-225-browser.json',JSON.stringify({origin}),{mode:0o600});
+    console.log('Owned browser fixture ready');
+    while(true){try{await readFile('/tmp/volo-225-browser-done');break;}catch{await delay(250);}}
+    await rm('/tmp/volo-225-browser.json',{force:true});
   }
   assertClean(output,"process output");assert.ok(!output.includes("unhandledRejection"));
   assert.ok(auth.calls.every(call=>["/auth/v1/user","/auth/v1/token"].includes(call.path)));
