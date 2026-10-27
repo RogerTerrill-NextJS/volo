@@ -2,6 +2,8 @@
 
 VOLO uses manual report intake and the existing founder-admin controls during beta. The founder explicitly chose reports and founder-admin handling for the MVP; personal blocking is not part of this flow. There is no case-management engine, automatic moderation, report resolution state or report-triggered notification. Check `/admin/reports` regularly as part of beta operations; submission alone does not alert another service or person.
 
+For general product feedback, bug reports and help, use the [beta feedback process](beta-feedback.md). Contextual pilot/flight/message concerns continue through this report procedure.
+
 ## Intake and review
 
 1. Sign in with your current active administrator membership and open **Reports** in app navigation (`/admin/reports`). The list is ordered by report UUID, not received time. Follow **Next reports** to review all pages; each page contains at most 50 records. There is no unread marker or assigned queue.
