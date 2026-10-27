@@ -1,0 +1,7 @@
+# VOLO-230 — Existing MVP funnel verification
+
+Execute inline from merged VOLO-229 (`203af0b`). VOLO-230 / VOLO-96 verifies the existing VOLO-88 report and participant outcome source; it does not add product behavior, a dashboard, events or another pipeline. Preserve unrelated local changes.
+
+1. Extend the existing `supabase/tests/database/mvp_metrics.test.sql` fixture through participant outcomes. Verify acceptance/messaging with zero outcome responses, one Yes, conflicting responses, both Yes, exact retries, corrections and a second accepted request for the same pilot pair. Assert the full report snapshot against the fixture baseline so seeded/shared records remain included. Reuse existing security assertions.
+2. Run this contract with and without fictional seeds in one owned disposable local project. Run the existing outcome SQL contract and outcome/metrics units. Reuse the existing real-Auth outcome scenarios for compiled report/native/fetched application evidence; strengthen stage-count/render checks only where needed. No hosted operations or extra test runner in the repository.
+3. Document source definitions, representative expected deltas, gauge/history/denominator limits, directional/uncollected browsing signals and exact evidence. Independently review the changed test and interpretation; verify local links/lint/diff, clean up owned resources, commit/push and create/attach the requested PR. No application change or production release is planned.
