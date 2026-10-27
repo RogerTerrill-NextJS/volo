@@ -39,7 +39,7 @@ function ownership() {
   assert.equal(run('docker',['inspect','--format','{{ index .Config.Labels "com.supabase.cli.project" }}',container],{quiet:true}),'volo','Unexpected database owner');
   assert.equal(sql('show server_version_num;').slice(0,2),'17','PostgreSQL 17 required');
   const versions=JSON.parse(sql('select coalesce(json_agg(version order by version),\'[]\'::json) from supabase_migrations.schema_migrations;'));
-  assert.ok(versions.length>0 && versions.every(v=>['20261006040000','20261008010000','20261008020000','20261009010000','20261009020000','20261009030000','20261009040000','20261010010000','20261011010000','20261011020000','20261011030000','20261011040000','20261019010000','20261019020000','20261019030000','20261020010000','20261020020000','20261020030000','20261021010000','20261022010000','20261022020000','20261023010000','20261024010000','20261024020000','20261025010000','20261025020000','20261026010000','20261026020000','20261027010000','20261028010000','20261029010000','20261030010000','20261031010000','20261101010000','20261102010000','20261103010000','20261104010000'].includes(v)),'Unexpected migration history');
+  assert.ok(versions.length>0 && versions.every(v=>['20261006040000','20261008010000','20261008020000','20261009010000','20261009020000','20261009030000','20261009040000','20261010010000','20261011010000','20261011020000','20261011030000','20261011040000','20261019010000','20261019020000','20261019030000','20261020010000','20261020020000','20261020030000','20261021010000','20261022010000','20261022020000','20261023010000','20261024010000','20261024020000','20261025010000','20261025020000','20261026010000','20261026020000','20261027010000','20261028010000','20261029010000','20261030010000','20261031010000','20261101010000','20261102010000','20261103010000','20261104010000','20261105010000'].includes(v)),'Unexpected migration history');
 }
 ownership();
 run(process.execPath,[cli,'db','reset','--local','--version','20261006040000','--yes']);
@@ -49,7 +49,9 @@ assert.equal(sql("select to_regclass('public.invitations') is null and to_regcla
 assert.equal(sql('select count(*) from public.memberships;'),'3');
 assert.equal(sql('select count(*) from auth.users;'),'3');
 const snapshotQuery=`select json_build_object(
- 'memberships',(select json_agg(m order by user_id) from public.memberships m),
+ -- Compare fields that exist in the historical schema; new columns are checked separately.
+ 'memberships',(select json_agg(m order by user_id) from
+   (select user_id,role,status,created_at,disabled_at,disabled_reason from public.memberships) m),
  'auth',(select json_agg(u order by id) from (select id,email,aud,role,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at from auth.users) u));`;
 const before=sql(snapshotQuery);
 const baseline=JSON.parse(sql("select json_agg(version order by version) from supabase_migrations.schema_migrations;"));
@@ -57,8 +59,9 @@ assert.deepEqual(baseline,['20261006040000']);
 console.log('Owned PostgreSQL 17 prior schema and three fictional fixtures confirmed');
 run(process.execPath,[cli,'db','push','--local','--skip-vault','--yes']);
 assert.equal(sql(snapshotQuery),before,'Upgrade changed existing memberships or Auth fixture fields');
+assert.equal(sql('select count(*)=3 and bool_and(deletion_started_at is null and deleted_at is null) from public.memberships;'),'t','Upgrade marked an existing fixture for deletion');
 assert.equal(sql("select to_regclass('public.invitations') is not null and to_regclass('public.invitation_send_attempts') is not null;"),'t');
-assert.deepEqual(JSON.parse(sql('select json_agg(version order by version) from supabase_migrations.schema_migrations;')),['20261006040000','20261008010000','20261008020000','20261009010000','20261009020000','20261009030000','20261009040000','20261010010000','20261011010000','20261011020000','20261011030000','20261011040000','20261019010000','20261019020000','20261019030000','20261020010000','20261020020000','20261020030000','20261021010000','20261022010000','20261022020000','20261023010000','20261024010000','20261024020000','20261025010000','20261025020000','20261026010000','20261026020000','20261027010000','20261028010000','20261029010000','20261030010000','20261031010000','20261101010000','20261102010000','20261103010000','20261104010000']);
+assert.deepEqual(JSON.parse(sql('select json_agg(version order by version) from supabase_migrations.schema_migrations;')),['20261006040000','20261008010000','20261008020000','20261009010000','20261009020000','20261009030000','20261009040000','20261010010000','20261011010000','20261011020000','20261011030000','20261011040000','20261019010000','20261019020000','20261019030000','20261020010000','20261020020000','20261020030000','20261021010000','20261022010000','20261022020000','20261023010000','20261024010000','20261024020000','20261025010000','20261025020000','20261026010000','20261026020000','20261027010000','20261028010000','20261029010000','20261030010000','20261031010000','20261101010000','20261102010000','20261103010000','20261104010000','20261105010000']);
 run(process.execPath,[cli,'test','db','--local']);
 console.log('Prior-schema upgrade, fixture preservation and database regressions passed');
 

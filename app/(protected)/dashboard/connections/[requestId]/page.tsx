@@ -36,6 +36,7 @@ export default async function ConnectionPage({params}:{params:Promise<{requestId
    </header>
    <section aria-labelledby="closed-request-history" className="min-w-0 space-y-4 rounded-2xl border border-zinc-200 p-5 [overflow-wrap:anywhere] sm:p-8">
     <h2 id="closed-request-history" className="text-2xl font-semibold">Request history</h2>
+    {result.deletedPilot&&<p>Connected pilot: Deleted pilot</p>}
     <p>{history.isOwner?'You are the posting pilot.':'You are the joining pilot.'}</p>
     <h3 className="text-lg font-semibold">Introduction</h3><p className="whitespace-pre-line">{history.note||'No introduction provided.'}</p>
    </section>

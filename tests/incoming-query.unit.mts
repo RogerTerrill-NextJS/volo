@@ -47,3 +47,7 @@ test('requester profile uses only permitted presentation fields and denial disca
  assert.equal(timedOut.status,'authorized');if(timedOut.status==='authorized')assert.equal(timedOut.rows[0].pilot,null);
  assert.deepEqual(await listIncomingRequests(flight,null,{...ports(),readPilot:async()=>({status:'authorized',profile:{...profile,user_id:requester}})}),{status:'unavailable'});
 });
+test('deleted requester label does not preserve an approval revoked during lookup',async()=>{
+ let revoked=false;
+ assert.deepEqual(await listIncomingRequests(flight,null,{...ports(),readDeleted:async()=>{revoked=true;return true;},access:async()=>revoked?{status:'forbidden'}:access}),{status:'forbidden'});
+});

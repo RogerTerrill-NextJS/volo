@@ -92,3 +92,10 @@ External primary references checked 2026-10-26: [Supabase deleteUser](https://su
 ## VOLO-226 verification
 
 The schema/source inventory and all local Markdown links were checked; `git diff --check` passed. Independent review approved this documentation-only contract without material findings. Application, SQL and destructive Auth/Storage tests were not run because no executable behavior changed. Their required cases and release gates are listed above for VOLO-227. No hosted operation was performed.
+
+
+## VOLO-227 implementation handoff
+
+The implementation selects supported irreversible Auth soft deletion, proved with owned local Auth accounts, preserving the structural UUID rather than cascading shared data. The founder [operator runbook](account-deletion-operations.md) provides an authorized read-only impact preview, explicit target-confirmed begin and bounded resumable steps. New execution remains default-off until actual 60-day provider/backup evidence is recorded by a separately authorized operation. Database retention uses 1,440 elapsed hours (60 UTC days), independent of a caller’s daylight-saving timezone.
+
+Retention minimizes report reason text while preserving reference evidence about other pilots. After a departing pilot’s deadline, new reports about their retained targets use the same canonical placeholder before receipt comparisons, preventing expired personal reason payload from being recreated. The form discloses this reference-only behavior. Shared history remains pseudonymous and subject to existing authorization; provider expiration and production erasure are not inferred from local checks.

@@ -1,11 +1,12 @@
 import 'server-only';
 import type {AccessResult} from '../auth/access.ts';
 import type {DetailFlight,FlightDetailResult} from './detail-query.ts';
-export type ClosedConnectionPorts={access:()=>Promise<AccessResult>;read:(id:string)=>Promise<unknown>;flight:(id:string)=>Promise<FlightDetailResult>};
+export type ClosedConnectionPorts={deleted?:(id:string)=>Promise<boolean>;access:()=>Promise<AccessResult>;read:(id:string)=>Promise<unknown>;flight:(id:string)=>Promise<FlightDetailResult>};
 type History={requestId:string;flightId:string;requesterId:string;status:'cancelled'|'withdrawn';note:string|null;isOwner:boolean};
-export type ClosedConnectionResult={status:'closed';history:History;flight:DetailFlight|null}|{status:'missing'|'unavailable'|'forbidden'|'unauthenticated'};
+export type ClosedConnectionResult={status:'closed';deletedPilot?:boolean;history:History;flight:DetailFlight|null}|{status:'missing'|'unavailable'|'forbidden'|'unauthenticated'};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 function createPorts():ClosedConnectionPorts{return {
+ deleted:async id=>(await import('../deletion/labels.ts')).requestHasDeletedPilot(id),
  access:async()=>(await import('../auth/access.ts')).getAccess(),
  flight:async id=>(await import('./detail-query.ts')).getFlightDetail(id),
  async read(id){
@@ -40,11 +41,12 @@ export async function getClosedConnection(id:unknown,ports:ClosedConnectionPorts
   // Flight/profile reads may be slow; confirm closure after their last await.
   const current=project(await ports.read(target),target,viewer);
   if(!current||JSON.stringify(current)!==JSON.stringify(history))return {status:'missing'};
+  const deletedPilot=await ports.deleted?.(target);
   const after=await ports.access();
   if(after.status!=='authorized')return {status:after.status};
   if(after.member.userId!==viewer)return {status:'forbidden'};
   if(detail.status!=='authorized'&&detail.status!=='missing')return {status:detail.status};
   if((detail.status==='authorized'&&!permitted(detail))||(history.isOwner&&!permitted(detail)))return {status:'missing'};
-  return {status:'closed',history:current,flight:detail.status==='authorized'?detail.flight:null};
+  return {status:'closed',...(deletedPilot?{deletedPilot:true}:{}),history:current,flight:detail.status==='authorized'?detail.flight:null};
  }catch{return {status:'unavailable'};}
 }
