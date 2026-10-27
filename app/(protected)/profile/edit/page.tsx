@@ -23,6 +23,7 @@ export default async function EditProfilePage(){
   {result.status==='unavailable'&&<a href="/profile/edit" className="w-fit underline underline-offset-4">Try again</a>}
   {result.status==='complete'&&<ProfilePhotoControls userId={access.member.userId} displayName={result.profile.display_name} initialAvailable={result.photoAvailable}/>}
   <ProfileForm unavailable={result.status==='unavailable'} initial={{revision:0,values:result.status==='complete'?profileFormValues(result.profile):{},fieldErrors:{},message:null,reload:false}} save={saveProfile} permalink="/profile/edit" submitLabel="Save profile"/>
+  <section className="max-w-xl space-y-3"><h2 className="text-xl font-semibold">Request account deletion</h2><p>Contact a founder through your agreed private support channel. A founder verifies your request before processing it. Shared flight, request and message history remains available to the other authorized pilot under “Deleted pilot”; your profile, photos and login access are removed separately.</p></section>
   <Link href="/dashboard" prefetch={false} className="w-fit underline underline-offset-4">Back to dashboard</Link>
  </AppShell>;
 }

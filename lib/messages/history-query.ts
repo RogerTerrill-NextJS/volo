@@ -4,12 +4,12 @@ import type {ConnectionResult} from '../flights/connection-query.ts';
 import {messageUuid,messageInstant,validPersistedMessageBody,projectMessageThread} from './validation.ts';
 export type HistoryCursor={createdAt:string;id:string};
 export type HistoryMessage={id:string;senderId:string;body:string;createdAt:string};
-export type HistoryPorts={access:()=>Promise<AccessResult>;thread:(id:string)=>Promise<unknown>;messages:(id:string,before:HistoryCursor|null)=>Promise<unknown>;connection:(request:string)=>Promise<ConnectionResult>};
-export type HistoryResult={status:'authorized';conversation:{id:string;requestId:string;counterpartId:string;closed:boolean};messages:HistoryMessage[];olderCursor:string|null;sendStatus:'available'|'closed'|'unavailable'}|{[S in 'missing'|'invalid'|'unauthenticated'|'forbidden'|'unavailable']:{status:S}}['missing'|'invalid'|'unauthenticated'|'forbidden'|'unavailable'];
+export type HistoryPorts={deleted?:(id:string)=>Promise<boolean>;access:()=>Promise<AccessResult>;thread:(id:string)=>Promise<unknown>;messages:(id:string,before:HistoryCursor|null)=>Promise<unknown>;connection:(request:string)=>Promise<ConnectionResult>};
+export type HistoryResult={status:'authorized';deletedPilot?:boolean;conversation:{id:string;requestId:string;counterpartId:string;closed:boolean};messages:HistoryMessage[];olderCursor:string|null;sendStatus:'available'|'closed'|'unavailable'}|{[S in 'missing'|'invalid'|'unauthenticated'|'forbidden'|'unavailable']:{status:S}}['missing'|'invalid'|'unauthenticated'|'forbidden'|'unavailable'];
 const fail=()=>{throw Error('Message history unavailable');};
 function createPorts():HistoryPorts{
  const client=()=>import('../flights/client.ts').then(m=>m.flightMutationClient());
- return {access:async()=>(await import('../auth/access.ts')).getAccess(),connection:async request=>(await import('../flights/connection-query.ts')).getFlightConnection(request),
+ return {deleted:async id=>(await import('../deletion/labels.ts')).conversationHasDeletedPilot(id),access:async()=>(await import('../auth/access.ts')).getAccess(),connection:async request=>(await import('../flights/connection-query.ts')).getFlightConnection(request),
   async thread(id){const r=await(await client()).from('conversations').select('id,flight_request_id,owner_id,requester_id,created_at,closed_at').eq('id',id).retry(false).maybeSingle();if(r.error)return fail();return r.data;},
   async messages(id,before){let query=(await client()).from('messages').select('id,conversation_id,sender_id,body,created_at').eq('conversation_id',id).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(31);if(before)query=query.or(`created_at.lt.${before.createdAt},and(created_at.eq.${before.createdAt},id.lt.${before.id})`);const r=await query.retry(false);if(r.error)return fail();return r.data;},
  };
@@ -41,8 +41,9 @@ export async function getConversationHistory(id:unknown,before:unknown=null,port
     const c=connection.connection;if(c.requestId!==thread.requestId||c.ownerId!==thread.ownerId||c.requesterId!==thread.requesterId||c.counterpartId!==(viewer===thread.ownerId?thread.requesterId:thread.ownerId)||c.isOwner!==(viewer===thread.ownerId))return fail();sendStatus='available';
    }
   }
+  const deletedPilot=await ports.deleted?.(target);
   const current=await ports.access();if(current.status!=='authorized')return {status:current.status};if(current.member.userId!==viewer)return {status:'forbidden'};
   const visible=rows.slice(0,30),last=visible.at(-1);
-  return {status:'authorized',conversation:{id:target,requestId:thread.requestId,counterpartId:viewer===thread.ownerId?thread.requesterId:thread.ownerId,closed:currentThread.closed},messages:visible.reverse(),olderCursor:rows.length>30&&last?`${last.createdAt}~${last.id}`:null,sendStatus};
+  return {status:'authorized',...(deletedPilot?{deletedPilot:true}:{}),conversation:{id:target,requestId:thread.requestId,counterpartId:viewer===thread.ownerId?thread.requesterId:thread.ownerId,closed:currentThread.closed},messages:visible.reverse(),olderCursor:rows.length>30&&last?`${last.createdAt}~${last.id}`:null,sendStatus};
  }catch{return {status:'unavailable'};}
 }

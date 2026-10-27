@@ -246,13 +246,13 @@ isOneToOne: false
                   ]
                 },"memberships": {
                   Row: {
-                    "created_at": string,"disabled_at": string | null,"disabled_reason": string | null,"role": Database["public"]['Enums']["member_role"],"status": Database["public"]['Enums']["membership_status"],"user_id": string
+                    "created_at": string,"deleted_at": string | null,"deletion_started_at": string | null,"disabled_at": string | null,"disabled_reason": string | null,"role": Database["public"]['Enums']["member_role"],"status": Database["public"]['Enums']["membership_status"],"user_id": string
                   }
                   Insert: {
-                    "created_at"?: string,"disabled_at"?: string | null,"disabled_reason"?: string | null,"role"?: Database["public"]['Enums']["member_role"],"status"?: Database["public"]['Enums']["membership_status"],"user_id": string
+                    "created_at"?: string,"deleted_at"?: string | null,"deletion_started_at"?: string | null,"disabled_at"?: string | null,"disabled_reason"?: string | null,"role"?: Database["public"]['Enums']["member_role"],"status"?: Database["public"]['Enums']["membership_status"],"user_id": string
                   }
                   Update: {
-                    "created_at"?: string,"disabled_at"?: string | null,"disabled_reason"?: string | null,"role"?: Database["public"]['Enums']["member_role"],"status"?: Database["public"]['Enums']["membership_status"],"user_id"?: string
+                    "created_at"?: string,"deleted_at"?: string | null,"deletion_started_at"?: string | null,"disabled_at"?: string | null,"disabled_reason"?: string | null,"role"?: Database["public"]['Enums']["member_role"],"status"?: Database["public"]['Enums']["membership_status"],"user_id"?: string
                   }
                   Relationships: [
                     
@@ -389,8 +389,23 @@ isOneToOne: false
 "ack_profile_photo_cleanup":
 { Args: { "claim_token": string,"final_deleted": boolean,"reservation_id": string,"source_deleted": boolean }; Returns: Json
                            },
+"admin_account_deletion_preview":
+{ Args: { "p_subject_id": string }; Returns: Json
+                           },
+"admin_account_deletion_status":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
+"admin_begin_account_deletion":
+{ Args: { "p_confirmation": string,"p_reference": string,"p_request_id": string,"p_subject_id": string }; Returns: Json
+                           },
+"admin_complete_account_deletion":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
 "admin_disable_member":
 { Args: { "p_reason": string,"p_target_id": string }; Returns: Json
+                           },
+"admin_finish_deletion_photos":
+{ Args: { "p_request_id": string }; Returns: Json
                            },
 "admin_flight_overview":
 { Args: { "p_after_flight_id"?: string }; Returns: Json
@@ -403,6 +418,9 @@ isOneToOne: false
                            },
 "admin_mvp_metrics":
 { Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"admin_prepare_account_deletion":
+{ Args: { "p_request_id": string }; Returns: Json
                            },
 "attach_profile_photo":
 { Args: { "reservation_id": string }; Returns: Json
@@ -441,6 +459,9 @@ isOneToOne: false
                            },
 "consume_invitation_send_proof":
 { Args: { "p_attempt_id": string,"p_expected_version": number,"p_secret_digest": string,"p_transport": string,"p_verified_subject": string }; Returns: Json
+                           },
+"conversation_has_deleted_pilot":
+{ Args: { "p_conversation_id": string }; Returns: boolean
                            },
 "count_profile_photo_cleanup":
 { Args: { "cleanup_owner"?: string }; Returns: number
@@ -526,6 +547,9 @@ isOneToOne: false
                            },
 "remove_profile_photo":
 { Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"request_has_deleted_pilot":
+{ Args: { "p_request_id": string }; Returns: boolean
                            },
 "reserve_invitation_resend":
 { Args: { "p_expected_version": number,"p_invitation_id": string,"p_operation_id": string,"p_requester_id": string }; Returns: Json

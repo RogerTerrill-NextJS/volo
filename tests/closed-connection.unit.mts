@@ -32,3 +32,7 @@ test('rechecks reject resubmission, identity changes and revoked access, and dis
  let details=0;const result=await getClosedConnection(request,{...ports(),flight:async()=>++details===1?{status:'authorized',flight,pilot:null}:{status:'missing'}});assert.equal(result.status,'closed');if(result.status==='closed')assert.equal(result.flight,null);
  assert.deepEqual(await getClosedConnection(request,{...ports(),read:async()=>{throw Error('provider-canary');}}),{status:'unavailable'});
 });
+test('deleted-pilot lookup is followed by current closed-history access verification',async()=>{
+ let revoked=false;const base=ports();
+ assert.deepEqual(await getClosedConnection(request,{...base,deleted:async()=>{revoked=true;return true;},access:async()=>revoked?{status:'forbidden'}:base.access()}),{status:'forbidden'});
+});

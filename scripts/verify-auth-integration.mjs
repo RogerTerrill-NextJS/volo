@@ -12,6 +12,7 @@ import {verifyFlightCreation} from '../tests/helpers/flight-create-cases.mjs';
 import {verifyFlightInterest} from '../tests/helpers/flight-interest-cases.mjs';
 import {verifyFlightModeration} from '../tests/helpers/flight-moderation-cases.mjs';
 import {verifyReportIntake} from '../tests/helpers/report-intake-cases.mjs';
+import {verifyAccountDeletion} from '../tests/helpers/account-deletion-cases.mjs';
 import {verifyMemberAdmin} from '../tests/helpers/member-admin-cases.mjs';
 
 const root=path.resolve(import.meta.dirname,'..');
@@ -35,7 +36,10 @@ try{
   if(process.argv.includes('--cleanup')){await cleanupOwnedStack(root);}else{
     const applicationOrigin=`http://127.0.0.1:${await reservePort()}`;
     stack=await startLocalAuthStack({repositoryRoot:root,signal:cancellation.signal,applicationOrigin});
-    if(process.argv.includes('--member-admin')){
+    if(process.argv.includes('--account-deletion')){
+      setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,memberAdmin:true,flights:true,photos:true});
+      setupStage='account-deletion';await verifyAccountDeletion({stack,app,scenario});
+    }else if(process.argv.includes('--member-admin')){
       setupStage='fixture';app=await startRealAuthApp({repositoryRoot:root,stack,signal:cancellation.signal,applicationOrigin,memberAdmin:true,flights:true});
       setupStage='member-admin';await verifyMemberAdmin({stack,app,scenario});
       setupStage='flight-moderation';await verifyFlightModeration({stack,app,scenario});

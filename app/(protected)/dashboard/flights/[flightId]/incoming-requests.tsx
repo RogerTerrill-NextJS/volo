@@ -20,7 +20,7 @@ export default async function IncomingRequests({flightId,after,connectionsAvaila
   {result.rows.length===0?<p>{after?'No more requests on this page.':'No requests yet. Interested pilots will appear here.'}</p>:<ul aria-label="Incoming pilot requests" className="space-y-4">
    {result.rows.map(request=><li key={request.id} id={`request-${request.id}`} className="min-w-0 space-y-3 rounded-xl border border-zinc-200 p-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
-     <div className="min-w-0 space-y-1">{request.pilot?<><h3 className="text-lg font-semibold">{request.pilot.displayName}</h3><p>Home airport: {request.pilot.homeAirport}</p><Link href={`/directory/${request.pilot.userId}`} prefetch={false} className={linkClass}>View pilot profile</Link></>:<h3 className="font-semibold">Pilot profile unavailable</h3>}</div>
+     <div className="min-w-0 space-y-1">{request.pilot?<><h3 className="text-lg font-semibold">{request.pilot.displayName}</h3><p>Home airport: {request.pilot.homeAirport}</p><Link href={`/directory/${request.pilot.userId}`} prefetch={false} className={linkClass}>View pilot profile</Link></>:<h3 className="font-semibold">{request.deletedPilot?'Deleted pilot':'Pilot profile unavailable'}</h3>}</div>
     </div>
     <p className="whitespace-pre-line [overflow-wrap:anywhere]">{request.note||'No introduction provided.'}</p>
     <p className="text-sm text-zinc-600">First requested: <time dateTime={request.createdAt}>{request.createdAt.slice(0,10)} at {request.createdAt.slice(11,16)} UTC</time></p>

@@ -3,8 +3,8 @@ import type {AccessResult} from '../auth/access.ts';
 import type {NetworkProfileResult} from '../profiles/directory-query.ts';
 import type {RequestStatus} from './interest-query.ts';
 export type IncomingCursor={createdAt:string;id:string};
-export type IncomingPorts={access:()=>Promise<AccessResult>;readOwnedFlight:(flight:string,viewer:string)=>Promise<unknown>;readRows:(flight:string,after:IncomingCursor|null)=>Promise<unknown>;readPilot:(id:string)=>Promise<NetworkProfileResult>};
-export type IncomingRequest={id:string;requesterId:string;note:string|null;status:RequestStatus;createdAt:string;pilot:{userId:string;displayName:string;homeAirport:string}|null};
+export type IncomingPorts={readDeleted?:(id:string)=>Promise<boolean>;access:()=>Promise<AccessResult>;readOwnedFlight:(flight:string,viewer:string)=>Promise<unknown>;readRows:(flight:string,after:IncomingCursor|null)=>Promise<unknown>;readPilot:(id:string)=>Promise<NetworkProfileResult>};
+export type IncomingRequest={id:string;requesterId:string;note:string|null;status:RequestStatus;createdAt:string;pilot:{userId:string;displayName:string;homeAirport:string}|null;deletedPilot?:boolean};
 export type IncomingResult={status:'authorized';rows:IncomingRequest[];nextCursor:string|null}|{status:'unauthenticated'|'forbidden'|'unavailable'|'missing'|'invalid'};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const unavailable=()=>new Error('Incoming requests unavailable.');
@@ -35,7 +35,7 @@ function createPorts():IncomingPorts{
  // Each operation needs its own deadline: a slow optional profile lookup must
  // not abort the final ownership check or erase otherwise readable requests.
  const session=()=>import('./client.ts').then(m=>m.flightMutationClient());
- return {access:async()=>(await import('../auth/access.ts')).getAccess(),readPilot:async id=>(await import('../profiles/directory-query.ts')).getNetworkProfile(id),
+ return {readDeleted:async id=>(await import('../deletion/labels.ts')).requestHasDeletedPilot(id),access:async()=>(await import('../auth/access.ts')).getAccess(),readPilot:async id=>(await import('../profiles/directory-query.ts')).getNetworkProfile(id),
   async readOwnedFlight(flight,viewer){
    const result=await(await session()).from('flights').select('id,owner_id').eq('id',flight).eq('owner_id',viewer).retry(false).maybeSingle();
    if(result.error)throw unavailable();return result.data;
@@ -75,6 +75,7 @@ export async function listIncomingRequests(flight:unknown,after:unknown=null,por
     visible[i].pilot={userId:profile.profile.user_id,displayName:profile.profile.display_name,homeAirport:profile.profile.home_airport};
    }
   }
+  await Promise.all(visible.filter(row=>!row.pilot).map(async row=>{if(await ports.readDeleted?.(row.id))row.deletedPilot=true;}));
   const owned=await ports.readOwnedFlight(target,viewer),current=await ports.access();
   if(current.status!=='authorized')return {status:current.status};
   if(current.member.userId!==viewer)return {status:'forbidden'};
