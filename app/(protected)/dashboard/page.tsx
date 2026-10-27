@@ -26,6 +26,7 @@ export default async function DashboardPage() {
           you get started.
         </p>
       </header>
+      <Link href="/dashboard/outcomes" prefetch={false} className="inline-flex min-h-11 w-fit items-center underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4">Review past flight outcomes</Link>
       {profile==='complete'&&<Link href="/dashboard/flights/new" prefetch={false} className="w-fit rounded-lg bg-zinc-900 px-4 py-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-4">Post a flight</Link>}
       {profile==='missing'&&<section aria-labelledby="profile-heading" className="rounded-2xl border border-zinc-200 p-6">
         <h2 id="profile-heading" className="text-xl font-semibold">Complete your pilot profile</h2>

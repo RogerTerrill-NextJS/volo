@@ -35,13 +35,13 @@ export async function verifyReportIntake({stack,app,scenario}){
    const {asOf:baselineTime,...expected}=metricsBaseline;assert.ok(Number.isFinite(Date.parse(baselineTime)));
    for(const [key,delta] of Object.entries({activeMembers:4,completedProfiles:4,activeProfiles:3,flightPosts:2,interestRequests:1,currentAcceptedRequests:1,recordedAcceptedRequests:1,messages:1,messagingConversations:1}))expected[key]+=delta;
    assert.deepEqual(counts,expected,'The fixture contributes exact deltas without assuming an empty stack');
-   const page=await safe(await app.request('/admin/metrics',{session:sessions.admin}));assert.ok(page.includes('MVP metrics')&&page.includes('Real-world flying outcomes: not collected'));assert.ok(!page.includes('Owned report C172')&&!page.includes('Owned report reporter'));
+   const page=await safe(await app.request('/admin/metrics',{session:sessions.admin}));assert.ok(page.includes('MVP metrics')&&page.includes('Participant-reported flying outcomes'));assert.ok(!page.includes('Owned report C172')&&!page.includes('Owned report reporter'));
    const read=async label=>(await(await app.request('/api/metrics',{session:sessions[label]})).json());
    const report=await read('admin');assert.equal(report.status,'authorized');const {asOf:date,...reported}=report.report;assert.ok(Number.isFinite(Date.parse(date)));assert.deepEqual(reported,counts);
    assert.deepEqual(await checked(clients.admin.from('messages').select('body')),[],'Aggregate permission does not expose private messages');
    for(const label of ['owner','reporter','other','noProfile','disabled','absent']){
     assert.equal((await read(label)).status,'forbidden');assert.equal((await clients[label].rpc('admin_mvp_metrics').retry(false)).error?.code,'42501');
-    const denied=await safe(await app.request('/admin/metrics',{session:sessions[label]}));assert.ok(!denied.includes('Snapshot')&&!denied.includes('Real-world flying outcomes: not collected'));
+    const denied=await safe(await app.request('/admin/metrics',{session:sessions[label]}));assert.ok(!denied.includes('Snapshot')&&!denied.includes('Participant-reported flying outcomes'));
    }
    await mode('metrics-outage');try{assert.equal((await read('admin')).status,'unavailable');const failure=await safe(await app.request('/admin/metrics',{session:sessions.admin}));assert.ok(failure.includes('Metrics temporarily unavailable'));assert.ok(!failure.includes('private-metrics-error-canary'));}finally{await mode('off');}
    assert.equal((await read('admin')).status,'authorized');

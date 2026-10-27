@@ -161,6 +161,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
         if(!changed.ok)throw Error('Owned report race rejected');
       }
       const response=await original(input,{...init,redirect:'error'});
+      if(url.pathname==='/rest/v1/rpc/save_flight_outcome'&&globalThis.__voloOutcomeMode==='lost'){await response.text();throw Error('Owned outcome response lost');}
       if(url.pathname==='/rest/v1/rpc/submit_report'){
         if(globalThis.__voloReportMode==='lost'){await response.text();throw Error('Owned report response lost');}
         if(globalThis.__voloReportMode==='malformed'){await response.text();return Response.json({code:'reported',reportId:'private-report-canary'});}
@@ -295,6 +296,8 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/api/member-overview/route.ts',`import {listAdminMembers} from '../../../lib/auth/member-admin-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const value=await listAdminMembers(new URL(request.url).searchParams.get('after')??undefined);const headers=new Headers();applyPrivateResponseHeaders(headers);return Response.json(value,{headers});}`);
     }
     if(flights){
+      await cp(path.join(root,'app/(protected)/dashboard/outcomes'),path.join(directory,'app/(protected)/dashboard/outcomes'),{recursive:true});
+      await put('app/api/outcome-control/route.ts',`type State=typeof globalThis & {__voloOutcomeMode?:string};export async function POST(request:Request){const mode=await request.text();if(!['off','lost'].includes(mode))return new Response(null,{status:400});(globalThis as State).__voloOutcomeMode=mode;return Response.json({ok:true});}`);
       await put('app/dashboard/message-fixture/page.tsx',`import {sendMessage} from '../../../lib/messages/actions';import Form from '../../form';export default function Page(){return <main><Form action={sendMessage} label="Message fixture"/></main>}`);
       await put('app/api/message-history/route.ts',`import {getConversationHistory} from '../../../lib/messages/history-query';import {applyPrivateResponseHeaders} from '../../../lib/http/private-response';export async function GET(request:Request){const url=new URL(request.url),response=Response.json(await getConversationHistory(url.searchParams.get('conversation'),url.searchParams.get('before')));applyPrivateResponseHeaders(response.headers);return response;}`);
       await put('app/api/message-control/route.ts',`type State=typeof globalThis & {__voloMessageMode?:string;__voloMessageCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage','delay','action-lost','open-outage','open-delay','open-lost','open-malformed','open-read-outage'].includes(mode)&&!/^(disable-history|open-withdraw):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloMessageMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloMessageCalls??0});}`);
@@ -374,6 +377,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       sendMessage(fields,settings={}){return invokeFlightAction('/dashboard/message-fixture',fields,settings);},
       moderationPageAction(id,fields,{after,fromFlightId=id,...settings}={}){return invokeFlightAction('/admin/flights'+(after?'?after='+after:''),{flight_id:id,reason:'Owned UI safety review',confirmation:'hide',...fields},{...settings,formFlightId:fromFlightId});},
       reportPageAction(fields,{formHtml,...settings}={}){const route='/reports?'+new URLSearchParams({target_type:fields.target_type,target_id:fields.target_id,report_id:fields.report_id});return invokeFlightAction(route,fields,{...settings,formHtml});},
+      outcomePageAction(fields,settings={}){return invokeFlightAction('/dashboard/outcomes',fields,{...settings,formRequestId:fields.request_id});},
       submitReport(fields,settings={}){return invokeFlightAction('/dashboard/report-fixture',fields,settings);},
       hideFlight(fields,settings={}){return invokeFlightAction('/admin/moderation-fixture',fields,settings);},
       disableMember(fields,settings={}){return invokeFlightAction('/admin/member-fixture',fields,settings);},
