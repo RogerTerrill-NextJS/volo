@@ -1,0 +1,9 @@
+# VOLO-224 — Manifest, icons and mobile metadata
+
+Implement step 1 of VOLO-90 using installed Next conventions. VOLO-238 is merged. Keep its white theme and existing layouts/auth. Use a stable same-origin manifest identity `/`, start URL `/`, scope `/`, name VOLO, standalone display, white launch/theme colors, 192/512 PNG icons, a 180px Apple icon and matching favicon. Use a simple vector V mark with generous white padding; no new branding framework or dependency. Root metadata supplies VOLO name/description and Apple standalone/default status-bar metadata.
+
+1. Add a focused regression to the existing Proxy matcher unit test: exact manifest/icon paths bypass Auth, lookalike/child paths stay covered. Observe failure before changing matcher.
+2. Add static manifest/icon conventions and source vector/reproducible icon generation using existing sharp. Exclude only the exact public asset paths from Proxy. No service worker/cache/offline/install-prompt logic; VOLO-225 owns that step.
+3. Extend the existing compiled Proxy HTTP fixture with the real manifest/assets and actual root metadata. Check manifest identity/start/scope/display/theme, PNG dimensions/types, generated links/mobile metadata, no Auth calls/cookie mutations even with outage cookies, and unchanged private response protection. Run targeted Proxy unit/HTTP, types and lint. One fresh final review, explicit commit/push and PR.
+
+Review focus: public asset exceptions cannot bypass private paths; no private state in static metadata; correct icon dimensions/links; stable origin-independent install identity; white light theme retained. Actual mobile Safari/Chrome installation, standalone launch, installed-app update and service-worker/logout/offline checks remain VOLO-225/VOLO-92 device evidence and must not be reported as passed here. Desktop browser metadata check can use a read-only Netlify preview; never install persistent apps or modify hosted accounts/data for this step.
