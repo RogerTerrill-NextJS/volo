@@ -28,7 +28,7 @@ select is(public.admin_mvp_metrics()->>'activeMembers',pg_temp.expected('activeM
 select is(public.admin_mvp_metrics()->>'completedProfiles',pg_temp.expected('completedProfiles',2),'Persisted required profiles include disabled history');
 select is(public.admin_mvp_metrics()->>'activeProfiles',pg_temp.expected('activeProfiles',1),'Active profiles exclude disabled members');
 select is(public.admin_mvp_metrics()->>'flightPosts',pg_temp.expected('flightPosts',0),'Before posting, existing post count is unchanged');
-select is(public.admin_mvp_metrics()->>'outcomes','not_collected','Acceptance is never reported as confirmed flying');
+select is(public.admin_mvp_metrics()->>'outcomes','participant_reported','Participant outcomes are separate from acceptance');
 reset role;
 insert into public.flights(id,owner_id,departure_airport,destination_airport,departure_at,departure_timezone,aircraft_description,pilot_places,visibility,notes) values('22320000-0000-4000-8000-000000000001','22300000-0000-4000-8000-000000000001','KPAO','KSQL',now()+interval '2 days','UTC','Private aircraft canary',1,'PRIVATE','Private flight canary');
 insert into public.flight_recipients(flight_id,user_id) values('22320000-0000-4000-8000-000000000001','22300000-0000-4000-8000-000000000002');

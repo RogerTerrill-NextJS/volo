@@ -61,6 +61,31 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
+                },"flight_outcomes": {
+                  Row: {
+                    "created_at": string,"flew_together": boolean,"request_id": string,"respondent_id": string,"revision": number,"updated_at": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"flew_together": boolean,"request_id": string,"respondent_id": string,"revision"?: number,"updated_at"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"flew_together"?: boolean,"request_id"?: string,"respondent_id"?: string,"revision"?: number,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "flight_outcomes_request_id_fkey"
+      columns: ["request_id"]
+isOneToOne: false
+      referencedRelation: "flight_requests"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "flight_outcomes_respondent_id_fkey"
+      columns: ["respondent_id"]
+isOneToOne: false
+      referencedRelation: "memberships"
+      referencedColumns: ["user_id"]
+    }
+                  ]
                 },"flight_recipients": {
                   Row: {
                     "added_at": string,"flight_id": string,"user_id": string
@@ -484,6 +509,9 @@ isOneToOne: false
 "get_flight_connection":
 { Args: { "p_request_id": string }; Returns: Json
                            },
+"get_flight_outcome":
+{ Args: { "p_request_id": string }; Returns: Json
+                           },
 "get_network_profile":
 { Args: { "p_user_id": string }; Returns: {
               "aircraft_access": string,"bio": string,"certificates": (string)[],"display_name": string,"flying_interests": string,"home_airport": string,"photo_available": boolean,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"user_id": string
@@ -499,6 +527,9 @@ isOneToOne: false
 { Args: { "p_after"?: string,"p_aircraft"?: string,"p_certificate"?: string,"p_page_size"?: number,"p_rating"?: string,"p_search"?: string }; Returns: {
               "aircraft_access": string,"bio": string,"certificates": (string)[],"display_name": string,"flying_interests": string,"home_airport": string,"photo_available": boolean,"pilot_designation": Database["public"]['Enums']["pilot_designation"],"ratings": (string)[],"user_id": string
             }[]
+                           },
+"list_flight_outcomes":
+{ Args: { "p_after"?: string }; Returns: Json
                            },
 "lock_photo_owner":
 { Args: { "owner": string }; Returns: boolean
@@ -559,6 +590,9 @@ isOneToOne: false
                            },
 "reserve_profile_photo":
 { Args: Record<PropertyKey, never>; Returns: Json
+                           },
+"save_flight_outcome":
+{ Args: { "p_expected_revision": number,"p_flew_together": boolean,"p_request_id": string }; Returns: Json
                            },
 "send_conversation_message":
 { Args: { "p_body": string,"p_conversation_id": string,"p_message_id": string }; Returns: Json

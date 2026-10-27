@@ -141,3 +141,9 @@ Testers reply privately to the founder who invited them. The
 [beta feedback guide](docs/beta-feedback.md) provides the tester message, existing
 founder responsibilities and manual Jira triage process. Trial evidence uses only
 fictional feedback; sharing the message with real testers is a separate manual step.
+
+## Flight outcomes
+
+Pilots can optionally [report and correct past flight outcomes](docs/flight-outcomes.md)
+from the dashboard. The existing admin metrics report distinguishes one/both
+participant confirmations from acceptances and messages.
