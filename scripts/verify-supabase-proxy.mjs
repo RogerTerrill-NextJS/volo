@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import sharp from "sharp";
 import {execFile, spawn} from "node:child_process";
 import {once} from "node:events";
 import {cp, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile} from "node:fs/promises";
@@ -57,7 +58,16 @@ try {
   await put("instrumentation.js",`export function register(){const original=globalThis.fetch;globalThis.fetch=(input,init)=>{
     const url=new URL(typeof input==='string'||input instanceof URL?input:input.url);
     if(url.origin!==${JSON.stringify(auth.origin)}) throw new Error('Fixture forbids outbound requests');return original(input,init);};}`);
-  await put("app/layout.jsx",'export default function Layout({children}){return <html><body>{children}</body></html>;}');
+  // Use real root metadata/layout without remote fonts or CSS in this HTTP fixture.
+  const layout=await readFile(path.join(root,'app/layout.tsx'),'utf8');
+  await put('app/layout.tsx',layout
+    .replace('import { Geist, Geist_Mono } from "next/font/google";','')
+    .replace('import "./globals.css";','')
+    .replace(/const geist(?:Sans|Mono) = Geist(?:_Mono)?\(\{[\s\S]*?\}\);/g,'')
+    .replace('${geistSans.variable} ${geistMono.variable} ',''));
+  for(const name of ['manifest.ts','icon.svg','apple-icon.png','favicon.ico'])
+    await cp(path.join(root,'app',name),path.join(fixture,'app',name));
+  await cp(path.join(root,'public/pwa'),path.join(fixture,'public/pwa'),{recursive:true});
   await put("app/page.jsx",`import {createServerSupabaseClient} from '../lib/supabase/server';
     export default async function Page(){const client=await createServerSupabaseClient({cookieMode:'read-only'});
     const {data}=await client.auth.getUser();return <p>{'fictional-user:'+(data.user?.id||'anonymous')}</p>;}`);
@@ -148,6 +158,36 @@ try {
   for(const route of ["/auth/confirm","/api/health","/file.svg"])assert.equal((await request(route,malformed)).status,200);
   assert.equal(auth.calls.length,anonymousBefore);
   console.log("PASS: invalid sessions denied; scoped cleanup preserves PKCE; anonymous/public/asset traffic skips Auth");
+  const assets=['/manifest.webmanifest','/icon.svg','/apple-icon.png','/pwa/icon-192.png','/pwa/icon-512.png','/favicon.ico'];
+  const metadata=await (await request('/')).text();
+  assert.match(metadata,/<link rel="manifest" href="\/manifest.webmanifest"/);
+  assert.match(metadata,/<link rel="apple-touch-icon"[^>]*href="\/apple-icon.png/);
+  for(const [name,value] of [['application-name','VOLO'],['mobile-web-app-capable','yes'],['apple-mobile-web-app-title','VOLO'],['apple-mobile-web-app-status-bar-style','default'],['theme-color','#ffffff'],['color-scheme','light']])
+    assert.ok(metadata.includes(`name="${name}" content="${value}"`),name);
+  const manifestResponse=await request('/manifest.webmanifest');
+  assert.match(manifestResponse.headers.get('content-type'),/application\/manifest\+json/);
+  const manifest=await manifestResponse.json();
+  assert.equal(manifest.name,'VOLO');assert.equal(manifest.short_name,'VOLO');
+  for(const key of ['id','scope','start_url'])assert.equal(manifest[key],'/');
+  assert.equal(manifest.display,'standalone');
+  assert.equal(manifest.background_color,'#ffffff');assert.equal(manifest.theme_color,'#ffffff');
+  for(const [asset,size] of [['/pwa/icon-192.png',192],['/pwa/icon-512.png',512],['/apple-icon.png',180]]){
+    const response=await request(asset);assert.equal(response.status,200);
+    assert.match(response.headers.get('content-type'),/image\/png/);
+    const info=await sharp(Buffer.from(await response.arrayBuffer())).metadata();
+    assert.equal(info.width,size);assert.equal(info.height,size);
+    if(size!==180)assert.ok(manifest.icons.some(icon=>icon.src===asset&&icon.sizes===`${size}x${size}`&&icon.type==='image/png'&&icon.purpose==='any'));
+  }
+  const outageCookies=await seed('down-fresh');
+  const assetCalls=auth.calls.length;
+  // The earlier denial test consumed its malformed jar; use a fresh session canary.
+  const malformedAssetCookies=new Map([[key,'bad-session-json']]);
+  for(const jar of [new Map(),malformedAssetCookies,outageCookies])for(const asset of assets){
+    const response=await request(asset,jar);assert.equal(response.status,200,asset);
+    assert.equal(response.headers.getSetCookie().length,0,asset);
+  }
+  assert.equal(auth.calls.length,assetCalls,'Static install assets must never refresh a session');
+  console.log('PASS: real manifest/mobile metadata and icon dimensions; exact static assets bypass Auth with anonymous, malformed and outage cookies');
   for(const id of ["unknown-expired","unknown-fresh","down-expired","rate-expired","socket-expired","malformed-expired","invalidpayload-expired","rotate-down-expired","hang-expired","body-expired"]) {
     const jar=await seed(id);const started=Date.now();const response=await request("/",jar);
     assert.equal(response.status,503,id);assert.ok(Date.now()-started<6500,id);
