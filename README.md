@@ -134,3 +134,10 @@ must import `server-only`. Never return those values in page props or API respon
 
 Private/session responses share explicit browser and CDN no-store policy. See the
 [cache contract and verification](docs/private-caching.md); run `npm run test:cache`.
+
+## Beta feedback
+
+Testers reply privately to the founder who invited them. The
+[beta feedback guide](docs/beta-feedback.md) provides the tester message, existing
+founder responsibilities and manual Jira triage process. Trial evidence uses only
+fictional feedback; sharing the message with real testers is a separate manual step.
