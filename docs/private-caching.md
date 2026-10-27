@@ -47,8 +47,9 @@ reauthorizes with current cookies before displaying protected content.
 
 See [session integration and auth handoff](session-integration.md) for the separate
 real Auth/PostgREST suite and the division between local, simulated and hosted evidence.
-VOLO-120 tracks the approved deferral of Netlify Age/non-storage reporting;
-it is not a passed hosted cache check.
+[VOLO-120 investigation](volo-120-verification.md) records the bounded follow-up,
+reporter fixes and unresolved provider dependency. Netlify has not replied; this
+is not a passed hosted cache check.
 
 Run `npm run test:cache` and `npm test`. Disposable production-built cache fixtures use
 the real Proxy/SDK/guards and fictional loopback services. A/B/anonymous/A requests
@@ -93,11 +94,16 @@ SMOKE_BASE_URL=https://deploy-preview-<PR-number>--voloapp.netlify.app node scri
 
 The report makes anonymous GET/HEAD requests only, repeats identical protected
 HTML/RSC/prefetch and public/static URLs three times, and prints whitelisted cache
-policy/status/age fields with cookie count. Require no-store and no reported
-shared hit/storage/positive age. Require affirmative `fwd=bypass` or forwarded
-`stored=?0` evidence from reported cache layers. Missing or miss-only status is
-INCONCLUSIVE (exit 2), never PASS; explicit `hit`/`stored` Booleans fail (exit 1).
-A miss alone is insufficient. Preserve RSC negotiation.
+policy/status/age fields with cookie count, request ID, timestamp, elapsed time
+and body hash. It completes the bounded matrix and summarizes failures. Require
+no-store and no reported shared hit/storage/positive age. Positive Age remains an
+`age-anomaly` failure pending provider explanation; it is not labeled proof of
+storage. Require affirmative `fwd=bypass` or known forwarding with `stored=?0`
+evidence from reported cache layers, plus a public/static hit control. Missing,
+malformed or miss-only status is INCONCLUSIVE (exit 2 when no failures), never
+PASS; explicit `hit`/`stored` Booleans and Netlify's documented true token fail
+(exit 1). A false token does not certify safety. A miss alone is insufficient.
+Preserve RSC negotiation. The private login page is checked too.
 Hosted previews share production Supabase, so no fictional hosted cookies,
 authenticated writes or hosted test users are used. These anonymous checks cannot
 prove authenticated CDN isolation. VOLO-110 owns that procedure once real downstream
