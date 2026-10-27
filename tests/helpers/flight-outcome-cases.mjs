@@ -36,6 +36,9 @@ export async function verifyFlightOutcomes({stack,app,scenario}){
    await checked(clients.owner.rpc('decide_flight_request',{p_flight_id:flight,p_request_id:r.requestId,p_decision:'accepted'}));
   }
   await scenario('outcomes_after_date_native_and_fetched_own_answer_and_metrics',async()=>{
+   const accepted=await metrics();
+   for(const [key,delta] of Object.entries({flightPosts:2,interestRequests:2,currentAcceptedRequests:2,recordedAcceptedRequests:2,outcomeResponses:0,confirmedConnections:0,oneParticipantConfirmed:0,bothParticipantsConfirmed:0,conflictingConnections:0}))assert.equal(accepted[key],baseline[key]+delta,'Acceptance stage '+key);
+   for(const key of ['invitedPilots','activatedPilots','activeMembers','completedProfiles','activeProfiles','messages','messagingConversations'])assert.equal(accepted[key],baseline[key],'Unchanged source '+key);
    assert.equal(await read('owner'),null);
    // Elapsed time is simulated only in the owned project; restore the guard before requests.
    await sql(`alter table public.flights disable trigger flights_prepare;update public.flights set departure_at=now()-interval '2 days',departure_local_date=((now()-interval '2 days') at time zone departure_timezone)::date where id in('${flights.join("','")}');alter table public.flights enable trigger flights_prepare;`);
@@ -44,6 +47,8 @@ export async function verifyFlightOutcomes({stack,app,scenario}){
    const forms=[...native.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/g)];
    assert.ok(forms.some(m=>m[1].includes('name="request_id"')&&m[1].includes('value="'+requests[1]+'"')),'Other connection remains editable after native save');
    const otherItem=native.split('id="outcome-'+requests[1]+'"')[1]?.split('</li>')[0]??'';assert.ok(otherItem&&!otherItem.includes('Your answer is saved'),'Other native item has no saved feedback');
+   const single=await metrics();
+   for(const [key,delta] of Object.entries({outcomeResponses:1,confirmedConnections:1,oneParticipantConfirmed:1,bothParticipantsConfirmed:0,conflictingConnections:0}))assert.equal(single[key],baseline[key]+delta,'One-Yes stage '+key);
    assert.equal((await read('requester')).answer,null);
    assert.ok((await act('requester',fields(requests[0],'yes',0))).includes('Your answer is saved'));
    let m=await metrics();assert.equal(m.outcomeResponses,baseline.outcomeResponses+2);assert.equal(m.confirmedConnections,baseline.confirmedConnections+1);assert.equal(m.bothParticipantsConfirmed,baseline.bothParticipantsConfirmed+1);
@@ -51,6 +56,12 @@ export async function verifyFlightOutcomes({stack,app,scenario}){
    assert.equal((await read('owner')).answer,false);assert.equal((await read('requester')).answer,true);
    m=await metrics();assert.equal(m.oneParticipantConfirmed,baseline.oneParticipantConfirmed+1);assert.equal(m.conflictingConnections,baseline.conflictingConnections+1);assert.equal(m.bothParticipantsConfirmed,baseline.bothParticipantsConfirmed);
    const adminPage=await safe(await app.request('/admin/metrics',{session:sessions.admin}));assert.ok(adminPage.includes('Participant-reported flying outcomes')&&!adminPage.includes('Owned outcome aircraft'));
+   // Verify the existing UI renders each validated aggregate under its actual label.
+   const labels={invitedPilots:'Invited pilots',activatedPilots:'Activated pilots',activeMembers:'Active members',completedProfiles:'Completed profiles',activeProfiles:'Active profiles',flightPosts:'Flight posts',interestRequests:'Interest requests',currentAcceptedRequests:'Current accepted requests',recordedAcceptedRequests:'Requests with recorded acceptance',messages:'Messages',messagingConversations:'Conversations with messages',outcomeResponses:'Participant outcome responses',confirmedConnections:'Connections with at least one Yes',oneParticipantConfirmed:'Connections with exactly one Yes',bothParticipantsConfirmed:'Connections with both Yes',conflictingConnections:'Connections with conflicting answers'};
+   for(const [key,label] of Object.entries(labels)){
+    const rendered=adminPage.match(new RegExp('<dt[^>]*>'+label+'</dt><dd[^>]*>([0-9,]+)</dd>'));
+    assert.ok(rendered,'Rendered metric '+key);assert.equal(Number(rendered[1].replaceAll(',','')),m[key],'Rendered count '+key);
+   }
   });
   await scenario('outcomes_lost_confirmation_read_recovery_stale_and_concurrent_retries',async()=>{
    const input=fields(requests[1],'yes',0);await mode('lost');try{assert.ok((await act('owner',input)).includes('We could not confirm whether your answer was saved'),'Lost-response feedback is shown');}finally{await mode('off');}

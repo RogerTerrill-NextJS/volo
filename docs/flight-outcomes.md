@@ -14,7 +14,7 @@ After an uncertain response or stale correction, the form freezes and offers **C
 
 ## Existing metrics source
 
-The existing current-admin `admin_mvp_metrics` RPC and `/admin/metrics` page remain the sole aggregate report. The new response table is the participant-response source, not a second analytics event pipeline. Existing invitation/profile/post/request/acceptance/message definitions stay intact. VOLO-230 owns broader funnel verification.
+The existing current-admin `admin_mvp_metrics` RPC and `/admin/metrics` page remain the sole aggregate report. The new response table is the participant-response source, not a second analytics event pipeline. Existing invitation/profile/post/request/acceptance/message definitions stay intact. [VOLO-230 verifies the invitation-to-outcome funnel](volo-230-verification.md), including source populations and interpretation limits.
 
 | Metric | Meaning |
 | --- | --- |
