@@ -1,5 +1,5 @@
 import type {Metadata} from 'next';
-import Link from 'next/link';
+import Link from '../_components/progress-link';
 import {passwordRecoveryMessage} from '../../lib/auth/password-recovery-feedback';
 import RecoveryForm from './recovery-form';
 export const dynamic='force-dynamic';

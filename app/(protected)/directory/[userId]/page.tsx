@@ -1,5 +1,5 @@
 import type {Metadata} from 'next';
-import Link from 'next/link';
+import Link from '../../../_components/progress-link';
 import {reportHref} from '../../../../lib/reports/links';
 import {notFound,redirect} from 'next/navigation';
 import {getPageAccess} from '../../../../lib/auth/page-access';

@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import Link from '../../../_components/progress-link';
 
 /** Missing and ineligible targets share one response without account-state detail. */
 export default function ProfileNotFound(){

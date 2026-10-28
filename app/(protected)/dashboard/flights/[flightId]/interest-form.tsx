@@ -1,5 +1,5 @@
 'use client';
-import Link from 'next/link';
+import Link from '../../../../_components/progress-link';
 import {useActionState,useEffect,useRef,useState} from 'react';
 import {emptyInterestForm} from '../../../../../lib/flights/interest-form-state';
 import {requestInterest} from './actions';

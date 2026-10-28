@@ -33,7 +33,7 @@ export async function startMutationFixture({actions=false,profiles=false,onboard
   const close=async()=>{await stop();recorder.closeAllConnections();await new Promise(resolve=>recorder.close(resolve));await backend.close();await rm(directory,{recursive:true,force:true});};
   try {
     await symlink(path.join(root,"node_modules"),path.join(directory,"node_modules"),"dir");
-    for(const name of ["lib","proxy.ts","tsconfig.json","next.config.ts"])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
+    for(const name of ["lib","app/_components","proxy.ts","tsconfig.json","next.config.ts"])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
     await put("package.json",JSON.stringify({private:true,type:"module"}));
     await put("app/layout.tsx","export default function Layout({children}:{children:React.ReactNode}){return <html><body>{children}</body></html>}");
     await put("app/page.tsx","export default function Page(){return <p>Mutation fixture ready</p>}");

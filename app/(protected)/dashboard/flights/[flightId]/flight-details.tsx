@@ -1,5 +1,5 @@
 import type {ReactNode} from 'react';
-import Link from 'next/link';
+import Link from '../../../../_components/progress-link';
 import {reportHref} from '../../../../../lib/reports/links';
 import type {DetailFlight} from '../../../../../lib/flights/detail-query';
 import type {DirectoryProfile} from '../../../../../lib/profiles/directory-query';

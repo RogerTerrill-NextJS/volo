@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import Link from '../../../../_components/progress-link';
 import {redirect} from 'next/navigation';
 import {listIncomingRequests} from '../../../../../lib/flights/incoming-query';
 import DecisionControls from './decision-controls';

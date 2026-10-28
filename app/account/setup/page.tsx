@@ -1,5 +1,5 @@
 import type {Metadata} from 'next';
-import Link from 'next/link';
+import Link from '../../_components/progress-link';
 import {redirect} from 'next/navigation';
 import {getVerifiedInvitationSetup,getInvitationCompletionCsrf} from '../../../lib/auth/invitation-setup';
 import {getAccess} from '../../../lib/auth/access';

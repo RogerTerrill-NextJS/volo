@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { getPageAccess } from "../../../lib/auth/page-access";
 import AppShell from "../_components/app-shell";
 import AccessState from "../_components/access-state";
-import Link from 'next/link';
+import Link from '../../_components/progress-link';
 import {getOwnProfileStatus} from '../../../lib/profiles/query';
 
 export const metadata: Metadata = {

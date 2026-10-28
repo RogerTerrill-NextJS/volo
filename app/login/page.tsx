@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "../_components/progress-link";
 import {loginResultMessage} from '../../lib/auth/login-feedback';
 import LoginForm from './login-form';
 
