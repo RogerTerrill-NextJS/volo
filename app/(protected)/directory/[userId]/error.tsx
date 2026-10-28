@@ -1,5 +1,5 @@
 'use client';
-import Link from 'next/link';
+import Link from '../../../_components/progress-link';
 
 export default function ProfileError(){
  return <main className="space-y-6">

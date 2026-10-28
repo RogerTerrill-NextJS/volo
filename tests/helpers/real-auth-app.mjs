@@ -28,7 +28,7 @@ export async function startRealAuthApp({repositoryRoot:root,stack,signal,applica
     if(applicationOrigin&&origin!==applicationOrigin)throw new Error('Invalid owned application origin');
     const env={PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:process.env.TMPDIR,NEXT_TELEMETRY_DISABLED:'1',NEXT_PUBLIC_SUPABASE_URL:stack.apiUrl,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:stack.publicKey,VOLO_MUTATION_ORIGIN:origin,SUPABASE_SECRET_KEY:stack.serverSecret,VOLO_CONFIRMATION_KEYS:JSON.stringify({active:'fixture',keys:{fixture:randomBytes(32).toString('base64')}})};
     await symlink(path.join(root,'node_modules'),path.join(directory,'node_modules'),'dir');
-    for(const name of ['lib','proxy.ts','tsconfig.json','next.config.ts'])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
+    for(const name of ['lib','app/_components','proxy.ts','tsconfig.json','next.config.ts'])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
     await cp(path.join(root,'app/account'),path.join(directory,'app/account'),{recursive:true});
     await cp(path.join(root,'app/auth'),path.join(directory,'app/auth'),{recursive:true});
     await cp(path.join(root,'app/login'),path.join(directory,'app/login'),{recursive:true});
@@ -326,7 +326,7 @@ if(mode==='reconcile')policy.effect=async(member,input)=>{const observed=receipt
       await put('app/api/interest-control/route.ts',`type State=typeof globalThis & {__voloInterestMode?:string;__voloInterestCalls?:number};export async function POST(request:Request){const mode=await request.text();if(!['off','lost','malformed','read-outage','notification-read-outage','notification-lost'].includes(mode)&&!/^(disable|full|profile-timeout):[a-f0-9-]{36}$/.test(mode))return new Response(null,{status:400});(globalThis as State).__voloInterestMode=mode;return Response.json({ok:true});}export function GET(){return Response.json({calls:(globalThis as State).__voloInterestCalls??0});}`);
     }
     if(browser)await cp(path.join(root,'app/(protected)/layout.tsx'),path.join(directory,'app/dashboard/layout.tsx'));
-    if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll('../_components/','../(protected)/_components/'));
+    if(browser)await put('app/dashboard/page.tsx',(await readFile(path.join(root,'app/(protected)/dashboard/page.tsx'),'utf8')).replaceAll('../../../lib/','../../lib/').replaceAll("from '../_components/","from '../(protected)/_components/").replaceAll("from '../../_components/progress-link'","from '../_components/progress-link'"));
     fixtureStage='build';const build=await promisify(execFile)(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'build',directory,'--webpack'],{cwd:directory,env,signal,timeout:180000,maxBuffer:8*1024*1024});output+=build.stdout+build.stderr;signal?.throwIfAborted();
     fixtureStage='start';server=spawn(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'start',directory,'--hostname','127.0.0.1','--port',String(port)],{cwd:directory,env,stdio:['ignore','pipe','pipe']});
     let startError;server.on('error',()=>{startError=true;});for(const stream of [server.stdout,server.stderr])stream.on('data',data=>{output=(output+data).slice(-4*1024*1024);});

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "../../_components/progress-link";
 
 const linkClass="inline-flex min-h-11 items-center rounded-lg px-2 py-2 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4";
 

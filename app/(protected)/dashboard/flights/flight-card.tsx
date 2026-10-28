@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import Link from '../../../_components/progress-link';
 import type {FeedFlight} from '../../../../lib/flights/feed-query';
 import {formatFeedDeparture} from '../../../../lib/flights/feed-view';
 

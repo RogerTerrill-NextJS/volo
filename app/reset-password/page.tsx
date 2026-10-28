@@ -1,5 +1,5 @@
 import type {Metadata} from 'next';
-import Link from 'next/link';
+import Link from '../_components/progress-link';
 import {getPasswordRecovery} from '../../lib/auth/password-reset';
 import {passwordResetMessage} from '../../lib/auth/password-reset-feedback';
 import PasswordSetupForm from '../account/setup/password-form';

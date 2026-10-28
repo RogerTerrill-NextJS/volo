@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import Link from '../../../../_components/progress-link';
 
 /** Absent flights and inaccessible PRIVATE flights share this response. */
 export default function FlightNotFound(){

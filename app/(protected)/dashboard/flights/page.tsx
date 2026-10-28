@@ -1,5 +1,5 @@
 import type {Metadata} from 'next';
-import Link from 'next/link';
+import Link from '../../../_components/progress-link';
 import Form from 'next/form';
 import {redirect} from 'next/navigation';
 import {Suspense} from 'react';

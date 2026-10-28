@@ -1,5 +1,5 @@
 import type {DirectoryProfile} from '../../../lib/profiles/directory-query';
-import Link from 'next/link';
+import Link from '../../_components/progress-link';
 import ProfilePhoto from '../_components/profile-photo';
 import PilotDetails from '../_components/pilot-details';
 
