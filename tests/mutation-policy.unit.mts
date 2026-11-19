@@ -62,3 +62,15 @@ test('larger form budgets are explicit and remain bounded without changing the d
   form.set('value','a'.repeat(32764));assert.throws(()=>readMutationForm(form,32768),{code:'too_large'});
   for(const limit of [0,-1,65537,NaN,1.5])assert.throws(()=>readMutationForm(form,limit));
 });
+
+test('only explicitly repeatable form fields admit multiple bounded text entries',()=>{
+ const form=new FormData();form.append('certificates','PPL-Private Pilot');form.append('certificates','CPL-Commercial Pilot');
+ assert.throws(()=>readMutationForm(form),{code:'invalid_input'});
+ assert.equal(readMutationForm(form,32768,['certificates','ratings']).certificates,'PPL-Private Pilot\nCPL-Commercial Pilot');
+ form.append('display_name','One');form.append('display_name','Two');
+ assert.throws(()=>readMutationForm(form,32768,['certificates','ratings']),{code:'invalid_input'});
+ form.delete('display_name');form.append('certificates',new File(['x'],'x.txt'));
+ assert.throws(()=>readMutationForm(form,32768,['certificates','ratings']),{code:'invalid_input'});
+ form.delete('certificates');form.append('ratings','a'.repeat(8190));form.append('ratings','b'.repeat(8190));
+ assert.throws(()=>readMutationForm(form,16384,['certificates','ratings']),{code:'too_large'});
+});

@@ -9,14 +9,17 @@ test('profile editing loads and saves only the active owner with recoverable fee
  try{
   const owner=await fixture.seed('edit-owner'),other=await fixture.seed('edit-other',{role:'admin'}),missing=await fixture.seed('edit-missing');
   const profiles=fixture.backend.profiles;
-  const original={user_id:owner.entry.id,display_name:'Original pilot',home_airport:'KPAO',pilot_designation:'licensed',certificates:['Private pilot','Glider'],ratings:['Instrument'],aircraft_access:'Club aircraft',flying_interests:'Cross country',bio:'Original biography',photo_storage_path:'private-photo'};
+  const original={user_id:owner.entry.id,display_name:'Original pilot',home_airport:'KPAO',pilot_designation:'licensed',certificates:['Private pilot','Glider','Glider\nCommercial Pilot'],ratings:['Instrument'],aircraft_access:'Club aircraft',flying_interests:'Cross country',bio:'Original biography',photo_storage_path:'private-photo'};
   profiles.rows.set(owner.entry.id,original);
   profiles.rows.set(other.entry.id,{...original,user_id:other.entry.id,display_name:'Other pilot'});
   let page=await fixture.request('/profile/edit?user_id='+other.entry.id,owner.jar);
   assert.equal(page.response.status,200);
   assert.match(page.response.headers.get('cache-control'),/no-store/);
   assert.match(page.body,/value="Original pilot"/);
-  assert.match(page.body,/Private pilot\nGlider<\/textarea>/);
+  assert.match(page.body,/<input[^>]*type="checkbox"[^>]*name="certificates\[\]"[^>]*checked[^>]*value="&quot;PPL-Private Pilot&quot;"/);
+  assert.match(page.body,/<input[^>]*name="certificates\[\]"[^>]*checked[^>]*value="&quot;Glider&quot;"/);
+  assert.match(page.body,/<input[^>]*name="ratings\[\]"[^>]*checked[^>]*value="&quot;IR-Instrument Rating&quot;"/);
+  assert.doesNotMatch(page.body,/<textarea[^>]*name="(?:certificates|ratings)"/);
   assert.match(page.body,/Original biography<\/textarea>/);
   assert.doesNotMatch(page.body,/Other pilot|private-photo|name="user_id"/);
   assert.match(page.body,/href="\/profile\/edit"/);
@@ -36,14 +39,17 @@ test('profile editing loads and saves only the active owner with recoverable fee
     const name=input[0].match(/name="([^"]*)"/),value=input[0].match(/value="([^"]*)"/);
     if(name?.[1].startsWith('$ACTION_'))form.append(decode(name[1]),decode(value?.[1]??''));
    }
-   for(const [key,value] of Object.entries(values))form.set(key,value);
+   for(const [key,value] of Object.entries(values)){if(Array.isArray(value)){for(const entry of value)form.append(key+'[]',JSON.stringify(entry));}else form.set(key,value);}
    return fixture.request('/profile/edit',jar,{method:'POST',body:form});
   }
-  const values={display_name:' Updated pilot ',home_airport:' ksfo ',pilot_designation:'licensed',certificates:'Glider',ratings:'',aircraft_access:'',flying_interests:'Local flying',bio:'Updated biography'};
+  const encodedValue=value=>JSON.stringify(value).replaceAll('&','&amp;').replaceAll('\"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+  const values={display_name:' Updated pilot ',home_airport:' ksfo ',pilot_designation:'licensed',certificates:['PPL-Private Pilot','CPL-Commercial Pilot','Glider','Glider\nCommercial Pilot'],ratings:['IR-Instrument Rating','MEI-Multi-Engine Instructor'],aircraft_access:'',flying_interests:'Local flying',bio:'Updated biography'};
   let result=await submit(page.body,{...values,home_airport:''});
   assert.equal(profiles.writes.length,0);
   assert.match(result.body,/id="profile-home_airport-error"/);
   assert.match(result.body,/Updated biography<\/textarea>/);
+  for(const value of values.certificates)assert.ok(result.body.includes('checked="" value="'+encodedValue(value)+'"'));
+  for(const value of values.ratings)assert.ok(result.body.includes('checked="" value="'+encodedValue(value)+'"'));
   result=await submit(result.body,{...values,user_id:other.entry.id});
   assert.equal(profiles.writes.length,0);
   assert.match(result.body,/unsupported fields/);
@@ -55,6 +61,12 @@ test('profile editing loads and saves only the active owner with recoverable fee
   assert.equal(profiles.writes[0].method,'PATCH');
   assert.equal(profiles.rows.get(owner.entry.id).display_name,'Updated pilot');
   assert.equal(profiles.rows.get(owner.entry.id).aircraft_access,null);
+  assert.deepEqual(profiles.rows.get(owner.entry.id).certificates,values.certificates);
+  assert.deepEqual(profiles.rows.get(owner.entry.id).ratings,values.ratings);
+  const reopened=await fixture.request('/profile/edit',owner.jar);
+  for(const value of [...values.certificates,...values.ratings])assert.ok(reopened.body.includes('checked="" value="'+encodedValue(value)+'"'));
+  result=await submit(result.body,{...values,certificates:[],ratings:[]});
+  assert.deepEqual(profiles.rows.get(owner.entry.id).certificates,[]);
   assert.deepEqual(profiles.rows.get(owner.entry.id).ratings,[]);
   assert.equal(profiles.rows.get(owner.entry.id).photo_storage_path,'private-photo');
   assert.equal(profiles.rows.get(other.entry.id).display_name,'Other pilot');
@@ -63,12 +75,12 @@ test('profile editing loads and saves only the active owner with recoverable fee
   assert.match(result.body,/Recover this biography<\/textarea>/);
   assert.match(result.body,/Reload your profile/);
   assert.match(result.body,/<button[^>]*disabled[^>]*>Save profile/);
-  assert.equal(profiles.writes.length,1);
+  assert.equal(profiles.writes.length,2);
   assert.doesNotMatch((await fixture.request('/profile/edit',owner.jar)).body,/id="profile-display_name"/);
   profiles.failure=null;
   owner.entry.status='disabled';
   assert.doesNotMatch((await fixture.request('/profile/edit',owner.jar)).body,/id="profile-display_name"/);
-  await submit(page.body,values);assert.equal(profiles.writes.length,1);
+  await submit(page.body,values);assert.equal(profiles.writes.length,2);
   owner.entry.status='active';
   profiles.rows.set(owner.entry.id,{...original,user_id:other.entry.id});
   assert.doesNotMatch((await fixture.request('/profile/edit',owner.jar)).body,/id="profile-display_name"/);
