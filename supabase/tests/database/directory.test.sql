@@ -134,6 +134,18 @@ select is((select count(*)::integer from public.list_directory_profiles(null,20,
 select throws_ok($$select * from public.list_directory_profiles(null,20,'',repeat('x',81))$$,'22023',null,'Oversized certificate filter rejected');
 select throws_ok($$select * from public.list_directory_profiles(null,20,'','',null)$$,'22023',null,'Explicit null rating filter rejected');
 select throws_ok($$select * from public.list_directory_profiles(null,20,'','','',repeat('x',81))$$,'22023',null,'Oversized aircraft filter rejected');
+-- VOLO-242: checkbox labels retain both code and descriptive search behavior.
+reset role;
+update public.profiles set certificates=array['PPL-Private Pilot','CFII-Certified Flight Instructor instrument'],
+ ratings=array['MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter']
+ where user_id='62000000-0000-4000-8000-000000000052';
+set local role authenticated;
+select results_eq($$select user_id from public.list_directory_profiles(null,20,'','ppl','ir')$$,
+ $$values ('62000000-0000-4000-8000-000000000052'::uuid)$$,'Checkbox certificate and rating abbreviations match stored arrays');
+select results_eq($$select user_id from public.list_directory_profiles(null,20,'','private pilot','instrument rating')$$,
+ $$values ('62000000-0000-4000-8000-000000000052'::uuid)$$,'Checkbox descriptions remain searchable');
+select results_eq($$select user_id from public.list_directory_profiles(null,20,'','cfii','rotor craft helicopter')$$,
+ $$values ('62000000-0000-4000-8000-000000000052'::uuid)$$,'Any selected checkbox can match the combined directory filters');
 select set_config('request.jwt.claims','{"sub":"61000000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 select is((select count(*)::integer from public.list_directory_profiles(null,20,'Page')),0,'Disabled viewer cannot search matching public profiles');
 select is((select count(*)::integer from public.list_directory_profiles(null,20,'','private','instrument','c172')),0,'Disabled viewer cannot use combined filters');

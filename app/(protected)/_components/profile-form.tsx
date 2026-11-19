@@ -1,5 +1,7 @@
 'use client';
 import {useActionState,useEffect,useRef,useState,type FormEvent} from 'react';
+import {profileFormInput} from '../../../lib/profiles/form-state';
+import {credentialOptions,type CredentialField} from '../../../lib/profiles/credentials';
 import type {ProfileFormState} from '../../../lib/profiles/form-state';
 import {validateProfile,type ProfileFieldErrors} from '../../../lib/profiles/validation';
 
@@ -17,12 +19,12 @@ export default function ProfileForm({unavailable=false,initial=empty,save,permal
   if(pending||submitting.current||state.reload){event.preventDefault();return;}
   const fields=new FormData(event.currentTarget);
   // Action metadata belongs to React, not to the shared profile validator.
-  const raw=Object.fromEntries([...fields].filter(([key])=>!key.startsWith('$ACTION_')));
+  const raw=profileFormInput(fields);
   const validated=validateProfile(raw);
   if(!validated.ok){event.preventDefault();setLocal(validated);return;}
   submitting.current=true;setLocal(null);
  }
- function text(field:'display_name'|'home_airport'|'certificates'|'ratings'|'aircraft_access'|'flying_interests'|'bio',label:string,help:string,rows?:number){
+ function text(field:'display_name'|'home_airport'|'aircraft_access'|'flying_interests'|'bio',label:string,help:string,rows?:number){
   const id=`profile-${field}`,description=`${id}-help${errors[field]?` ${id}-error`:''}`;
   return <div className="space-y-2">
    <label htmlFor={id} className="block text-sm font-medium">{label}</label>
@@ -31,6 +33,19 @@ export default function ProfileForm({unavailable=false,initial=empty,save,permal
    <p id={`${id}-help`} className="text-sm text-zinc-600">{help}</p>
    {errors[field]&&<p id={`${id}-error`} className="text-sm text-red-700">{errors[field]}</p>}
   </div>;
+ }
+ function credentials(field:CredentialField,label:string){
+  const id=`profile-${field}`,description=`${id}-help${errors[field]?` ${id}-error`:''}`;
+  const options=credentialOptions(field,state.values[field]??[]);
+  return <fieldset id={id} tabIndex={-1} aria-describedby={description} aria-invalid={errors[field]?true:undefined} className="space-y-3">
+   <legend className="text-sm font-medium">{label}</legend>
+   <p id={`${id}-help`} className="text-sm text-zinc-600">Self-reported. Select all that apply.</p>
+   {options.map(({value,checked,legacy},index)=><label key={value} htmlFor={`${id}-${index}`} className="flex min-h-11 items-center gap-3">
+    <input id={`${id}-${index}`} type="checkbox" name={`${field}[]`} value={JSON.stringify(value)} defaultChecked={checked} className="h-5 w-5 shrink-0"/>
+    <span>{value}{legacy&&<span className="block text-sm text-zinc-600">Previously saved value. Uncheck to remove.</span>}</span>
+   </label>)}
+   {errors[field]&&<p id={`${id}-error`} className="text-sm text-red-700">{errors[field]}</p>}
+  </fieldset>;
  }
  // A fresh failed read offers retry only. A failed native POST must still render
  // its action state so the pilot can read feedback and recover entered values.
@@ -48,8 +63,8 @@ export default function ProfileForm({unavailable=false,initial=empty,save,permal
    {errors.pilot_designation&&<p id="profile-pilot_designation-error" className="text-sm text-red-700">{errors.pilot_designation}</p>}
   </fieldset>
   <h2 className="text-xl font-semibold">More about your flying (optional)</h2>
-  {text('certificates','Certificates','Self-reported. Enter one per line; up to 20, each 1–80 characters.',3)}
-  {text('ratings','Ratings','Self-reported. Enter one per line; up to 20, each 1–80 characters.',3)}
+  {credentials('certificates','Certificates')}
+  {credentials('ratings','Ratings')}
   {text('aircraft_access','Aircraft access','Tell other pilots what aircraft you can access. Up to 500 characters.',3)}
   {text('flying_interests','Flying interests','What kind of flying interests you? Up to 500 characters.',3)}
   {text('bio','Bio','Introduce yourself. Up to 2,000 characters.',5)}

@@ -9,7 +9,7 @@ test('directory renders guarded pilot cards, cursor navigation and recoverable s
  try{
   const viewer=await fixture.seed('directory-ui-reader'),admin=await fixture.seed('directory-ui-admin',{role:'admin'});
   const id=n=>`61000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
-  const row=n=>({user_id:id(n),display_name:`Pilot ${n}`,home_airport:'KPAO',pilot_designation:'licensed',certificates:['Private pilot'],ratings:['Instrument'],aircraft_access:'Club C172',flying_interests:'Day trips',bio:'Local flying',photo_available:false,email:'private-directory-email-canary',photo_storage_path:'private-directory-photo-canary',role:'private-directory-role-canary',status:'private-directory-status-canary',membership:{authority:'private-directory-membership-canary'}});
+  const row=n=>({user_id:id(n),display_name:`Pilot ${n}`,home_airport:'KPAO',pilot_designation:'licensed',certificates:['PPL-Private Pilot','CPL-Commercial Pilot'],ratings:['MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter'],aircraft_access:'Club C172',flying_interests:'Day trips',bio:'Local flying',photo_available:false,email:'private-directory-email-canary',photo_storage_path:'private-directory-photo-canary',role:'private-directory-role-canary',status:'private-directory-status-canary',membership:{authority:'private-directory-membership-canary'}});
   const directory=fixture.backend.directory;
   directory.rows=Array.from({length:21},(_,i)=>row(i+1));
   directory.rows[0]={...row(1),display_name:'Pilot <One>'};
@@ -24,7 +24,7 @@ test('directory renders guarded pilot cards, cursor navigation and recoverable s
   assert.equal(page.response.status,200);
   assert.match(page.body,/<h1[^>]*>Pilot directory<\/h1>/);
   assert.match(page.body,/Pilot &lt;One&gt;/);
-  for(const value of ['KPAO','Private pilot','Instrument','Club C172','Day trips','Local flying'])assert.ok(page.body.includes(value));
+  for(const value of ['KPAO','PPL-Private Pilot','CPL-Commercial Pilot','MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter','Club C172','Day trips','Local flying'])assert.ok(page.body.includes(value));
   assert.match(page.body,/No profile photo available for Pilot/);
   assert.match(page.body,new RegExp(`href="/directory\\?after=${id(20)}"`));
   assert.doesNotMatch(page.body,/Pilot 21|href="\/pilots\/|href="\/profiles\//);

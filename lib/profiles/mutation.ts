@@ -1,4 +1,5 @@
 import 'server-only';
+import {profileInput} from './form-state';
 import type {MutationPolicy} from '../auth/mutation';
 import {createServerSupabaseClient} from '../supabase/server';
 import {validateProfile,type ProfileValidation,type ProfileFieldErrors} from './validation.ts';
@@ -11,7 +12,7 @@ export function profileSavePolicy(mode:'create'|'update'):MutationPolicy<Profile
   return {
     allowedRoles:['member','admin'],
     // Keep field feedback inside the guarded result so invalid fields never cause a write.
-    parse(raw){return {ok:true,value:validateProfile(raw)};},
+    parse(raw){return {ok:true,value:validateProfile(profileInput(raw))};},
     authorize(){return true;},
     async effect(member,input){
       if(!input.ok)return {code:'invalid_input',message:input.message,fieldErrors:input.fieldErrors};

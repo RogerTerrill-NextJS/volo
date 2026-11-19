@@ -8,7 +8,7 @@ test('network profile opens the requested pilot read-only with private HTML/RSC 
   const viewer=await fixture.seed('network-viewer'),admin=await fixture.seed('network-admin',{role:'admin'});
   const target='6a000000-0000-4000-8000-000000000002',missing='6a000000-0000-4000-8000-000000000099';
   const route=`/directory/${target}`;
-  const profile={user_id:target,display_name:'Morgan <Ellis>',home_airport:'KPAO',pilot_designation:'licensed',certificates:['Private pilot'],ratings:['Instrument'],aircraft_access:'Club C172',flying_interests:'Coastal flying',bio:'Local flying biography',photo_available:true,email:'private-profile-email-canary',role:'private-profile-role-canary',photo_storage_path:'private-profile-path-canary',status:'private-profile-status-canary',membership:{authority:'private-profile-membership-canary'}};
+  const profile={user_id:target,display_name:'Morgan <Ellis>',home_airport:'KPAO',pilot_designation:'licensed',certificates:['PPL-Private Pilot','CPL-Commercial Pilot'],ratings:['MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter'],aircraft_access:'Club C172',flying_interests:'Coastal flying',bio:'Local flying biography',photo_available:true,email:'private-profile-email-canary',role:'private-profile-role-canary',photo_storage_path:'private-profile-path-canary',status:'private-profile-status-canary',membership:{authority:'private-profile-membership-canary'}};
   fixture.backend.directory.rows=[profile];
   const reads=()=>fixture.backend.calls.filter(call=>call.service==='network-profile');
   const read=async(path=route,jar=viewer.jar,init={})=>{
@@ -19,7 +19,7 @@ test('network profile opens the requested pilot read-only with private HTML/RSC 
   };
   let page=await read();assert.equal(page.response.status,200);
   assert.match(page.body,/<h1[^>]*>Morgan &lt;Ellis&gt;<\/h1>/);
-  for(const value of ['KPAO','Private pilot','Instrument','Club C172','Coastal flying','Local flying biography'])assert.ok(page.body.includes(value));
+  for(const value of ['KPAO','PPL-Private Pilot','CPL-Commercial Pilot','MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter','Club C172','Coastal flying','Local flying biography'])assert.ok(page.body.includes(value));
   assert.match(page.body,new RegExp(`/api/profiles/${target}/photo\\?v=0`));
   assert.match(page.body,/Back to directory/);
   assert.doesNotMatch(page.body,/name="display_name"|Save profile|Remove photo|Upload photo/);

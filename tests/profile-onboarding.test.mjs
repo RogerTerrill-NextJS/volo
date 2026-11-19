@@ -15,6 +15,14 @@ test('onboarding prompts incomplete members and saves through the accessible for
   assert.match(page.body,/<label[^>]*for="profile-display_name"/);
   assert.match(page.body,/<input[^>]*type="checkbox"[^>]*name="pilot_designation"[^>]*value="licensed"/);
   assert.match(page.body,/I am a licensed pilot/);
+  for(const value of ['PPL-Private Pilot','SPT-Sports Pilot','RPL-Recreational Pilot','CPL-Commercial Pilot','ATP-Airline Transport Pilot','CFI-Certified Flight Instructor','CFII-Certified Flight Instructor instrument']){
+   assert.ok(page.body.includes('name="certificates[]" value="&quot;'+value+'&quot;"'),`Missing certificate checkbox ${value}`);
+  }
+  for(const value of ['MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter']){
+   assert.ok(page.body.includes('name="ratings[]" value="&quot;'+value+'&quot;"'),`Missing rating checkbox ${value}`);
+  }
+  assert.doesNotMatch(page.body,/<textarea[^>]*name="(?:certificates|ratings)"/);
+
   assert.doesNotMatch(page.body,/Student pilot|type="radio"/);
   assert.match(page.body,/href="\/dashboard"/);
   assert.match(page.response.headers.get('cache-control'),/no-store/);
@@ -35,7 +43,7 @@ test('onboarding prompts incomplete members and saves through the accessible for
     const name=input[0].match(/name="([^"]*)"/),value=input[0].match(/value="([^"]*)"/);
     if(name?.[1].startsWith('$ACTION_'))form.append(decode(name[1]),decode(value?.[1]??''));
    }
-   for(const [key,value] of Object.entries(values))form.set(key,value);
+   for(const [key,value] of Object.entries(values)){if(Array.isArray(value)){for(const entry of value)form.append(key+'[]',JSON.stringify(entry));}else form.set(key,value);}
    return fixture.request('/onboarding',member.jar,{method:'POST',body:form});
   };
   const invalid=await submit(page.body,{display_name:'Retained pilot',home_airport:'',pilot_designation:'licensed',bio:'Retained biography'});
@@ -51,12 +59,13 @@ test('onboarding prompts incomplete members and saves through the accessible for
   assert.match(failed.body,/Retained biography<\/textarea>/);
   profiles.failure=null;
   page=await fixture.request('/onboarding',member.jar);
-  const saved=await submit(page.body,{display_name:' Licensed Pilot ',home_airport:' kpao ',pilot_designation:'licensed',certificates:'Glider\nPrivate pilot',bio:'Hello'});
+  const saved=await submit(page.body,{display_name:' Licensed Pilot ',home_airport:' kpao ',pilot_designation:'licensed',certificates:['PPL-Private Pilot','CFII-Certified Flight Instructor instrument'],ratings:['MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter'],bio:'Hello'});
   assert.equal(saved.response.status,303);
   assert.equal(saved.response.headers.get('location'),'/dashboard?from=profile-onboarding');
   assert.equal(profiles.rows.get(member.entry.id).display_name,'Licensed Pilot');
   assert.equal(profiles.rows.get(member.entry.id).home_airport,'KPAO');
-  assert.deepEqual(profiles.rows.get(member.entry.id).certificates,['Glider','Private pilot']);
+  assert.deepEqual(profiles.rows.get(member.entry.id).certificates,['PPL-Private Pilot','CFII-Certified Flight Instructor instrument']);
+  assert.deepEqual(profiles.rows.get(member.entry.id).ratings,['MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter']);
   assert.equal(profiles.rows.get(other.entry.id).display_name,'Other pilot');
   assert.doesNotMatch((await fixture.request('/dashboard',member.jar)).body,/href="\/onboarding"/);
 
