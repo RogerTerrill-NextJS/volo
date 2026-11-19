@@ -9,7 +9,7 @@ import {promisify} from "node:util";
 import {setTimeout as delay} from "node:timers/promises";
 import {startAccessFixture,accessKey,accessCanaries} from "./access-fixture.mjs";
 
-export async function startMutationFixture({actions=false,profiles=false,onboarding=false,photos=false,directoryQuery=false,requireCompleteProfile=false}={}) {
+export async function startMutationFixture({actions=false,profiles=false,onboarding=false,photos=false,directoryQuery=false,requireCompleteProfile=false,beforeStart}={}) {
   const root=path.resolve(import.meta.dirname,"../..");
   const directory=await mkdtemp(path.join(tmpdir(),"volo-mutations-"));
   const backend=await startAccessFixture();const effects=[],bare=[];
@@ -22,7 +22,8 @@ export async function startMutationFixture({actions=false,profiles=false,onboard
   recorder.listen(0,"127.0.0.1");await once(recorder,"listening");
   const recordOrigin=`http://127.0.0.1:${recorder.address().port}`;
   const reservation=createServer();reservation.listen(0,"127.0.0.1");await once(reservation,"listening");
-  const port=reservation.address().port;await new Promise(resolve=>reservation.close(resolve));
+  // Keep the port bound through compilation so parallel fixtures cannot claim it.
+  const port=reservation.address().port;
   const origin=`http://127.0.0.1:${port}`;
   const env={PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:process.env.TMPDIR,NEXT_TELEMETRY_DISABLED:"1",
     NEXT_PUBLIC_SUPABASE_URL:backend.origin,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:accessKey,VOLO_MUTATION_ORIGIN:origin};
@@ -30,7 +31,7 @@ export async function startMutationFixture({actions=false,profiles=false,onboard
   const clean=(value)=>{for(const marker of canaries)assert.ok(!value.includes(marker),"Mutation fixture leaked a private marker");};
   const put=async(name,value)=>{const file=path.join(directory,name);await mkdir(path.dirname(file),{recursive:true});await writeFile(file,value);};
   const stop=async()=>{if(server && server.exitCode===null){server.kill();await once(server,"exit");}};
-  const close=async()=>{await stop();recorder.closeAllConnections();await new Promise(resolve=>recorder.close(resolve));await backend.close();await rm(directory,{recursive:true,force:true});};
+  const close=async()=>{await stop();if(reservation.listening)await new Promise(resolve=>reservation.close(resolve));recorder.closeAllConnections();await new Promise(resolve=>recorder.close(resolve));await backend.close();await rm(directory,{recursive:true,force:true});};
   try {
     await symlink(path.join(root,"node_modules"),path.join(directory,"node_modules"),"dir");
     for(const name of ["lib","app/_components","proxy.ts","tsconfig.json","next.config.ts"])await cp(path.join(root,name),path.join(directory,name),{recursive:true});
@@ -93,10 +94,22 @@ export async function startMutationFixture({actions=false,profiles=false,onboard
         return Response.json(await listDirectoryProfiles(input),{headers});}`);
     const build=await promisify(execFile)(process.execPath,[path.join(root,"node_modules/next/dist/bin/next"),"build",directory,"--webpack"],{cwd:directory,env,timeout:120000,maxBuffer:8*1024*1024});
     clean(build.stdout+build.stderr);
+    await beforeStart?.({origin});
     const start=async(override={})=>{
-      await stop();server=spawn(process.execPath,[path.join(root,"node_modules/next/dist/bin/next"),"start",directory,"--hostname","127.0.0.1","--port",String(port)],{cwd:directory,env:{...env,...override},stdio:["ignore","pipe","pipe"]});
-      server.on("error",error=>{output+=error.message;});for(const stream of [server.stdout,server.stderr])stream.on("data",data=>{output+=data;});
-      for(let i=0;i<100;i++){if(server.exitCode!==null)throw new Error("Mutation server exited");try{const r=await fetch(origin,{signal:AbortSignal.timeout(1000)});if(r.status===200)return;}catch{}await delay(100);}
+      await stop();
+      // Hand off immediately before launch, after the expensive build has finished.
+      if(reservation.listening)await new Promise(resolve=>reservation.close(resolve));
+      server=spawn(process.execPath,[path.join(root,"node_modules/next/dist/bin/next"),"start",directory,"--hostname","127.0.0.1","--port",String(port)],{cwd:directory,env:{...env,...override},stdio:["ignore","pipe","pipe"]});
+      let startupOutput="";
+      server.on("error",error=>{output+=error.message;});for(const stream of [server.stdout,server.stderr])stream.on("data",data=>{output+=data;startupOutput+=data;});
+      for(let i=0;i<100;i++){
+        if(server.exitCode!==null)throw new Error("Mutation server exited");
+        // Next 16.3 reports Ready from its listening callback. Until then,
+        // this port could belong to a competing fixture, even if it returns 200.
+        if(!startupOutput.includes("Ready in")){await delay(100);continue;}
+        try{const r=await fetch(origin,{signal:AbortSignal.timeout(1000)});if(r.status===200)return;}catch{}
+        await delay(100);
+      }
       throw new Error("Mutation server did not start");
     };
     await start();

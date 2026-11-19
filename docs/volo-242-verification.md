@@ -29,3 +29,12 @@
 - Netlify Deploy Preview: pending push/PR; not verified.
 - Production release: not requested, not published, not verified.
 - VOLO-242 remains In Progress pending preview/database verification and review.
+
+## PR #123 CI follow-up
+- Run 44634146854 at head 6acb427 passed the production build, lint, types, Netlify Deploy Preview build, and database rebuild/access-policy job. That database job runs pgTAP with and without seeds and verifies generated types, covering the added directory SQL checks.
+- Its production smoke step failed in directory-query.test.mjs (fixture server exited) and network-profile-page.test.mjs (unexpected GET / requests reaching a different fixture).
+- Deterministic reproduction: another listener could acquire the application's selected port while Next compiled, because mutation-fixture.mjs released the port before the build.
+- Fix: retain the reservation throughout compilation, release immediately before server launch, and release it during failure cleanup. Gate HTTP readiness probes on this child reporting a successful bind, so a competing listener cannot satisfy readiness during handoff/restarts. No application behavior or assertion was weakened.
+- Added regressions for build-time port ownership/teardown and for a competing listener taking the port during restart. The latter reproduced a false readiness success; gating probes on the child bind prevents all requests to that listener. Observed both regressions fail before their fixes and pass afterward.
+- Post-fix local verification: all 10 affected fixture tests passed, including both CI failures; verify-mutations.mjs --actions passed; changed-file ESLint and git diff --check passed. Full CI rerun remains required for the new commit.
+- Deploy Preview build success does not establish manual preview verification or production release verification. No production publish was requested.
