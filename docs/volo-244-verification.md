@@ -1,12 +1,12 @@
 # VOLO-244 verification
 
-Status: implementation and preview preparation in progress. Production cutover
-has not been performed. This record does not certify a Vercel deployment yet.
+Status: implementation committed and Vercel Preview ready. Administrator
+workflow verification and production preparation/cutover remain pending.
 
 ## Source and destination
 
 - Base: merged main `3e2a480f22311704fe1e2244eb6391037f6641de` (PR #124).
-- Branch: `feature/volo-244-vercel-migration`.
+- Branch: `feature/volo-244-vercel-migration`; implementation `e79cdf9891bcae393c57311538f61aff9e445f8a`.
 - Destination selected by user: [VOLO / volo](https://vercel.com/volo7/volo).
 - Approved design: automatic previews, manual production promotion, existing
   Supabase project. No separate staging environment.
@@ -80,12 +80,37 @@ Netlify project; no new activation or key generation was performed.
 The Node direct-TypeScript tests emit the existing module-type warning; no
 package module convention was changed merely to suppress it.
 
+## Hosted Preview evidence
+
+- First Git-triggered build `54fMiECbn7dxdQecqyGihj945DrM` classified feature
+  branch `e79cdf9` as **Production** despite configured main tracking. It failed
+  closed on missing explicit production origin. Staged domains were not assigned;
+  this did not publish production. Automatic Preview classification still needs
+  confirmation on a subsequent push.
+- Explicit **Create Preview Deployment** for the same branch/SHA produced Ready
+  deployment `5gG1eGWDYYmbQ3zzvzQ8qWcsfVeD` in 44 seconds.
+- Exact URL: <https://volo-cl8q277y5-volo7.vercel.app/>.
+- Branch alias:
+  <https://volo-git-feature-volo-244-vercel-migration-volo7.vercel.app/>.
+- Vercel shows Environment **Preview** and **Assigning Custom Domains Skipped**.
+- Browser with the existing Vercel platform session: root navigated to the fixed
+  sign-in page; `/api/health` showed `{"status":"ok"}`. Branch alias login with
+  an invalid query canary reached the exact deployment `/login` with the query
+  removed. Branch alias `/auth/confirm` with an invalid canary returned HTTP 403.
+  No hosted token consumption, email send or app mutation was performed.
+- Credential-free HTTP probes reached Vercel SSO protection (302), not the app.
+  Protection was retained. These responses cannot establish application cache
+  policy or authenticated isolation; the hosted cache gate remains unverified.
+- Administrator sign-in was requested for the exact preview. No existing Netlify
+  cookies or sessions were copied to the new origin. Pending authenticated reads
+  must be recorded separately from anonymous routing.
+
 ## Hosted checks and remaining gates
 
-Pending: Production secret provisioning, exact deployment SHA and
-canonical/branch URL verification, hosted build evidence, anonymous smoke/cache
-observations, approved signed-in reads, member names/certificates/ratings,
-photos/directory/flights/messages, any activated email callbacks, and deployment verification.
+Pending: Production secret provisioning and hostname selection, automatic Git
+Preview classification, hosted cache evidence, approved signed-in reads, member
+names/certificates/ratings, photos/directory/flights/messages and any activated
+email callbacks.
 
 Preview protection may require a user session; do not disable it to make an
 anonymous smoke script pass. Record protection separately from app behavior.

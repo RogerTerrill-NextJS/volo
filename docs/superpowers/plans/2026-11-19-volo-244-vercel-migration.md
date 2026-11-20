@@ -93,3 +93,11 @@ Files: `docs/volo-244-verification.md` (new), ticket progress comments.
   unit plus HTTP checks, 10 Proxy unit plus HTTP checks, canonical HTTP probes,
   12 origin/alias/header tests and 40 callback/input tests passed. Full release
   suite (including real Auth/database jobs) remains a pre-cutover requirement.
+
+- Implementation committed/pushed as `e79cdf9`. Explicit Vercel Preview is Ready
+  at `volo-cl8q277y5-volo7.vercel.app`; platform protection retained. Root/login,
+  health, exact branch-to-deployment routing and invalid alias callback rejection
+  verified in browser. Initial automatic Git build unexpectedly targeted
+  Production and failed closed; next documentation push will test classification.
+- User handoffs pending: administrator sign-in to exact Preview, private entry of
+  original Production-only Supabase secret, and production hostname choice.
