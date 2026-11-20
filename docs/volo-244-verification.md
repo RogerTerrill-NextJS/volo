@@ -142,6 +142,34 @@ confirmation keys/logging/callback configuration is not established by login.
 
 ## Hosted checks and remaining gates
 
+## PR #125 CI follow-up
+
+Initial head `8c1ba34` passed the main validation and database-policy jobs. Real
+Auth failed `invitation_renewal_concurrency_and_authorization`: a disabled
+actor's fixture session had 90 seconds remaining and returned fail-closed 503
+instead of the role-only check's required 401/403. The installed SDK proactively
+refreshes inside 90 seconds; the fixture JWT lifetime is 120 seconds.
+
+Reproduced the exact 503 in an owned local stack by starting that actor just
+above the refresh margin and adding a fixture-only 500ms delay between Proxy and
+the route guard. Refreshing each actor before the authorization assertion made
+the same controlled reproduction pass, including the concurrent one-winner/
+one-stale-loser checks. Added an explicit fresh-session precondition; retained
+the 401/403 requirement and separate expired-session scenarios. No production
+authorization behavior was changed. Script syntax and focused lint passed;
+full CI rerun is required for the new head.
+
+Netlify compatibility smoke passed root/protected redirects, login and health.
+The public service-worker browser `no-store` assertion did not pass: both current
+production and PR #125 return the identical script and
+`public,max-age=0,must-revalidate`, with no custom worker CSP/CDN fields visible.
+This predates the migration and is not a passed hosted worker-header check.
+No Netlify policy was changed to hide that result. Direct Vercel worker document
+navigation was blocked by the browser client; hosted header/cache evidence
+remains a release gate rather than an inferred pass.
+
+## Release gates
+
 Reviewed rebuild: <https://volo-fw0k33nd3-volo7.vercel.app/>, source `6064f2e`
 (app code identical to implementation `e79cdf9`), Environment Preview, custom
 production domain assignment skipped. Administrator signed in separately and
