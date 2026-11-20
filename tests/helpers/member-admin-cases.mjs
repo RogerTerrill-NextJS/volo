@@ -38,6 +38,22 @@ export async function verifyMemberAdmin({stack,app,scenario}){
   await run('member_admin_page_native_fetched_confirmation_and_safe_controls',async()=>{
    await checked(admin.from('profiles').update({display_name:'<script>Owned member text</script>'}).eq('user_id',accounts.uiNative.id));
    const html=await memberPage();assert.match(html,/Members/);assert.ok(html.includes('href="/admin/members"'));assert.ok(html.includes('&lt;script&gt;Owned member text&lt;/script&gt;'));assert.ok(!html.includes('<script>Owned member text</script>'));
+   const named=card(html,accounts.uiNative.id);
+   assert.ok(!named.replace(/<details\b[^>]*>[\s\S]*?<\/details>/g,'').includes('<dt class="font-medium">Member ID</dt>'),'Named members should not have a visible ID field');
+   assert.ok(named.replace(/<!--[\s\S]*?-->/g,'').includes('Disable member &lt;script&gt;Owned member text&lt;/script&gt;'),'Disable controls should identify the member by name');
+   await checked(admin.from('profiles').update({display_name:'Owned admin target'}).eq('user_id',accounts.second.id));
+   const duplicates=await memberPage();
+   for(const label of ['target','second']){
+    const memberCard=card(duplicates,accounts[label].id);
+    assert.match(memberCard,/Owned admin target/);
+    const details=memberCard.match(/<details\b([^>]*)>([\s\S]*?)<\/details>/);
+    assert.ok(details,'Same-name accounts must be distinguishable through member details');
+    assert.ok(!/\bopen\b/.test(details[1]),'Technical identifiers are collapsed by default');
+    assert.match(details[2],/Member details/);
+    assert.ok(details[2].includes('>'+accounts[label].id+'</dd>'),'An admin can reveal this account’s unique identifier');
+
+    assert.ok(memberCard.includes('name="target_id" value="'+accounts[label].id+'"'),'Duplicate names retain distinct action targets');
+   }
    assert.ok(!card(html,accounts.admin.id).includes('name="target_id"'));assert.ok(!card(html,accounts.disabled.id).includes('name="target_id"'));assert.match(card(html,accounts.disabled.id),/Reason excerpt shown/);
    for(const label of ['member','disabled','absent']){const denied=await memberPage(label);assert.ok(!denied.includes('Owned admin target')&&!denied.includes('name="target_id"'));}
    const target=accounts.uiNative.id,result=await safe(await app.memberPageAction(target,{}, {session:sessions.admin,transport:'native'}));assert.match(card(result,target),/Member disabled/);assert.ok(card(result,accounts.uiFetched.id).includes('name="reason"'),'Native state applies only to its target card');assert.ok(!card(result,target).includes('name="reason"'));
@@ -50,6 +66,11 @@ export async function verifyMemberAdmin({stack,app,scenario}){
     assert.ok(!card(await memberPage(),accounts.uiNative.id).includes('name="target_id"'));
    }
    const extras=[];for(let i=0;i<52;i++){const label='page'+i;accounts[label]=await stack.createAccount({label:'member-page-'+i,role:'member'});extras.push(accounts[label].id);}
+   const unnamedPage=await memberPage();
+   const unnamed=extras.find(id=>unnamedPage.includes('id="member-'+id+'"'));
+   assert.ok(unnamed,'Expected a member without a pilot profile on the first page');
+   assert.match(card(unnamedPage,unnamed),/Member without a pilot profile/);
+   assert.ok(card(unnamedPage,unnamed).includes(unnamed),'An unnamed member retains an identifiable fallback');
    const first=await overview('admin');assert.equal(first.rows.length,50);assert.ok(first.nextCursor);assert.ok((await memberPage()).includes('href="/admin/members?after='+first.nextCursor+'"'));
    const second=await overview('admin',first.nextCursor),target=second.rows.find(r=>extras.includes(r.userId)).userId,html=await memberPage('admin',first.nextCursor);assert.ok(html.includes('First member page'));assert.match(await memberPage('admin','invalid'),/This member page is unavailable/);assert.match(await memberPage('admin','ffffffff-ffff-ffff-ffff-ffffffffffff'),/No more members/);
    await mode('lost');try{const result=await safe(await app.memberPageAction(target,{}, {session:sessions.admin,transport:'native',after:first.nextCursor,formHtml:html}));const row=card(result,target);assert.ok(row.includes('name="after" value="'+first.nextCursor+'"'));assert.match(row,/Check member status/);}finally{await mode('off');}
