@@ -2,7 +2,7 @@
 import {useActionState,useEffect,useRef,useState,useTransition} from 'react';
 import {emptyMemberDisableForm,memberDisableFormResult,type MemberDisableFormState} from '../../../../lib/auth/member-admin-form-state';
 import {disableAdminMember} from './actions';
-export default function MemberControl({targetId,disabled,after}:{targetId:string;disabled:boolean;after?:string}){
+export default function MemberControl({targetId,memberName,disabled,after}:{targetId:string;memberName:string;disabled:boolean;after?:string}){
  const permalink='/admin/members'+(after?'?after='+after:'')+'#member-'+targetId;
  const [nativeState,submit,nativePending]=useActionState(disableAdminMember,emptyMemberDisableForm,permalink),[clientState,setClientState]=useState<MemberDisableFormState|null>(null),[sending,start]=useTransition();
  const state=clientState??nativeState,pending=sending||nativePending,feedback=useRef<HTMLParagraphElement>(null),inFlight=useRef(false);
@@ -16,7 +16,7 @@ export default function MemberControl({targetId,disabled,after}:{targetId:string
    start(async()=>{try{setClientState(await disableAdminMember(state,form));}catch{setClientState(memberDisableFormResult(state,form,{code:'disable_unconfirmed'}));}finally{inFlight.current=false;}});
   }} className="space-y-4">
    <fieldset key={state.revision} disabled={pending} className="min-w-0 space-y-4">
-    <legend className="sr-only">Disable member {targetId}</legend><input type="hidden" name="target_id" value={targetId}/>
+    <legend className="sr-only">Disable member {memberName}</legend><input type="hidden" name="target_id" value={targetId}/>
     <div className="space-y-2"><label htmlFor={'reason-'+targetId} className="block font-medium">Reason for disabling</label><p id={'help-'+targetId} className="text-sm">Required, up to 500 characters. The reason is recorded in the administration audit.</p>
      <textarea id={'reason-'+targetId} name="reason" required maxLength={1000} rows={3} defaultValue={state.reason} aria-describedby={'help-'+targetId+' count-'+targetId} aria-invalid={state.status==='invalid'?true:undefined}
       onChange={event=>{const value=[...event.currentTarget.value.replace(/\r\n?/g,'\n')].length;setCount({revision:state.revision,value});event.currentTarget.setCustomValidity(value>500?'Use no more than 500 characters.':'');}}
