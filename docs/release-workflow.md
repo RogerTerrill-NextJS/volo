@@ -1,5 +1,13 @@
 # Volo release and frontend rollback checklist
 
+**VOLO-244 migration:** Netlify is current production until a separately
+requested and verified Vercel cutover. The approved destination workflow is
+automatic Vercel previews and manual promotion of completed Production builds
+from `main`, with automatic production domain assignment disabled. Use the
+[Vercel release/first-release rollback procedure](vercel-deployment.md#preview-checks-and-release)
+for that operation; keep the Netlify procedure below for current production and
+cross-provider rollback. A merged PR or saved Vercel setting is not a release.
+
 Feature branch → reviewed PR / CI / Netlify Deploy Preview → merge into `main` → **user-requested batch publication**. Roger owns technical release checks and usage review; founder scope/spending decisions remain shared. There is no staging environment. Previews and production share Supabase, so previews do not isolate writes. Keep PR previews automatic and production auto-publishing locked.
 
 ## Release checklist

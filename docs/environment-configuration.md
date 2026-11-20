@@ -1,5 +1,11 @@
 # Environment configuration
 
+VOLO-244 adds Vercel hosting support during migration. See the
+[Vercel environment and origin contract](vercel-deployment.md#environment-contract)
+for Preview/Production scopes, explicit production origin and server runtime
+requirements. Netlify remains current production until verified cutover; dated
+Netlify setup below is preserved for overlap and rollback.
+
 VOLO-104 defines the app's environment contract. Netlify Deploy Previews provide
 pre-release review; production releases are manual batches from `main`.
 Production auto-publishing stays locked. There is no staging environment.

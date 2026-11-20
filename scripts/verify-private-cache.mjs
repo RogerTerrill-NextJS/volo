@@ -6,10 +6,11 @@ import {startCacheFixture} from "../tests/helpers/cache-fixture.mjs";
 
 const fixture=await startCacheFixture();
 const cache=createSharedCache();
+const vercelCache=createSharedCache("Vercel-CDN-Cache-Control");
 const membership=()=>fixture.backend.calls.filter(x=>x.service==="membership").length;
 const policy=reply=>{
   assert.match(reply.headers.get("cache-control"),/no-store/);
-  for(const field of ["cdn-cache-control","netlify-cdn-cache-control"])assert.equal(reply.headers.get(field),"no-store");
+  for(const field of ["cdn-cache-control","netlify-cdn-cache-control","vercel-cdn-cache-control"])assert.equal(reply.headers.get(field),"no-store");
 };
 const absorb=(reply,jar)=>{
   for(const value of reply.headers.getSetCookie()){
@@ -60,10 +61,10 @@ try {
 
   for(const route of ["/dashboard/cache-check","/api/cache-check"]){
     const variants=route.startsWith("/dashboard")?[{}, {RSC:"1"},{RSC:"1","Next-Router-Prefetch":"1"}]:[{}];
-    for(const headers of variants)for(const throughCache of [false,true])for(const account of [A,B,null,A]){
+    for(const headers of variants)for(const throughCache of [null,cache,vercelCache])for(const account of [A,B,null,A]){
       const before=membership(),jar=account?.jar??new Map();
       const load=()=>fixture.request(route,jar,headers);
-      const {reply,hit}=throughCache?await cache.request(route+JSON.stringify(headers),load):{reply:await load(),hit:false};
+      const {reply,hit}=throughCache?await throughCache.request(route+JSON.stringify(headers),load):{reply:await load(),hit:false};
       assert.equal(hit,false);policy(reply);
       if(account){
         const omittedPrefetch=headers["Next-Router-Prefetch"] && !reply.body.includes(account.entry.id);

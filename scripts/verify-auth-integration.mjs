@@ -630,10 +630,15 @@ try{
     await scenario('invitation_renewal_concurrency_and_authorization',async()=>{
       const {email,invitation}=await setupRenewal('renew-race');
       for(const [actor,session] of [['anonymous',null],['member',users.A],['disabled',users.disabled]]){
+        // Test current role admission, not the 120s fixture JWT crossing the
+        // SDK's 90s refresh margin between Proxy and the read-only route guard.
+        // Expired/rotating sessions have their own scenarios below.
+        if(session)await session.refresh();
         const remaining=session?Math.floor(session.expiresAt-Date.now()/1000):null;
+        check(!session||remaining>90,'authorization fixture starts outside the SDK refresh margin');
         const result=await renew(invitation,'normal',session);
         const category=[401,403].includes(result.status)?null:await stack.authFailureCategory();
-        check([401,403].includes(result.status),`non-admin renewal denied (actor ${actor}; HTTP ${result.status}; code ${result.body.error?.code??result.body.data?.code??'none'}; remaining ${remaining??'absent'}; provider ${category?JSON.stringify(category):'none'})`);
+        check([401,403].includes(result.status),`non-admin renewal denied (actor ${actor}; HTTP ${result.status}; code ${result.body.error?.code??result.body.data?.code??result.body.code??'none'}; remaining ${remaining??'absent'}; provider ${category?JSON.stringify(category):'none'})`);
       }
       const outcomes=await Promise.all([renew(invitation),renew(invitation)]);check(outcomes.filter(r=>r.body.data?.code==='accepted').length===1,'one concurrent send');
       check(outcomes.filter(r=>r.body.data?.code==='conflict').length===1,'one stale loser');

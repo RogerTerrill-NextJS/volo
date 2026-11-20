@@ -1,5 +1,13 @@
 # Auth callback contract
 
+For VOLO-244 Vercel previews, use the exact canonical deployment callback under
+the [Vercel preview procedure](vercel-deployment.md#canonical-previews-and-auth).
+Vercel branch aliases cannot receive or forward callback tokens. The historical
+rule below choosing numbered Netlify PR URLs continues to apply to Netlify;
+its prohibition on immutable URLs is not the Vercel callback policy. Neither
+provider permits wildcard callback trust. Hosted configuration remains pending
+separate review and production Site URL changes remain part of cutover.
+
 VOLO-107 uses exact callback URLs for local development, production, and
 individually reviewed Netlify Deploy Previews. There is no staging environment.
 Hosted configuration remains a separately approved operation. Implemented local

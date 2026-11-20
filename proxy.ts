@@ -5,10 +5,13 @@ import {passwordResetMessage} from './lib/auth/password-reset-feedback.ts';
 import {loginResultMessage} from './lib/auth/login-feedback.ts';
 import {parseMutationOrigin} from "./lib/auth/mutation-origin.mjs";
 import {applyPrivateResponseHeaders} from "./lib/http/private-response.ts";
+import {previewAliasResponse} from "./lib/http/preview-alias.ts";
 import type { NextRequest } from "next/server.js";
 import { refreshSupabaseSession } from "./lib/supabase/proxy.ts";
 
 export async function proxy(request: NextRequest) {
+  const aliasResponse=previewAliasResponse(request,process.env.VOLO_MUTATION_ORIGIN??'',process.env.VOLO_PREVIEW_ALIAS_ORIGIN??'');
+  if(aliasResponse)return aliasResponse;
   if (["/reset-password","/reset-password/"].includes(request.nextUrl.pathname)) {
     const query=request.nextUrl.searchParams,results=query.getAll('result'),headers=new Headers();applyPrivateResponseHeaders(headers);headers.set('Referrer-Policy','no-referrer');
     if([...query.keys()].some(key=>!['result','_rsc'].includes(key))||results.length>1||(results.length===1&&!passwordResetMessage(results[0]))){
