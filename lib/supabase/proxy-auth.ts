@@ -14,6 +14,17 @@ export function createProxyAuthTransport(credentialCodes:ReadonlySet<string> = A
     return Response.json({ error_code: "volo_auth_unavailable", message: "Auth unavailable" }, { status: 400 });
   };
   const timer = setTimeout(() => { unavailable = true; controller.abort(); }, AUTH_VERIFICATION_TIMEOUT_MS);
+  // Some fetch/body implementations do not settle their promise after abort.
+  // Keep the local deadline authoritative while still cancelling best effort.
+  async function withinDeadline<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+    let abort=()=>{};
+    const expired=new Promise<never>((_resolve,reject)=>{
+      abort=()=>reject(new Error("Auth unavailable"));
+      if(signal.aborted)abort();else signal.addEventListener("abort",abort,{once:true});
+    });
+    try { return await Promise.race([operation,expired]); }
+    finally { signal.removeEventListener("abort",abort); }
+  }
   return {
     isUnavailable: () => unavailable,
     close() {
@@ -26,9 +37,9 @@ export function createProxyAuthTransport(credentialCodes:ReadonlySet<string> = A
       try {
         const requestSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
         const signal = requestSignal ? AbortSignal.any([controller.signal, requestSignal]) : controller.signal;
-        const response = await fetch(input, { ...init, signal, redirect: "error" });
+        const response = await withinDeadline(fetch(input, { ...init, signal, redirect: "error" }), signal);
         if (response.status === 429 || response.status >= 500) {
-          await response.body?.cancel();
+          await withinDeadline(response.body?.cancel() ?? Promise.resolve(), signal);
           return terminal();
         }
         const url = new URL(input instanceof Request ? input.url : String(input));
@@ -37,7 +48,7 @@ export function createProxyAuthTransport(credentialCodes:ReadonlySet<string> = A
           if (unavailable || closed) return terminal();
           return response;
         }
-        const body = await response.text();
+        const body = await withinDeadline(response.text(), signal);
         const data = JSON.parse(body);
         if (!response.ok) {
           // Older Auth responses use a numeric HTTP code beside error_code.

@@ -1,6 +1,7 @@
 import {NextResponse,type NextRequest} from 'next/server';
 import {cookies} from 'next/headers';
 import {applyPrivateResponseHeaders} from '../../../lib/http/private-response.ts';
+import {previewAliasResponse} from '../../../lib/http/preview-alias.ts';
 import {checkMutationOrigin} from '../../../lib/auth/mutation-request.ts';
 import {parseMutationOrigin} from '../../../lib/auth/mutation-origin.mjs';
 import {parseConfirmationLink,readConfirmationCsrf} from '../../../lib/auth/invitation-confirmation-input.ts';
@@ -19,10 +20,12 @@ function message(status=200){return new NextResponse('<!doctype html><html lang=
 function ports():TransportPorts{return {store:createConfirmationStore(),newSecret:newConfirmationSecret,seal:sealConfirmation,open:openConfirmation,digest:confirmationDigest,now:Date.now};}
 function trustedOrigin(){return parseMutationOrigin(process.env.VOLO_MUTATION_ORIGIN??'',true);}
 function prefetch(request:NextRequest){return request.headers.has('next-router-prefetch')||/prefetch/i.test(request.headers.get('purpose')??'')||/prefetch/i.test(request.headers.get('sec-purpose')??'');}
-export function HEAD(){return new NextResponse(null,{headers:headers()});}
+function aliasGate(request:NextRequest){return previewAliasResponse(request,process.env.VOLO_MUTATION_ORIGIN??'',process.env.VOLO_PREVIEW_ALIAS_ORIGIN??'');}
+export function HEAD(request:NextRequest){return aliasGate(request)??new NextResponse(null,{headers:headers()});}
 export async function GET(request:NextRequest){
+ const alias=aliasGate(request);if(alias)return alias;
  try{
-  if(prefetch(request))return HEAD();const origin=trustedOrigin(),names=confirmationCookieNames(origin),p=ports();
+  if(prefetch(request))return HEAD(request);const origin=trustedOrigin(),names=confirmationCookieNames(origin),p=ports();
   if(request.nextUrl.search){
    const input=parseConfirmationLink(new URL(request.url));if(!input)return message(400);
    const created=await createConfirmationTransport({...input,origin,previousCookie:request.cookies.get(names.confirmation)?.value??null},p);
@@ -41,6 +44,7 @@ export async function GET(request:NextRequest){
  }catch{return message(503);}
 }
 export async function POST(request:NextRequest){
+ const alias=aliasGate(request);if(alias)return alias;
  let transport:ReturnType<typeof createConfirmationAuthTransport>|undefined,wroteSession=false,claimed=false,names:ReturnType<typeof confirmationCookieNames>|undefined;
  const failure=async(status:number)=>{
   const response=message(status);if(!names)return response;

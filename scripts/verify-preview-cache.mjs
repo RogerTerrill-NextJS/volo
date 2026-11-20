@@ -6,7 +6,7 @@ assert.equal(target.protocol,"https:");
 assert.equal(target.username+target.password+target.search+target.hash,"");
 assert.equal(target.pathname,"/");
 const origin=target.origin;
-const fields=["cache-control","cdn-cache-control","netlify-cdn-cache-control","cache-status","age"];
+const fields=["cache-control","cdn-cache-control","netlify-cdn-cache-control","vercel-cdn-cache-control","x-vercel-cache","cache-status","age"];
 let inconclusive=0,publicHits=0;
 const observations=[],failures=[];
 // Supported RFC 9211 evidence only; unknown/malformed evidence cannot certify storage.
@@ -68,7 +68,7 @@ async function request(route,headers={},method="GET",privatePath=false){
       verify(()=>{
         assert.match(response.headers.get("cache-control")??"",/no-store/);
         if(new URL(route,origin).pathname==='/login')assert.match(response.headers.get("cache-control")??"",/private.*no-store/);
-        for(const field of ["cdn-cache-control","netlify-cdn-cache-control"]){const value=response.headers.get(field);if(value!==null)assert.equal(value,"no-store");}
+        for(const field of ["cdn-cache-control","netlify-cdn-cache-control","vercel-cdn-cache-control"]){const value=response.headers.get(field);if(value!==null)assert.equal(value,"no-store");}
       },"policy-failure",issues);
       const evidence=storageEvidence(response.headers.get("cache-status"));
       if(["hit","stored"].includes(evidence))issues.push("cdn-"+(evidence==="stored"?"storage":"hit"));

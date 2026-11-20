@@ -1,5 +1,12 @@
 # Deploy Preview routing verification
 
+VOLO-244 adds [Vercel preview instructions](vercel-deployment.md) and a separate
+[verification record](volo-244-verification.md). Open the exact canonical
+deployment URL before sign-in; the Git branch alias only redirects navigation
+and does not accept mutation bodies or email callbacks. Preserve automatic
+previews and manual production promotion. Historical Netlify observations below
+do not verify Vercel runtime behavior.
+
 Current checks updated for VOLO-237; historical VOLO-109 evidence is below.
 Pre-release checks use Netlify Deploy Previews;
 VOLO has no separate staging environment.

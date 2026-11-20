@@ -8,6 +8,7 @@ test("private policy replaces conflicting cache fields and preserves response me
     "Cache-Control":"public, s-maxage=600, stale-while-revalidate=60",
     "CDN-Cache-Control":"public, max-age=600",
     "Netlify-CDN-Cache-Control":"public, s-maxage=600, durable",
+    "Vercel-CDN-Cache-Control":"public, s-maxage=600",
     Vary:"RSC, Next-Router-State-Tree", Location:"/login", "X-Fixture":"preserve",
   });
   headers.append("Set-Cookie","first=a; Path=/");
@@ -15,7 +16,7 @@ test("private policy replaces conflicting cache fields and preserves response me
   const cookies = headers.getSetCookie();
   applyPrivateResponseHeaders(headers);
   assert.equal(headers.get("Cache-Control"),"private, no-cache, no-store, must-revalidate, max-age=0");
-  for (const key of ["CDN-Cache-Control","Netlify-CDN-Cache-Control"]) assert.equal(headers.get(key),"no-store");
+  for (const key of ["CDN-Cache-Control","Netlify-CDN-Cache-Control","Vercel-CDN-Cache-Control"]) assert.equal(headers.get(key),"no-store");
   assert.deepEqual(headers.getSetCookie(),cookies);
   assert.equal(headers.get("Vary"),"RSC, Next-Router-State-Tree");
   assert.equal(headers.get("Location"),"/login");

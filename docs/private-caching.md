@@ -7,6 +7,7 @@ VOLO-118 shares one server-only policy in `lib/http/private-response.ts`:
 | Cache-Control | private, no-cache, no-store, must-revalidate, max-age=0 |
 | CDN-Cache-Control | no-store |
 | Netlify-CDN-Cache-Control | no-store |
+| Vercel-CDN-Cache-Control | no-store |
 | Expires | 0 |
 | Pragma | no-cache |
 
@@ -14,6 +15,16 @@ The helper replaces conflicting policies and preserves unrelated headers,
 Vary, redirect locations and multiple cookies. Netlify's targeted field takes
 precedence over generic CDN and browser fields; it may be consumed at the edge.
 Vary: Cookie alone is insufficient protection.
+
+VOLO-244 retains both providers' targeted headers during migration. Vercel's
+targeted field takes precedence there and is consumed before the browser;
+its absence from a hosted response is not proof of missing policy. Observe
+`x-vercel-cache`, generic/browser headers and repeated personalized requests.
+`MISS` alone does not prove non-storage or rule out runtime caching. The
+anonymous reporter records Vercel fields while retaining its existing strict
+inconclusive gate; do not treat unavailable RFC Cache-Status evidence as a pass.
+Local cache fixtures exercise both targeted-header policies. See the
+[Vercel deployment procedure](vercel-deployment.md) for hosted verification.
 
 Proxy finalization applies the policy after SDK metadata/cookie preservation on
 project-session requests, cookie updates, verification failures and protected page
