@@ -10,8 +10,9 @@ workflow verification and production preparation/cutover remain pending.
 - Destination selected by user: [VOLO / volo](https://vercel.com/volo7/volo).
 - Approved design: automatic previews, manual production promotion, existing
   Supabase project. No separate staging environment.
-- Existing project domain: `volo-six-woad.vercel.app`. Final production hostname
-  remains a cutover decision.
+- User-selected initial production origin: `https://volo-six-woad.vercel.app`.
+  Saved as Production-only `VOLO_MUTATION_ORIGIN`; this is configuration, not
+  authorization or evidence of publication.
 
 ## Hosting observations and changes
 
@@ -26,9 +27,20 @@ Copied `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to
 Vercel as Config values scoped to **Production and Preview**, after verifying
 both Netlify contexts match. Confirmed saved names and scopes in Vercel. No
 secret values were copied or logged. The existing `SUPABASE_SECRET_KEY` is
-Production-only and write-only in Netlify; user entry of the original value into
-Vercel Production is pending. No `VOLO_CONFIRMATION_KEYS` exists in the current
-Netlify project; no new activation or key generation was performed.
+Production-only and write-only in Netlify. User entered it directly into Vercel;
+confirmed Secret type and Production scope without revealing its value. No
+`VOLO_CONFIRMATION_KEYS` exists in the current Netlify project; no new activation
+or key generation was performed.
+
+Authenticated invitation-list verification exposed a required privileged read
+that was unavailable in Preview without the service key. User explicitly
+approved a second Secret entry scoped only to Preview branch
+`feature/volo-244-vercel-migration`, then entered and saved its value privately.
+Confirmed the exact branch restriction and the separate unchanged Production
+entry. It is not available to all preview branches. A fresh Preview deployment
+was required to use this configuration. User completed Vercel’s email identity
+check; Preview redeploy `6Xiw8cerypYDuNMA1ufQJ4nrCtrV` reached Ready in 44 seconds.
+No credential source was read or secret value logged by the agent.
 
 ## Local checks
 
@@ -52,7 +64,7 @@ Netlify project; no new activation or key generation was performed.
 - Local production HTTP check exposed Next's internal request URL behavior:
   exact public `Host` now selects only a fixed alias redirect/rejection. Origin
   authorization still never trusts Host. Added a failing regression then fixed
-  it; the final HTTP rerun is pending.
+  it; the final HTTP checks passed as recorded below.
 - Review exposed `/auth/confirm` bypassing Proxy. Added direct callback GET,
   HEAD and POST gates and a real-handler regression (400 before, 403 after,
   without redirects/cookies). This preserves the existing Proxy exclusions and
@@ -85,8 +97,8 @@ package module convention was changed merely to suppress it.
 - First Git-triggered build `54fMiECbn7dxdQecqyGihj945DrM` classified feature
   branch `e79cdf9` as **Production** despite configured main tracking. It failed
   closed on missing explicit production origin. Staged domains were not assigned;
-  this did not publish production. Automatic Preview classification still needs
-  confirmation on a subsequent push.
+  this did not publish production. The next automatic Git push correctly
+  produced Preview, as recorded below.
 - Explicit **Create Preview Deployment** for the same branch/SHA produced Ready
   deployment `5gG1eGWDYYmbQ3zzvzQ8qWcsfVeD` in 44 seconds.
 - Exact URL: <https://volo-cl8q277y5-volo7.vercel.app/>.
@@ -101,16 +113,43 @@ package module convention was changed merely to suppress it.
 - Credential-free HTTP probes reached Vercel SSO protection (302), not the app.
   Protection was retained. These responses cannot establish application cache
   policy or authenticated isolation; the hosted cache gate remains unverified.
-- Administrator sign-in was requested for the exact preview. No existing Netlify
-  cookies or sessions were copied to the new origin. Pending authenticated reads
-  must be recorded separately from anonymous routing.
+- Automatic Git push of documentation-only head `6064f2e` produced Ready Preview
+  `8ryvj3cFSpCnJtvMGfSoMDFZqk9F` in 16 seconds:
+  <https://volo-ny4wrdlsd-volo7.vercel.app/>. Environment Preview; custom domain
+  assignment skipped. App source is identical to implementation `e79cdf9`.
+- User signed in as administrator to the implementation Preview. No Netlify
+  cookies/sessions were transferred to the new origin. Read-only checks:
+
+| Area | Observed result |
+| --- | --- |
+| Dashboard | Authorized app navigation and workspace loaded |
+| Members | Named member displayed by name; missing-profile fallback retained; details opens and closes with Enter; self-disable prevented |
+| Profile | Seven certificate and three rating choices render; existing selections and legacy IFR value retained; no save submitted |
+| Photo | Private photo loaded with nonzero natural dimensions; no upload/removal |
+| Directory | Existing pilot card and detail show name, airport, certificates, legacy rating and aircraft |
+| Flights | Upcoming empty state and creation form render; no flight published |
+| Messaging | Authorized empty conversation list; no messages sent; delivery/realtime not exercised with hosted data |
+| Moderation | Existing flight rows, timezone data and retained moderation record loaded; no hide action |
+| Reports | Authorized empty report list |
+| Metrics | Authorized metrics and outcomes sections loaded |
+| Invitations | Initially unavailable without Preview service key; after approved branch override/rebuild, authorized empty list and send form loaded; no invitation sent |
+
+Mobile viewport override was attempted but the observed Chrome viewport stayed
+1728 pixels wide. Override was reset; no mobile verification pass is claimed.
+No hosted app mutations, emails or Supabase configuration/schema changes were
+performed. Invitation/recovery activation remains a separate gate because
+confirmation keys/logging/callback configuration is not established by login.
 
 ## Hosted checks and remaining gates
 
-Pending: Production secret provisioning and hostname selection, automatic Git
-Preview classification, hosted cache evidence, approved signed-in reads, member
-names/certificates/ratings, photos/directory/flights/messages and any activated
-email callbacks.
+Reviewed rebuild: <https://volo-fw0k33nd3-volo7.vercel.app/>, source `6064f2e`
+(app code identical to implementation `e79cdf9`), Environment Preview, custom
+production domain assignment skipped. Administrator signed in separately and
+Invitations loaded its empty list and send form, proving the scoped privileged
+read is configured without sending email or changing data.
+
+Pending: hosted cache evidence and any separately activated email callbacks.
+Production publication and full release checks remain separate.
 
 Preview protection may require a user session; do not disable it to make an
 anonymous smoke script pass. Record protection separately from app behavior.

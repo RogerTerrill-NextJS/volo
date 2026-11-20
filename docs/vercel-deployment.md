@@ -18,7 +18,7 @@ Inspected November 19, 2026:
 | Production branch | main |
 | Auto-assign Custom Production Domains | Disabled; UI states deployments need manual promotion |
 | System environment variables | Enabled |
-| Existing project domain | volo-six-woad.vercel.app; no published production deployment at initial inspection |
+| Initial production origin | https://volo-six-woad.vercel.app, selected by user; Production-only VOLO_MUTATION_ORIGIN saved |
 | Project variables/deployments | None at initial inspection; see verification record for later changes |
 
 Keep PR previews automatic. Do not disable all Git deployments or create another
@@ -37,7 +37,11 @@ Do not put CLI management tokens or database passwords in this web project.
 administrative invitation provider when that flow is enabled. It is not required
 for ordinary member reads or login. `VOLO_CONFIRMATION_KEYS` is server-only JSON
 for invitation/recovery transport encryption when activated. Review the actual
-existing Netlify configuration and enabled flows before copying either. Preserve
+existing Netlify configuration and enabled flows before copying either. During VOLO-244,
+user provisioned the service key for Production and explicitly authorized a
+separate Preview entry restricted to `feature/volo-244-vercel-migration` for
+invitation verification. Keep that restriction; remove the temporary branch
+entry after its review closes. Preserve
 active/retiring confirmation keys across overlap rather than generating
 incompatible replacements. Do not reveal values in logs, screenshots or tickets.
 

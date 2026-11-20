@@ -101,3 +101,18 @@ Files: `docs/volo-244-verification.md` (new), ticket progress comments.
   Production and failed closed; next documentation push will test classification.
 - User handoffs pending: administrator sign-in to exact Preview, private entry of
   original Production-only Supabase secret, and production hostname choice.
+
+- Production origin selected/configured as `https://volo-six-woad.vercel.app`.
+  Secret type/Production scope confirmed without revealing the value.
+- User approved/provisioned a Preview-only override on this reviewed branch for
+  invitation administration. After identity verification, redeploy `6Xiw8cery`
+  (source `6064f2e`) was Ready and authenticated invitation-list/form reads passed.
+  No email, message, profile, flight, moderation or database mutation submitted.
+- Authenticated browser reads passed for Members/profile/photo/directory,
+  flights/creation form, messaging empty state, moderation/reports/metrics and
+  Invitations. Mobile viewport override had no effect and was reset; no mobile
+  pass claimed. Production release/full release suite remain separate.
+
+- User explicitly requested PR creation after Preview/configuration verification.
+  Main merge, production publication and Netlify archival remain unauthorized
+  by this PR-creation request and are not performed.
