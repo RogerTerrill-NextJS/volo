@@ -21,6 +21,18 @@ function confirmUrl():string {
  const callback=new URL('/auth/confirm',url);callback.searchParams.set('flow','invitation');return callback.href;
 }
 
+// Cancellation is best effort; the local deadline must also settle promises
+// from transports that leave a fetch or response body pending after abort.
+async function withinDeadline<T>(operation:Promise<T>,signal:AbortSignal):Promise<T> {
+ let abort=()=>{};
+ const expired=new Promise<never>((_resolve,reject)=>{
+  abort=()=>reject(unavailable());
+  if(signal.aborted)abort();else signal.addEventListener('abort',abort,{once:true});
+ });
+ try{return await Promise.race([operation,expired]);}
+ finally{signal.removeEventListener('abort',abort);}
+}
+
 export function createInvitationServiceClient(){
   const {url,secretKey}=getSupabasePrivilegedConfig();
   return createClient<Database>(url,secretKey,{
@@ -29,8 +41,8 @@ export function createInvitationServiceClient(){
     const timeout=new AbortController();const timer=setTimeout(()=>timeout.abort(),5000);
     try {
      const signal=init?.signal?AbortSignal.any([init.signal,timeout.signal]):timeout.signal;
-     const response=await fetch(input,{...init,signal,cache:'no-store',redirect:'error'});
-     const body=await response.text();if(signal.aborted)throw unavailable();
+     const response=await withinDeadline(fetch(input,{...init,signal,cache:'no-store',redirect:'error'}),signal);
+     const body=await withinDeadline(response.text(),signal);if(signal.aborted)throw unavailable();
      return new Response(body,{status:response.status,headers:response.headers});
     }finally {clearTimeout(timer);timeout.abort();}
    }},
