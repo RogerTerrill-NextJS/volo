@@ -1,16 +1,22 @@
 # Volo release and frontend rollback checklist
 
-**VOLO-244 migration:** Netlify is current production until a separately
-requested and verified Vercel cutover. The approved destination workflow is
-automatic Vercel previews and manual promotion of completed Production builds
-from `main`, with automatic production domain assignment disabled. Use the
+**Current production (November 20, 2026):** Vercel serves
+<https://volo-six-woad.vercel.app/> from `main` commit `799b154`. The user
+authorized the cutover; main CI, desktop authentication/core page reads and
+user-reported phone checks passed. Hosted CDN isolation and email verification
+remain limited as recorded in VOLO-244. Netlify `voloapp` remains available for
+rollback, pending [VOLO-245 retirement gates](netlify-retirement.md).
+
+Keep automatic Vercel previews and manual promotion of completed Production
+builds from `main`, with automatic production domain assignment disabled. Use the
 [Vercel release/first-release rollback procedure](vercel-deployment.md#preview-checks-and-release)
-for that operation; keep the Netlify procedure below for current production and
-cross-provider rollback. A merged PR or saved Vercel setting is not a release.
+for current releases. The Netlify procedure below is retained for approved
+cross-provider recovery; it is not the default Vercel publication procedure.
+A merged PR or saved hosting setting is not a release.
 
-Feature branch → reviewed PR / CI / Netlify Deploy Preview → merge into `main` → **user-requested batch publication**. Roger owns technical release checks and usage review; founder scope/spending decisions remain shared. There is no staging environment. Previews and production share Supabase, so previews do not isolate writes. Keep PR previews automatic and production auto-publishing locked.
+Feature branch → reviewed PR / CI / Vercel Preview → merge into `main` → **user-requested batch publication**. Until VOLO-245 updates the classic branch rule, the Netlify preview check is also required. Roger owns technical release checks and usage review; founder scope/spending decisions remain shared. There is no staging environment. Previews and production share Supabase, so previews do not isolate writes. Keep PR previews automatic, Vercel production promotion manual, and retained Netlify production auto-publishing locked.
 
-## Release checklist
+## Retained Netlify release checklist
 
 1. **Define the batch.** Record user authorization, tickets, exact `main` SHA and production URL, <https://voloapp.netlify.app/>. Merging/building is not publication. Run targeted checks for ordinary PRs and the full suite before release.
 2. **Check review and CI.** Require successful latest-revision **Typecheck, lint, build and test**, **Real Auth and session integration**, **Rebuild database and test access policies**, and Netlify preview results; resolve review conversations. Check the final batch SHA as well as its PRs. Use `feature/` branches and preserve unfinished work.
