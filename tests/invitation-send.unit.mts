@@ -5,6 +5,7 @@ import {createInitialSendPorts} from '../lib/auth/invitation-send-provider.ts';
 import {invitationIssuancePolicy} from '../lib/auth/invitation-issuance.ts';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
+import {setImmediate} from 'node:timers/promises';
 
 const operationId='20000000-0000-4000-8000-000000000001';
 const requesterId='10000000-0000-4000-8000-000000000001';
@@ -115,4 +116,40 @@ test('provider deadlines include response bodies and redirects never reach their
   for(mode of ['headers','body']){const start=Date.now();assert.equal((await ports.invite(command.recipientEmail)).code,'unknown');assert.ok(Date.now()-start<6500);}
   mode='redirect';const before=calls;assert.equal((await ports.invite(command.recipientEmail)).code,'unknown');assert.equal(calls,before+1);
  }finally {delete process.env.SUPABASE_SECRET_KEY;server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});
+
+for(const phase of ['fetch','body'] as const)test(`invitation deadline settles ${phase} when upstream ignores abort`,async t=>{
+ const originalFetch=globalThis.fetch;
+ const originalUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
+ const originalSecret=process.env.SUPABASE_SECRET_KEY;
+ const originalOrigin=process.env.VOLO_MUTATION_ORIGIN;
+ const originalPublicKey=process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+ process.env.NEXT_PUBLIC_SUPABASE_URL='https://example.supabase.co';
+ process.env.SUPABASE_SECRET_KEY='sb_secret_invitation_test_fixture';
+ process.env.VOLO_MUTATION_ORIGIN='https://voloapp.netlify.app';
+ process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY='sb_publishable_ci_fixture';
+ let release=()=>{};let calls=0;
+ globalThis.fetch=(async()=>{
+  calls++;
+  if(phase==='fetch')return new Promise<Response>(resolve=>{release=()=>resolve(Response.json({id:operationId,email:command.recipientEmail}));});
+  return new Response(new ReadableStream({start(controller){
+   controller.enqueue(new TextEncoder().encode(JSON.stringify({id:operationId,email:command.recipientEmail})));
+   release=()=>controller.close();
+  }}));
+ }) as typeof globalThis.fetch;
+ t.mock.timers.enable({apis:['setTimeout']});
+ let settled=false;
+ const pending=createInitialSendPorts().invite(command.recipientEmail).then(result=>{settled=true;return result;});
+ try{
+  await setImmediate();t.mock.timers.tick(5001);await setImmediate();
+  assert.equal(settled,true,'invitation deadline must settle independently of upstream abort handling');
+  assert.equal((await pending).code,'unknown');
+  assert.equal(calls,1,'uncertain invitation sends must not retry');
+ }finally{
+  release();await pending;globalThis.fetch=originalFetch;t.mock.timers.reset();
+  if(originalUrl===undefined)delete process.env.NEXT_PUBLIC_SUPABASE_URL;else process.env.NEXT_PUBLIC_SUPABASE_URL=originalUrl;
+  if(originalSecret===undefined)delete process.env.SUPABASE_SECRET_KEY;else process.env.SUPABASE_SECRET_KEY=originalSecret;
+  if(originalOrigin===undefined)delete process.env.VOLO_MUTATION_ORIGIN;else process.env.VOLO_MUTATION_ORIGIN=originalOrigin;
+  if(originalPublicKey===undefined)delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;else process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=originalPublicKey;
+ }
 });

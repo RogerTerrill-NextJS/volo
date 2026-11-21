@@ -187,3 +187,39 @@ Release remains separate: full suite on selected release SHA, known-good
 Netlify rollback artifact/backend compatibility, requested production hostname,
 explicit user-requested promotion/cutover, production verification and retention
 checkpoint. VOLO-244 is not Done and VOLO-245 must not archive the old app yet.
+
+## November 20 release verification
+
+PR #125 merged as `bce06318d1b60c165c1060ef16c2b0caa82c80b3`.
+All three jobs in main CI run `44798788098` passed. Vercel deployment
+`5FKnv1kpJnsdwMH9NXiVX2EJooWP` is Ready, Production/Staged, with custom-domain
+assignment skipped. Automatic domain assignment remains disabled. Netlify
+`voloapp` remains auto-publishing locked, with `main@2e911f9` published.
+
+Supabase URL Configuration still has Site URL `https://voloapp.netlify.app`
+and no additional redirect URLs. Its email settings show default templates and
+no custom SMTP configuration. Hosted invitation/recovery activation is not a
+passed migration check. Public requests to the staged Vercel artifact encounter
+Vercel SSO; those headers cannot prove application cache behavior. Production
+login is pinned to `https://volo-six-woad.vercel.app`, so signing in at the staged
+immutable hostname is not a valid production login test.
+
+The broader local unit run exposed a stalled invitation-provider body read.
+The isolated existing deadline test exceeded a 25-second bound. The provider
+aborted its fetch after five seconds but awaited fetch/body promises directly;
+an upstream implementation that ignores cancellation could leave the operation
+pending. Two deterministic regressions reproduced this for fetch and body
+consumption independently, without hosted traffic. Both failed their deadline
+assertion before the fix and passed afterward. The follow-up races each phase
+against the existing shared abort signal, preserving the five-second deadline,
+no-retry behavior, private fetch policy and uncertain-send outcome.
+
+After the fix, the full unit set (66 files, 289 test results), all 85 production
+smoke tests, a production build, typecheck with offline fixtures, and focused
+lint passed. An initial typecheck without the
+required fixture environment failed configuration validation and was rerun
+successfully with the same offline configuration used by CI. Review found no
+critical or important issues. Release remains held for review/merge and fresh
+CI of this follow-up, hosted verification and explicit production promotion.
+No production promotion, Auth configuration change, email send or hosted data
+mutation occurred during these checks.
