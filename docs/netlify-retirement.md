@@ -75,16 +75,22 @@ The branch-rule picker identified the exact `Vercel` context with publisher
 
 ## Credentials
 
-Vercel metadata shows two separate `SUPABASE_SECRET_KEY` entries:
+The initial audit found two separate `SUPABASE_SECRET_KEY` entries:
 
 - Secret scoped to Preview branch `feature/volo-244-vercel-migration`.
 - Secret scoped to Production.
 
-Only the temporary Preview override is a cleanup candidate. Its value was not
-read. Removing it requires confirmation for permanent removal and does not
-strip credentials from already-built deployments. Record retained privileged
-Preview artifacts and their separate disposition. Do not delete or rotate a
-Supabase key shared with current production or the retained Netlify rollback.
+On November 20, the user explicitly approved permanent removal of only the
+temporary branch-scoped Preview override. The Vercel confirmation identified
+Preview as its environment. After deletion, metadata showed the separate
+Production secret still present and no Preview secret override. Production
+`/api/health` continued to return 200 with `{"status":"ok"}`. No value was exported
+and the underlying shared Supabase key was not revoked or rotated.
+
+Removing the variable does not strip credentials from already-built deployments.
+Record retained privileged Preview artifacts and their separate disposition;
+no deployment deletion has been authorized or performed. Do not delete or rotate
+a Supabase key shared with current production or the retained Netlify rollback.
 
 ## Execution and recovery
 
@@ -108,5 +114,6 @@ to the old address requires an approved rollback, compatible retained frontend
 and explicit Auth/domain configuration restoration. Never reset the database as
 part of frontend recovery.
 
-No project disablement, stopped builds, branch-rule save, credential deletion,
-GitHub App uninstall, or Supabase change has occurred during this preparation.
+Only the approved Preview configuration entry has been deleted. No project
+disablement, stopped builds, branch-rule save, deployment deletion, GitHub App
+uninstall, or Supabase change has occurred during this preparation.

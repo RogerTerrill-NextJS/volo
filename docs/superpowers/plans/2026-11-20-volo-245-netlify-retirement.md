@@ -44,18 +44,21 @@ Verification: read-only UI/API evidence recorded in the runbook; `git diff --che
 
 ## Task 2: Prepare the reviewed replacement
 
-- [ ] Review the documentation diff and open its PR to verify automatic Vercel previews on a fresh branch.
+- [x] Review the documentation diff and open draft PR #127; automatic Vercel and Netlify preview statuses succeeded on head `8d8fd1a`.
 - [x] Confirm exact `Vercel` success context and its trusted publisher in the branch-rule picker; discard the audit selection without saving.
 - [x] Record the before/after required checks: retain `Typecheck, lint, build and test`; replace only `netlify/voloapp/deploy-preview` with `Vercel`.
 - [ ] Preserve PR requirement, up-to-date branch requirement, conversation resolution, admin enforcement and force-push/deletion restrictions.
 
 Verification: the new PR receives a successful Vercel deployment; no protection change has been applied merely by drafting it.
 
+PR CI was in progress at the `8d8fd1a` snapshot. Refresh checks after subsequent
+documentation pushes; earlier preview success is not a waiver of current CI.
+
 ## Task 3: Perform scoped cleanup and retirement
 
 - [ ] Resolve VOLO-244 gates and reach the agreed retention checkpoint before stopping builds or taking Netlify offline.
 - [ ] Apply and verify the reviewed required-check replacement before stopping Netlify.
-- [ ] Confirm permanent removal of only the branch-scoped Preview secret override at action time; preserve the Production entry and shared Supabase key.
+- [x] User approved permanent removal of only the branch-scoped Preview secret override; delete it and verify the Production entry remains. Production health returned 200 afterward; the shared key was not revoked.
 - [ ] Record separate disposition of retained privileged Preview artifacts; no deletion without confirmation.
 - [ ] Stop builds for only `voloapp`; record effects on project-specific checks/integrations without uninstalling a shared GitHub App.
 - [ ] Use **Disable project**, verify disabled state, and preserve **Enable project** recovery instructions.
