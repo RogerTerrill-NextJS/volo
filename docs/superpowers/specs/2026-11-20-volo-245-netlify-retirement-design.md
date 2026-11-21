@@ -18,6 +18,8 @@ Retire only the temporary reviewed-branch Preview secret override, with explicit
 confirmation for permanent removal; existing built artifacts need separate
 disposition because removing a variable does not remove their credentials.
 
-Retention duration and old-link/installed-PWA usage are awaiting the user.
+The user chose seven days of retention through November 27, Pacific time, and
+reports no remaining old-link/installed-PWA usage. Keep the old app available
+through that calendar day; retirement is no earlier than November 28.
 VOLO-244's remaining verification gates are not waived by starting preparation.
 See the [retirement runbook](../../netlify-retirement.md) for current evidence.

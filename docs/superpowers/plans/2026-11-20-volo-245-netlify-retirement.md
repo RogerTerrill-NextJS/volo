@@ -18,6 +18,7 @@
 - Preserve Netlify production auto-publishing lock until retirement.
 - No permanent project deletion, shared-app uninstall or shared-key rotation.
 - Hold retirement until VOLO-244 verification and the agreed retention checkpoint.
+- Retain through November 27, 2026, Pacific time; no disablement before November 28.
 
 ## Review focus
 
@@ -35,8 +36,8 @@
 - [x] Confirm the reviewed release PR has successful `Vercel` and `netlify/voloapp/deploy-preview` statuses.
 - [x] Verify public health endpoints on Vercel and retained Netlify return 200.
 - [x] Inspect Preview/Production secret names and scopes without revealing values.
-- [ ] Inspect authenticated Netlify configuration, published artifact, lock and account ownership after sign-in.
-- [ ] Record the user's retention decision and old-link/PWA usage.
+- [x] Inspect authenticated Netlify configuration, published artifact, lock and account ownership after sign-in.
+- [x] Record the user's seven-day retention decision and report of no remaining old-link/PWA usage.
 - [x] Update runbooks to identify Vercel as current production and Netlify as retained rollback.
 
 Verification: read-only UI/API evidence recorded in the runbook; `git diff --check` exits 0. No application tests are needed for documentation-only changes.
@@ -45,7 +46,7 @@ Verification: read-only UI/API evidence recorded in the runbook; `git diff --che
 
 - [ ] Review the documentation diff and open its PR to verify automatic Vercel previews on a fresh branch.
 - [x] Confirm exact `Vercel` success context and its trusted publisher in the branch-rule picker; discard the audit selection without saving.
-- [ ] Record the before/after required checks: retain `Typecheck, lint, build and test`; replace only `netlify/voloapp/deploy-preview` with `Vercel`.
+- [x] Record the before/after required checks: retain `Typecheck, lint, build and test`; replace only `netlify/voloapp/deploy-preview` with `Vercel`.
 - [ ] Preserve PR requirement, up-to-date branch requirement, conversation resolution, admin enforcement and force-push/deletion restrictions.
 
 Verification: the new PR receives a successful Vercel deployment; no protection change has been applied merely by drafting it.

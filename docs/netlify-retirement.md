@@ -14,17 +14,33 @@ by VOLO-244 verification and an agreed rollback/retention checkpoint.
 | Vercel production artifact | `ARZWdzryywsfiDJ25aJAb6YyFN7L` |
 | Main release CI | [44854755992](https://github.com/RogerTerrill-NextJS/volo/actions/runs/44854755992), all three jobs passed |
 | Retained Netlify project | `voloapp`, Roger Terrill's team |
+| Netlify project ID | `1832e04b-8a6d-4f5e-9c43-b37866165479` |
 | Retained old address | https://voloapp.netlify.app/ |
 | Last observed Netlify published source | `2e911f99c64b8045b10220907bd756c57b5ea702` |
+| Published Netlify artifact | [6aff8711b5988472ad08ebd5](https://app.netlify.com/projects/voloapp/deploys/6aff8711b5988472ad08ebd5), Published & locked |
+| Retained immutable URL | https://6aff8711b5988472ad08ebd5--voloapp.netlify.app/ |
 | Supabase Site URL after cutover | `https://volo-six-woad.vercel.app` |
 | Previous Supabase Site URL | `https://voloapp.netlify.app` |
-| Retention checkpoint | Awaiting user decision; do not infer a deadline |
+| Retention checkpoint | Retain through November 27, 2026, Pacific time; retirement no earlier than November 28, subject to remaining gates |
 
-Both hosts' `/api/health` endpoints returned 200 with `{"status":"ok"}` during
-this preparation. Health alone is not a backend compatibility or full rollback
-test. Netlify's authenticated session expired; its exact retained deployment ID,
-configuration and lock still require a fresh authenticated inspection. The last
-authenticated inspection showed automatic production publishing locked.
+Both hosts and the retained immutable Netlify artifact served `{"status":"ok"}`
+from `/api/health` during preparation. Health alone is not a backend compatibility
+or full rollback test. After the user signed in, authenticated Netlify inspection
+confirmed the account/team, project ID, exact retained artifact, production
+context and **Published & locked** state. The newer `799b154` Netlify production
+build is completed but not published.
+
+Retained configuration metadata: repository `RogerTerrill-NextJS/volo`, production
+branch `main`, runtime Next.js, Node.js 24, build command `npm run build`, publish
+directory `/.next`, builds **Active**. Public Supabase variables have two values
+in two deploy contexts. The Netlify service secret is Production-only, scoped to
+Builds/Functions/Runtime; its Deploy Previews context is empty. Values were not
+exported. Preserve this configuration in Netlify for recovery.
+
+The user selected seven days of retention through November 27 and reports no
+users of the old Netlify URL or a PWA installed from it. Interpret “through” as
+keeping it available for the whole Pacific calendar day; this is not approval
+to disable it before the remaining migration gates pass.
 
 ## PR checks and integration scope
 
@@ -52,6 +68,11 @@ separately prepared `volo-uy2m`, may depend on it.
 The branch-rule picker identified the exact `Vercel` context with publisher
 `@vercel`. That audit selection was discarded without saving the rule.
 
+| Required check | Current | Prepared retirement change |
+| --- | --- | --- |
+| Application validation | `Typecheck, lint, build and test` | Keep |
+| Preview deployment | `netlify/voloapp/deploy-preview` from Netlify | Replace with `Vercel` from Vercel |
+
 ## Credentials
 
 Vercel metadata shows two separate `SUPABASE_SECRET_KEY` entries:
@@ -67,9 +88,9 @@ Supabase key shared with current production or the retained Netlify rollback.
 
 ## Execution and recovery
 
-1. Resolve remaining migration verification and agree retention/old-link/PWA handling.
-   User confirmed phone dashboard/profile/flights work at the new address; that
-   did not separately identify the origin of an older installed PWA.
+1. Resolve remaining migration verification and retain Netlify through November
+   27, Pacific time. User confirmed phone dashboard/profile/flights work at the
+   new address and reports no remaining use of the old address/installed PWA.
 2. Preserve the authenticated Netlify artifact/configuration record and review
    compatibility with the unchanged Supabase backend and current Auth settings.
 3. Verify and apply the scoped required-check replacement and credential cleanup.
