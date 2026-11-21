@@ -2,8 +2,13 @@
 
 VOLO-244 targets the existing [VOLO / volo project](https://vercel.com/volo7/volo),
 connected to [RogerTerrill-NextJS/volo](https://github.com/RogerTerrill-NextJS/volo).
-This is preparation, not evidence of production cutover. Netlify remains the
-current production/rollback host until a separately requested release.
+The user-authorized production cutover completed on November 20, 2026:
+<https://volo-six-woad.vercel.app/> serves `799b154` from completed Production
+artifact `ARZWdzryywsfiDJ25aJAb6YyFN7L`. Main CI passed all three jobs; production
+login/logout and core page reads passed, and the user confirmed phone checks.
+Supabase Site URL now matches the Vercel address. No database migration was needed.
+Strict hosted CDN isolation and email flows remain unverified. Netlify is retained
+for rollback under the [VOLO-245 retirement gates](netlify-retirement.md).
 
 ## Verified project settings
 
