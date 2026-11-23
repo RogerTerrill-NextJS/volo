@@ -10,7 +10,7 @@ export const credentialLabels:Record<CredentialField,readonly string[]>={
   'CFI-Certified Flight Instructor',
   'CFII-Certified Flight Instructor instrument',
  ],
- ratings:['MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter'],
+ ratings:['MEI-Multi-Engine Instructor','IR-Instrument Rating','RH-Rotor Craft Helicopter','AMEL-Airplane Multi-Engine Land'],
 };
 
 const aliases:Record<CredentialField,Record<string,string>>={

@@ -13,6 +13,10 @@ test('saved aliases select canonical checkboxes while unknown legacy values rema
   {value:'__proto__',checked:true,legacy:true},
  ]);
  assert.deepEqual(credentialOptions('ratings',['Instrument','MEI']).filter(option=>option.checked).map(option=>option.value),['MEI-Multi-Engine Instructor','IR-Instrument Rating']);
+ assert.deepEqual(credentialOptions('ratings',['AMEL','MEI']).filter(option=>option.checked),[
+  {value:'MEI-Multi-Engine Instructor',checked:true,legacy:false},
+  {value:'AMEL-Airplane Multi-Engine Land',checked:true,legacy:false},
+ ]);
  assert.equal(credentialOptions('certificates',['IR']).at(-1)?.legacy,true,'Never guess a different credential category');
 });
 
